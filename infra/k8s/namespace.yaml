@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: it-sm
+  labels:
+    app.kubernetes.io/name: it-sm
+    app.kubernetes.io/part-of: it-sm

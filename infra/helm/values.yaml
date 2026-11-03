@@ -1,0 +1,60 @@
+global:
+  namespace: it-sm
+  imageRegistry: ""
+
+frontend:
+  image:
+    repository: it-sm/frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    port: 3000
+  env:
+    apiUrl: http://it-sm-backend:8080
+
+backend:
+  image:
+    repository: it-sm/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    port: 8080
+  jwt:
+    secret: change-me-in-production-minimum-32-chars-required
+    expiration: 86400000
+
+postgres:
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  storage: 5Gi
+  database: itsm
+  username: itsm
+  password: itsm_password
+
+redis:
+  image:
+    repository: redis
+    tag: "7-alpine"
+  password: redis_password
+
+rabbitmq:
+  image:
+    repository: rabbitmq
+    tag: "3-management-alpine"
+  username: itsm
+  password: rabbitmq_password
+  vhost: /
+
+ingress:
+  enabled: true
+  className: nginx
+  host: it-sm.local
+
+monitoring:
+  prometheus:
+    enabled: true
+  grafana:
+    enabled: true

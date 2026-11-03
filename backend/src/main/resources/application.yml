@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: it-sm-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/itsm
+    username: itsm
+    password: itsm_password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis_password
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: itsm
+    password: rabbitmq_password
+    virtual-host: /
+
+app:
+  jwt:
+    secret: your-256-bit-secret-key-replace-in-production-minimum-32-chars
+    expiration: 86400000  # 24 hours in ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+server:
+  port: 8080

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: it-sm
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: it-sm
+    app: backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+      protocol: TCP
+  selector:
+    app: backend
