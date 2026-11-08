@@ -50,7 +50,10 @@ export function setToken(token: string): void {
 
   try {
     const maxAge = 7 * 24 * 60 * 60; // 7 days
-    document.cookie = `${TOKEN_KEY}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    // `Secure` is only set on HTTPS pages: browsers drop Secure cookies set from plain-http origins,
+    // which would break local development and the http://localhost e2e runs.
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${TOKEN_KEY}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
   } catch (e) {
     console.error('Failed to save token to cookie:', e);
   }
