@@ -3,6 +3,7 @@ package com.itsm.config
 import com.itsm.auth.JwtAuthFilter
 import com.itsm.user.UserRepository
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.AuthenticationProvider
@@ -26,7 +27,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @Configuration
 @EnableWebSecurity
 class SecurityConfig(
-    private val jwtAuthFilter: JwtAuthFilter,
+    // @Lazy breaks a pre-existing startup cycle: JwtAuthFilter -> userDetailsService (a bean of THIS
+    // class) -> SecurityConfig -> JwtAuthFilter. Without it the application context cannot start.
+    @Lazy private val jwtAuthFilter: JwtAuthFilter,
     private val userRepository: UserRepository
 ) {
     @Bean
