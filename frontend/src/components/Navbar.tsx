@@ -22,6 +22,7 @@ import {
   LogOut,
   User as UserIcon,
   ShieldCheck,
+  Settings2,
   ChevronDown,
 } from 'lucide-react';
 
@@ -63,6 +64,11 @@ export default function Navbar() {
       name: 'Dashboard',
       href: '/dashboard',
       icon: LayoutDashboard,
+    },
+    {
+      name: 'Administration',
+      href: '/admin',
+      icon: Settings2,
     },
   ];
 

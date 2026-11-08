@@ -88,7 +88,15 @@ test.describe('design-system preview', () => {
   });
 
   test('tooltip appears on keyboard focus', async ({ page }) => {
-    await page.getByRole('button', { name: 'Notifications' }).focus();
+    const trigger = page.getByRole('button', { name: 'Notifications' });
+    // Radix Tooltip closes itself when an ancestor of its trigger scrolls. Focusing this off-screen trigger
+    // scrolls the page, and that scroll event lands a frame later, sometimes after the tooltip has opened,
+    // closing it again (seen under CPU load). Bring the trigger into view first and let the resulting
+    // scroll event be dispatched (scroll events fire before the next animation frame), so this test only
+    // measures "focus opens the tooltip".
+    await trigger.scrollIntoViewIfNeeded();
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    await trigger.focus();
     await expect(page.getByRole('tooltip').first()).toBeVisible();
   });
 
