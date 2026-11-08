@@ -3,6 +3,7 @@ package com.itsm.auth
 import com.itsm.auth.dto.AuthResponse
 import com.itsm.auth.dto.LoginRequest
 import com.itsm.auth.dto.RegisterRequest
+import com.itsm.common.error.DuplicateResource
 import com.itsm.user.UserEntity
 import com.itsm.user.UserRepository
 import com.itsm.user.toDto
@@ -20,7 +21,7 @@ class AuthService(
 ) {
     fun register(req: RegisterRequest): AuthResponse {
         if (userRepository.findByEmail(req.email) != null)
-            throw IllegalArgumentException("Email already registered")
+            throw DuplicateResource("Email is already registered")
         val user = userRepository.save(
             UserEntity(email = req.email, password = passwordEncoder.encode(req.password), name = req.name)
         )

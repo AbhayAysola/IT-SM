@@ -1,18 +1,22 @@
 package com.itsm.config
 
 import com.itsm.auth.JwtAuthFilter
+import com.itsm.common.model.Role
+import com.itsm.common.security.ItsmUserDetails
+import com.itsm.common.security.JsonAccessDeniedHandler
+import com.itsm.common.security.JsonAuthenticationEntryPoint
 import com.itsm.user.UserRepository
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.AuthenticationProvider
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
-import org.springframework.security.core.authority.SimpleGrantedAuthority
-import org.springframework.security.core.userdetails.User
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
@@ -25,9 +29,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 class SecurityConfig(
-    private val jwtAuthFilter: JwtAuthFilter,
-    private val userRepository: UserRepository
+    // @Lazy breaks a pre-existing startup cycle: JwtAuthFilter -> userDetailsService (a bean of THIS
+    // class) -> SecurityConfig -> JwtAuthFilter. Without it the application context cannot start.
+    @Lazy private val jwtAuthFilter: JwtAuthFilter,
+    private val userRepository: UserRepository,
+    private val authenticationEntryPoint: JsonAuthenticationEntryPoint,
+    private val accessDeniedHandler: JsonAccessDeniedHandler
 ) {
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
@@ -36,7 +45,7 @@ class SecurityConfig(
     fun userDetailsService(): UserDetailsService = UserDetailsService { email ->
         val user = userRepository.findByEmail(email)
             ?: throw UsernameNotFoundException("User not found: $email")
-        User(user.email, user.password, listOf(SimpleGrantedAuthority("ROLE_${user.role}")))
+        ItsmUserDetails(user.id, user.email, user.password, Role.fromStored(user.role))
     }
 
     @Bean
@@ -53,7 +62,7 @@ class SecurityConfig(
     fun corsConfigurationSource(): CorsConfigurationSource {
         val config = CorsConfiguration()
         config.allowedOrigins = listOf("http://localhost:3000")
-        config.allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "OPTIONS")
+        config.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         config.allowedHeaders = listOf("*")
         config.allowCredentials = true
         val source = UrlBasedCorsConfigurationSource()
@@ -69,6 +78,10 @@ class SecurityConfig(
             .authorizeHttpRequests {
                 it.requestMatchers("/api/auth/**", "/actuator/**").permitAll()
                 it.anyRequest().authenticated()
+            }
+            .exceptionHandling {
+                it.authenticationEntryPoint(authenticationEntryPoint)
+                it.accessDeniedHandler(accessDeniedHandler)
             }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authenticationProvider(authenticationProvider())

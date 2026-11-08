@@ -2,6 +2,8 @@
 
 > **User Management + Order Processing** reference app wiring together Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus.
 
+> 📚 Module rules, SPIs and integration guides for each teammate: [docs/architecture/](docs/architecture/foundation.md) · migration plan: [docs/migrations.md](docs/migrations.md)
+
 ---
 
 ## 📐 Architecture
