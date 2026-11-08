@@ -30,14 +30,13 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
   if (isChecking || !authorized) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex flex-col items-center justify-center space-y-4">
-        <div className="relative">
-          <div className="w-12 h-12 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
-          <Loader2 className="w-6 h-6 text-indigo-400 absolute inset-0 m-auto animate-pulse" />
-        </div>
-        <p className="text-sm text-slate-400 font-medium tracking-wide">
-          Verifying authorization...
-        </p>
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background"
+      >
+        <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
+        <p className="text-sm text-muted-foreground">Verifying authorization…</p>
       </div>
     );
   }

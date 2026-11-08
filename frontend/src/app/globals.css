@@ -2,61 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #0a0a0f;
-  --foreground: #f3f4f6;
-  --card-bg: #13131a;
-  --card-border: #1f1f2e;
-  --accent: #6366f1;
-}
+/*
+ * Semantic design tokens (light theme only). Values are HSL channel triplets so Tailwind can apply
+ * opacity (e.g. bg-primary/10). Never hardcode hex colours in components: use these tokens.
+ * Contrast of every foreground/background pair is verified by scripts/check-contrast.mjs.
+ */
+@layer base {
+  :root {
+    /* Surfaces: cool slate neutrals */
+    --background: 210 40% 98%;            /* page canvas */
+    --foreground: 222 47% 11%;            /* body text */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;                 /* quiet fills, table headers */
+    --muted-foreground: 215 19% 35%;      /* secondary text */
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --accent: 210 40% 94%;                /* hover/selected fill for menus + ghost buttons (NOT a brand colour) */
+    --accent-foreground: 222 47% 11%;
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  overflow-x: hidden;
-}
+    /* Brand: one restrained blue */
+    --primary: 224 76% 48%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 224 76% 48%;                  /* focus ring */
 
-/* Custom sleek scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+    /* Lines */
+    --border: 214 32% 91%;                /* decorative dividers, card edges */
+    --input: 215 16% 47%;                 /* form-control edges: >= 3:1 on white (WCAG 1.4.11) */
 
-::-webkit-scrollbar-track {
-  background: #0a0a0f;
-}
+    /* Status */
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 64% 24%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 26 83% 20%;     /* dark amber: text on warning tints / solid warning */
 
-::-webkit-scrollbar-thumb {
-  background: #232336;
-  border-radius: 4px;
-}
+    --radius: 0.5rem;
 
-::-webkit-scrollbar-thumb:hover {
-  background: #363654;
-}
+    /* Navigation: deep navy */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 214 32% 91%;
+    --sidebar-muted-foreground: 215 20% 70%;
+    --sidebar-primary: 224 76% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 35% 20%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 222 30% 22%;
+    --sidebar-ring: 213 94% 68%;
+  }
 
-/* Glassmorphic card styling */
-.glass-panel {
-  background: rgba(19, 19, 26, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-}
+  * {
+    @apply border-border;
+  }
 
-.glass-panel-hover {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
 
-.glass-panel-hover:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.2);
-  transform: translateY(-2px);
-}
+  /* Avoid single-word last lines in paragraphs (Impeccable "straggler" advisory). */
+  p {
+    text-wrap: pretty;
+  }
 
-/* Radiant glow background mesh */
-.bg-mesh {
-  background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 65%),
-              radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
-              #0a0a0f;
+  /* Fallback focus indicator for elements that don't style their own (plain links, summary...). */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
