@@ -1,0 +1,195 @@
+# Shared foundation (P1)
+
+Everything every module depends on lives in `com.itsm.common`. This document is the contract.
+
+## 1. The one rule
+
+> A module may import `com.itsm.common.*` and **nothing from another module's package**.
+> Cross-module calls go through an interface in `common/spi`; cross-module notifications go
+> through events. Never expose a JPA entity outside its module.
+
+Modules: `access` (P1), `admin` (P1), `audit` (P1), incident intake (P2), lifecycle/assignment (P3),
+SLA/priority/escalation/notifications/analytics (P4). Today `auth/` and `user/` still hold the
+boilerplate auth code; they move into `access/` during auth hardening.
+
+## 2. What is in `common`
+
+| Package | Contents |
+|---|---|
+| `model` | `Role` (EMPLOYEE, TECHNICIAN, ADMIN), `Priority` (P1..P4) |
+| `security` | `Permission` + `RolePermissions`, `CurrentUser`, `CurrentUserProvider`, `ItsmUserDetails`, JSON 401/403 handlers |
+| `error` | `ItsmException` hierarchy, `ErrorCode`, `GlobalExceptionHandler`, `Problems`, `DatabaseErrorClassifier` |
+| `api` | `ApiPaths`, `PageQuery`, `PageResponse` |
+| `event` | `AuditableEvent`, `AuditActor` |
+| `spi` | The provider interfaces (see the integration guide) and their immutable view types |
+
+Team leads are **not** a role. They are technicians whose profile has `isTeamLead` / `reportsTo`.
+
+## 3. Security
+
+* Roles: `EMPLOYEE`, `TECHNICIAN`, `ADMIN`. Each role maps to a fixed set of `Permission`s
+  (`RolePermissions`, the single source of truth; add permissions by PR to P1).
+* The principal is `ItsmUserDetails(id, email, role)`. Its authorities are `ROLE_<role>` **plus one
+  authority per permission**, so both of these work:
+
+```kotlin
+@PreAuthorize("hasAuthority('INCIDENT_ASSIGN')")   // preferred: survives role changes
+@PreAuthorize("hasRole('TECHNICIAN')")
+```
+
+* Method security is on (`@EnableMethodSecurity`). Get the caller with `CurrentUserProvider`:
+
+```kotlin
+class IncidentService(private val currentUser: CurrentUserProvider) {
+    fun create(...) { val me = currentUser.current() /* 401 if anonymous */ ; ... }
+}
+```
+
+* `@PreAuthorize` denials are turned into JSON by `GlobalExceptionHandler`:
+  anonymous -> 401 `UNAUTHENTICATED`, authenticated -> 403 `FORBIDDEN`.
+* Existing flow is unchanged: the JWT is still keyed by email and the unmodified `JwtAuthFilter`
+  now simply puts an `ItsmUserDetails` into the security context.
+* Legacy rows with `role = 'USER'` (the boilerplate default) are treated as `EMPLOYEE`.
+
+## 4. Errors
+
+Throw a subclass of `ItsmException` from any layer. The response is always RFC 7807
+`application/problem+json`:
+
+```json
+{ "type": "urn:itsm:error:invalid-state-transition", "title": "Conflict", "status": 409,
+  "detail": "Incident cannot move from NEW to CLOSED", "code": "INVALID_STATE_TRANSITION",
+  "message": "Incident cannot move from NEW to CLOSED",
+  "traceId": "8581f4f8cd764cb0", "timestamp": "2026-11-08T07:01:47Z",
+  "errors": [ { "field": "name", "message": "must not be blank" } ] }
+```
+
+`errors` appears only for validation failures. `message` duplicates `detail` because the current
+frontend client reads `errorData.message`. `traceId` matches the server log line.
+
+| Throw | HTTP | `code` |
+|---|---|---|
+| `AuthenticationFailed` / `.invalidCredentials()` | 401 | `UNAUTHENTICATED` / `INVALID_CREDENTIALS` |
+| `UnauthorizedOperation` | 403 | `FORBIDDEN` |
+| `ResourceNotFound(type, id)` / `ServiceNotFound(id)` | 404 | `RESOURCE_NOT_FOUND` / `SERVICE_NOT_FOUND` |
+| `InvalidInput(msg, fieldErrors)` | 400 | `INVALID_INPUT` |
+| `DuplicateResource` | 409 | `DUPLICATE_RESOURCE` |
+| `InvalidStateTransition(entity, from, to)` | 409 | `INVALID_STATE_TRANSITION` |
+| `TechnicianUnavailable` / `WorkloadExceeded` | 409 | `TECHNICIAN_UNAVAILABLE` / `WORKLOAD_EXCEEDED` |
+| `MissingSlaConfiguration` | 422 | `MISSING_SLA_CONFIG` |
+| `ExternalServiceFailure(system, cause)` | 502 | `EXTERNAL_SERVICE_FAILURE` |
+
+**Exception messages are returned to the client verbatim: keep them client-safe** (no SQL, paths,
+secrets). The `cause` is logged, never serialized. Unknown exceptions become a generic 500.
+
+### Database errors
+
+Do not catch `DataAccessException` just to translate it; the handler does it, by SQLSTATE, and never
+returns SQL text or constraint/table names:
+
+| Persistence failure | Result |
+|---|---|
+| unique violation (`23505`, `DuplicateKeyException`) | 409 `DUPLICATE_RESOURCE` |
+| foreign-key violation (`23503`) | 409 `REFERENCE_CONSTRAINT` |
+| not-null / check / data exception (`23502`, `23514`, `22xxx`) | 400 `INVALID_INPUT` |
+| other integrity violation | 409 `CONFLICT` |
+| optimistic/pessimistic lock failure, deadlock | 409 `CONCURRENT_MODIFICATION` |
+| no connection, timeout, shutdown (`08xxx`, `53xxx`, `57P0x`, transient/resource failures) | 503 `SERVICE_UNAVAILABLE` + `Retry-After: 5` |
+| anything else (bad SQL grammar, etc.) | 500 `INTERNAL_ERROR` (a bug, not an outage) |
+
+If you want a friendlier message for a specific constraint (e.g. "email already registered"), check
+first in the service and throw `DuplicateResource`; the DB mapping is the safety net for races.
+
+## 5. API conventions
+
+`/api/...` base; admin endpoints under `/api/admin`; JSON camelCase; ISO-8601 UTC instants; numeric
+ids except incident ids (strings like `INC1024`). Lists use `PageQuery` (`page` from 0, `size` 1..100,
+default 20) and return `PageResponse` (`items, page, size, totalItems, totalPages`). Create returns
+201 + `Location`, update 200, delete 204.
+
+## 6. Auditing
+
+Publish an `AuditableEvent` through `AuditPublisher` **inside your `@Transactional` method**:
+
+```kotlin
+@Transactional
+fun assign(incidentId: String, techId: Long) {
+    // ... change state ...
+    audit.publish(AuditableEvent(
+        actor = AuditActor.of(currentUser.current()),
+        action = "INCIDENT_ASSIGNED", entityType = "INCIDENT", entityId = incidentId,
+        incidentId = incidentId, previousState = "CLASSIFIED", newState = "ASSIGNED",
+        description = "Assigned to technician $techId",
+        metadata = mapOf("technicianId" to techId, "strategy" to "LOAD_BASED")))
+}
+```
+
+* Calling it without a transaction throws `IllegalTransactionStateException` (`MANDATORY`). For
+  scheduled jobs, annotate the job method `@Transactional` and use `AuditActor.system("SLA_MONITOR")`.
+* `AuditableEvent` is immutable; it validates its fields on construction and throws
+  `IllegalArgumentException` (a programming error -> 500) if you break the rules. Formats: `action`
+  and `entityType` UPPER_SNAKE_CASE; `entityId`/`incidentId` `[A-Za-z0-9_-]`; states UPPER_SNAKE_CASE;
+  `description` 1..1000 chars.
+* **Metadata** value types allowed: `String` (<= 500 chars), `Boolean`, `Int`, `Long`, finite
+  `Double`, `BigDecimal`, or a flat `List` of those (<= 20 items). Keys camelCase, <= 20 entries.
+  **Not allowed:** null, `Float`/`Short`/`Byte`, `Instant`/`Date` (use an ISO string), nested maps,
+  entities. The map is defensively copied and unmodifiable. Never put passwords, tokens or personal
+  data (beyond ids) in metadata.
+* Audit is not for notifications. If P4 needs to react to a change, that is a separate domain event.
+
+> **Current limitation:** `SpringAuditPublisher` publishes the event on Spring's bus, but the
+> listener that **persists** it (`@TransactionalEventListener(BEFORE_COMMIT)` into the append-only
+> `audit_events` table, see `docs/migrations.md`) is not written yet. Until the audit branch lands,
+> published events are not stored anywhere. Code against the interface now; storage arrives later
+> without API changes.
+>
+> Why BEFORE_COMMIT: the audit row is written in the same transaction as the business change, so
+> they commit or roll back together. If the audit insert fails, the business action fails too.
+
+## 7. Planned auth hardening (not in this branch)
+
+Documented here so teammates can rely on the direction:
+
+* Short-lived access JWT (in memory, sent as `Authorization: Bearer`) + a refresh token in an
+  `HttpOnly; Secure; SameSite=Strict; Path=/api/auth` cookie, rotated on every use, stored hashed.
+* CSRF applies only to the two cookie-authenticated endpoints (`/api/auth/refresh`, `/api/auth/logout`):
+  double-submit CSRF token plus an `Origin` check. Bearer-token endpoints stay stateless with CSRF off.
+* Public registration creates EMPLOYEE only; the `role` claim and a `token_version` are added to the JWT
+  for revocation; login lockout; the secret moves out of `application.yml`.
+
+## 8. Startup cycle fix in `SecurityConfig` (`@Lazy`)
+
+The boilerplate on `main` never started: `JwtAuthFilter` needs the `userDetailsService` bean, which is
+declared *inside* `SecurityConfig`, and `SecurityConfig`'s constructor needs `JwtAuthFilter`. That is a
+constructor cycle, which Spring cannot resolve (`APPLICATION FAILED TO START ... form a cycle`).
+`@Lazy` on the `jwtAuthFilter` constructor parameter injects a proxy, so `SecurityConfig` can be built
+first and the real filter is created on first use. `JwtAuthFilter` itself is unchanged.
+
+Guarded by `SecurityWiringContextTest` (no Docker needed) and `ApplicationStartupIntegrationTest`
+(full Spring Boot startup on PostgreSQL 16 via Testcontainers). The clean fix (moving
+`userDetailsService`/`passwordEncoder` into their own configuration class) belongs to auth hardening.
+
+## 9. Known pre-existing issues this branch did not fix
+
+* `POST /api/auth/register` is open and assigns `role = 'USER'`. (Duplicate emails now return
+  409 `DUPLICATE_RESOURCE`; a concurrent duplicate that slips past the check is caught by the unique
+  constraint and also maps to 409.) Emails are not normalised, so `A@x.com` and `a@x.com` are distinct.
+* `JwtAuthFilter` throws (-> 500) for a token whose user no longer exists, and `Role.fromStored`
+  throws for an unknown stored role. Both are auth-hardening work (the filter is out of scope here).
+* The JWT secret is hardcoded in `application.yml`.
+
+## 10. Running the build and tests
+
+JDK 17 and Gradle 8.8 are pinned (wrapper checksum is verified). A JDK newer than 21 will not run
+Kotlin 1.9.24, so use a JDK 17 toolchain or the same container the Dockerfile uses:
+
+```bash
+cd backend
+docker run --rm -v "$PWD":/app -w /app -u "$(id -u):$(id -g)" -e GRADLE_USER_HOME=/app/.gradle-home \
+  gradle:8.8-jdk17 ./gradlew build --no-daemon
+```
+
+Almost all tests are database-free. `ApplicationStartupIntegrationTest` needs Docker (it starts
+`postgres:16` with Testcontainers) and is **skipped, not failed**, when Docker is unavailable, so check the
+test report if startup coverage matters. When running Gradle itself inside a container, pass the Docker
+socket and `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`.
