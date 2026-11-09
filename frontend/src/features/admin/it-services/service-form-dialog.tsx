@@ -42,7 +42,7 @@ export function ServiceFormDialog({ open, onOpenChange, service, onSaved }: Prop
     setValues((p) => ({ ...p, [k]: v }));
     setErrors((p) => ({ ...p, [k]: undefined }));
   };
-  const all = options.data ?? [];
+  const all = useMemo(() => options.data ?? [], [options.data]);
 
   // For each candidate: why it cannot be chosen (or null if it can).
   const blockedReason = useMemo(() => {

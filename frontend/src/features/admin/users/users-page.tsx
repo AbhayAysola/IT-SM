@@ -75,7 +75,7 @@ export default function UsersPage() {
     [debounced, role, status, department, sort, dir, page]
   );
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data]);
   const filtersActive = !!(search || role !== 'ALL' || status !== 'ALL' || department !== 'ALL');
   const clear = () => { setSearch(''); setRole('ALL'); setStatus('ALL'); setDepartment('ALL'); };
 
