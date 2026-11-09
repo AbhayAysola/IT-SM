@@ -1,11 +1,11 @@
 import type { Page } from '@playwright/test';
-import { test, expect, newUser } from './fixtures';
+import { test, expect, newAdmin } from './fixtures';
 import { axeViolations, expectNoHorizontalOverflow, settle, signIn, trackErrors } from './helpers';
 
 type Api = Parameters<typeof signIn>[1];
 
 async function openAdmin(page: Page, api: Api, path: string) {
-  await signIn(page, api, newUser('gov'));
+  await signIn(page, api, newAdmin('gov'));
   await page.goto(path);
   await expect(page.getByRole('navigation', { name: 'Admin sections' })).toBeVisible();
 }
@@ -214,7 +214,7 @@ test.describe('assignment settings', () => {
   });
 
   test('empty state when nothing is configured; first save configures and audits', async ({ page, api }) => {
-    await signIn(page, api, newUser('gov-empty'));
+    await signIn(page, api, newAdmin('gov-empty'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_v1_assignment', '[]'));
     await page.goto(ASSIGN);
     await expect(page.getByTestId('empty-state')).toContainText('No assignment strategy configured');
@@ -229,7 +229,7 @@ test.describe('assignment settings', () => {
   });
 
   test('error state offers retry', async ({ page, api }) => {
-    await signIn(page, api, newUser('gov-err'));
+    await signIn(page, api, newAdmin('gov-err'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
     await page.goto(ASSIGN);
     await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' }).first()).toBeVisible();
@@ -379,14 +379,14 @@ test.describe('audit logs', () => {
   });
 
   test('empty state when there is no history', async ({ page, api }) => {
-    await signIn(page, api, newUser('gov-empty-audit'));
+    await signIn(page, api, newAdmin('gov-empty-audit'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_v1_audit', '[]'));
     await page.goto(path);
     await expect(page.getByTestId('empty-state')).toContainText('No audit entries yet');
   });
 
   test('list and detail errors offer retry', async ({ page, api }) => {
-    await signIn(page, api, newUser('gov-err-audit'));
+    await signIn(page, api, newAdmin('gov-err-audit'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
     await page.goto(path);
     await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' })).toBeVisible();
@@ -406,7 +406,7 @@ test.describe('audit logs', () => {
 test.describe('governance: quality', () => {
   for (const path of [ASSIGN, '/admin/audit-logs']) {
     test(`${path} has no axe violations or console errors`, async ({ page, api }) => {
-      await signIn(page, api, newUser('axe'));
+      await signIn(page, api, newAdmin('axe'));
       const errors = trackErrors(page);
       await page.goto(path);
       if (path === ASSIGN) await expect(page.getByTestId('assignment-summary')).toBeVisible();
@@ -455,7 +455,7 @@ test.describe('governance: responsive', () => {
 
   for (const [path, heading, link] of [[ASSIGN, 'Assignment settings', 'Assignment settings'], ['/admin/audit-logs', 'Audit logs', 'Audit logs']] as const) {
     test(`${path} fits the phone viewport and the drawer links here`, async ({ page, api }) => {
-      await signIn(page, api, newUser('mobile'));
+      await signIn(page, api, newAdmin('mobile'));
       await page.goto('/admin');
       await page.getByRole('button', { name: 'Toggle navigation' }).click();
       await dialog(page).getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: link }).click();
@@ -469,7 +469,7 @@ test.describe('governance: responsive', () => {
   }
 
   test('audit detail dialog and the strategy confirmation fit the phone viewport', async ({ page, api }) => {
-    await signIn(page, api, newUser('mobile-dlg'));
+    await signIn(page, api, newAdmin('mobile-dlg'));
     await page.goto('/admin/audit-logs');
     await search(page, 'Mei-Ling Chen from EMPLOYEE');
     await expect(summary(page)).toHaveText('Showing 1–1 of 1 entries');

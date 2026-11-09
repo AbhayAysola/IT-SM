@@ -88,6 +88,14 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.waitForURL('**/dashboard');
   });
 
+  test('over plain-http localhost the auth cookie is still set, without Secure (Secure is HTTPS-only)', async ({ page, api, context }) => {
+    await signIn(page, api, newUser('cookie'));
+    const cookie = (await context.cookies()).find((c) => c.name === 'it_sm_token');
+    expect(cookie, 'auth cookie missing over http').toBeTruthy();
+    expect(cookie!.secure).toBe(false);
+    expect(cookie!.sameSite).toBe('Lax');
+  });
+
   test('keyboard-only sign-in (type, Tab, type, Enter)', async ({ page, api }) => {
     const user = newUser('kbd');
     await api.seed(user);

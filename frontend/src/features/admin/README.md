@@ -18,7 +18,11 @@ functions; pages and components should not need to change. No API endpoints have
 - Malformed or outdated stored data is reseeded or ignored rather than crashing a page.
 - Every call has simulated latency so loading states are real.
 - `localStorage.itsm_admin_simulate_error = "1"` makes every service call fail. The Playwright suite uses it to
-  exercise error states. It exists only because the data is mocked.
+  exercise error states. It exists only because the data is mocked: it can only cause failures, never grant access,
+  and it disappears with the mock layer.
+- Seed data is fictitious. Seeded email addresses use the reserved `campus.example` domain (RFC 2606), so they cannot
+  belong to anyone.
+- Storage is per browser profile: data is not shared between users or devices, and clearing site data resets it.
 
 ## Audit log
 
@@ -38,9 +42,36 @@ functions; pages and components should not need to change. No API endpoints have
 - **SLA policies** are configuration only. P4 owns timers, breach detection and escalation.
 - Incident creation, categorisation and incident access policy belong to P2.
 
-## Access control (temporary)
+## Access control
 
-`/admin/*` is wrapped in the existing `AuthGuard`, which only checks that a token exists. The backend currently
-issues a single `USER` role, so the admin pages are **not** role-gated, and nothing here is a security boundary.
-Once the backend exposes an administrator role, gate the admin routes and the navbar link on it, and enforce the
-same checks server-side.
+`/admin/*` is wrapped in `AuthGuard requiredRole="ADMIN"` (in `components/admin-shell.tsx`, the shared admin layout).
+
+- The role comes from `GET /api/users/me` on every visit. It is never read from localStorage, the cached user or the
+  JWT, and nothing under `/admin` renders until the backend answers.
+- No token, or a 401: the token is cleared and the user is sent to sign-in. A 403, a non-`ADMIN` role, or a response
+  without a role: an "Access denied" page. A network error or 5xx: "Couldn't verify your access" with a retry. None of
+  these render admin content.
+- The navbar's Administration link appears only after `/api/users/me` confirms `ADMIN`.
+
+**This is UX, not security.** The backend must enforce authorization on every admin API.
+
+### Backend dependency: nobody can open `/admin` yet
+
+The backend still issues a single role, `USER` (`UserEntity.role` defaults to `"USER"`; there are no `EMPLOYEE`,
+`TECHNICIAN` or `ADMIN` values). Until P1 backend work lands, the real application shows "Access denied" to every
+account on `/admin`. That is intended. The agreed provisioning model:
+
+- The first `ADMIN` is created by an explicit one-time backend bootstrap command.
+- Further admins are created by an existing `ADMIN` through user management.
+- Public registration always creates `EMPLOYEE` and never accepts a role. (The frontend form sends only
+  `email`, `name` and `password`.)
+
+There is deliberately no development bypass. The hermetic Playwright suite reaches the admin pages through ADMIN
+personas in its fake API (`e2e/fixtures.ts`); in live mode, tests that need a non-`USER` role are skipped.
+
+## Token storage (backend dependency)
+
+The token is still kept in localStorage plus a readable `SameSite=Lax` cookie (`Secure` over HTTPS only, so plain
+`http://localhost` keeps working). Moving to HttpOnly cookies needs coordinated backend work: HttpOnly `Secure`
+`SameSite` refresh cookies, refresh-token rotation, CSRF protection, and a short-lived access token. It is out of
+scope for the frontend alone.

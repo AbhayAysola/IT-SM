@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
-import { test, expect, newUser } from './fixtures';
+import { test, expect, newAdmin } from './fixtures';
 import { axeViolations, expectNoHorizontalOverflow, settle, signIn, trackErrors } from './helpers';
 
 async function openAdmin(page: Page, api: Parameters<typeof signIn>[1], path: string) {
-  await signIn(page, api, newUser('cfg'));
+  await signIn(page, api, newAdmin('cfg'));
   await page.goto(path);
   await expect(page.getByRole('navigation', { name: 'Admin sections' })).toBeVisible();
 }
@@ -23,7 +23,7 @@ const filter = async (page: Page, label: string, option: string | RegExp) => {
   await page.getByRole('option', { name: option, exact: typeof option === 'string' }).click();
 };
 async function simulateError(page: Page, api: Parameters<typeof signIn>[1], path: string) {
-  await signIn(page, api, newUser('cfg-err'));
+  await signIn(page, api, newAdmin('cfg-err'));
   await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
   await page.goto(path);
   await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' })).toBeVisible();
@@ -529,7 +529,7 @@ test.describe('admin config: audit trail', () => {
 test.describe('admin config: quality', () => {
   for (const path of ['/admin/categories', '/admin/services', '/admin/sla-policies']) {
     test(`${path} has no axe violations or console errors`, async ({ page, api }) => {
-      await signIn(page, api, newUser('axe'));
+      await signIn(page, api, newAdmin('axe'));
       const errors = trackErrors(page);
       await page.goto(path);
       await expect(rows(page).first()).toBeVisible();
@@ -560,7 +560,7 @@ test.describe('admin config: responsive', () => {
     ['/admin/sla-policies', 'SLA policies', 'SLA policies'],
   ] as const) {
     test(`${path} fits the phone viewport and the drawer links here`, async ({ page, api }) => {
-      await signIn(page, api, newUser('mobile'));
+      await signIn(page, api, newAdmin('mobile'));
       await page.goto('/admin');
       await page.getByRole('button', { name: 'Toggle navigation' }).click();
       await dialog(page).getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: link }).click();
@@ -572,7 +572,7 @@ test.describe('admin config: responsive', () => {
     });
 
     test(`${path} add dialog fits the phone viewport`, async ({ page, api }) => {
-      await signIn(page, api, newUser('mobile-dlg'));
+      await signIn(page, api, newAdmin('mobile-dlg'));
       await page.goto(path);
       await page.getByRole('button', { name: /^Add / }).first().click();
       const box = await dialog(page).boundingBox();

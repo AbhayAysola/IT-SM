@@ -20,6 +20,16 @@ The suite starts two servers from one build: `:3000` (a normal production server
 must 404) and `:3002` (`ENABLE_DESIGN_SYSTEM=true`). Existing servers on those ports are reused locally
 (never in CI). Override ports with `E2E_WEB_PORT` / `E2E_DS_PORT`.
 
+## Personas and admin authorization
+
+`newUser(label, role?)` and `newAdmin()` in `e2e/fixtures.ts` create accounts whose `role` the fake
+`/api/users/me` returns (`USER` by default, matching the real backend). Admin specs sign in as `ADMIN`;
+`admin-authz.spec.ts` covers `EMPLOYEE`, `TECHNICIAN`, `USER`, forged roles, 401/403/5xx and network failures.
+
+In live mode `api.seed` **skips** any test that needs a role other than `USER`: the backend cannot provision
+admins yet, and the suite will not fake one through public registration. So in live mode the admin specs report
+as skipped, not passed.
+
 ## Two modes
 
 | Mode | Command | API |

@@ -6,22 +6,37 @@ export const LIVE = process.env.E2E_LIVE_API === '1';
 export const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8080';
 export const DS_URL = `http://localhost:${process.env.E2E_DS_PORT ?? 3002}`;
 
+/**
+ * Role reported by GET /api/users/me. `USER` is the only role the real backend issues today; the others model the
+ * agreed P1 roles so the frontend gate can be tested before backend provisioning exists.
+ */
+export type TestRole = 'USER' | 'EMPLOYEE' | 'TECHNICIAN' | 'ADMIN';
+
 export interface TestUser {
   name: string;
   email: string;
   password: string;
+  /** Defaults to `USER`, matching what the real backend issues. */
+  role?: TestRole;
 }
 
 /** Unique per call so parallel tests (and repeated live runs) never collide. */
-export const newUser = (label = 'user'): TestUser => ({
+export const newUser = (label = 'user', role?: TestRole): TestUser => ({
   name: 'E2E Tester',
   email: `e2e-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.test`,
   password: 'Passw0rd!',
+  ...(role ? { role } : {}),
 });
+
+/** An ADMIN persona. In live mode, tests that seed one are skipped (see `seed`). */
+export const newAdmin = (label = 'admin'): TestUser => newUser(label, 'ADMIN');
 
 export interface ApiHelper {
   live: boolean;
-  /** Create an account without going through the UI. */
+  /**
+   * Create an account without going through the UI. Live mode can only create what public registration creates;
+   * seeding any other role there skips the test instead of faking a privileged account.
+   */
   seed(user: TestUser): Promise<void>;
   /** Paths of every request the page made to the API (e.g. '/api/users/me'). */
   calls: string[];
@@ -41,7 +56,7 @@ const CORS = {
 export const test = base.extend<{ api: ApiHelper }>({
   // Installed for every test (auto) so route-guard tests can also assert "no API call was made".
   api: [
-    async ({ page, request }, use) => {
+    async ({ page, request }, use, testInfo) => {
       const calls: string[] = [];
       page.on('request', (r) => {
         if (r.url().startsWith(`${API_URL}/api/`)) calls.push(new URL(r.url()).pathname);
@@ -52,6 +67,10 @@ export const test = base.extend<{ api: ApiHelper }>({
           live: true,
           calls,
           seed: async (u) => {
+            testInfo.skip(
+              !!u.role && u.role !== 'USER',
+              `Live backend cannot provision ${u.role} accounts yet (pending P1 backend bootstrap/user management).`,
+            );
             const res = await request.post(`${API_URL}/api/auth/register`, {
               data: { email: u.email, password: u.password, name: u.name },
             });
@@ -74,7 +93,7 @@ export const test = base.extend<{ api: ApiHelper }>({
         }),
       });
       const ok = (body: unknown) => ({ status: 200, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-      const publicUser = ({ password: _p, ...rest }: MockUser) => ({ ...rest, role: 'USER' });
+      const publicUser = ({ password: _p, role, ...rest }: MockUser) => ({ ...rest, role: role ?? 'USER' });
 
       await page.route(`${API_URL}/api/**`, async (route) => {
         const req = route.request();
@@ -82,7 +101,8 @@ export const test = base.extend<{ api: ApiHelper }>({
         if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
 
         if (path === '/api/auth/register' && req.method() === 'POST') {
-          const b = req.postDataJSON() as TestUser;
+          // Like the real backend, public registration ignores any role in the body.
+          const { role: _ignored, ...b } = req.postDataJSON() as TestUser;
           if (users.has(b.email)) return route.fulfill(problem(409, 'DUPLICATE_RESOURCE', 'Email is already registered'));
           const u: MockUser = { ...b, id: nextId++, createdAt: new Date().toISOString() };
           users.set(u.email, u);

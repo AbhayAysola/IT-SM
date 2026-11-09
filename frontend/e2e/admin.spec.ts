@@ -1,10 +1,10 @@
 import type { Page } from '@playwright/test';
-import { test, expect, newUser } from './fixtures';
+import { test, expect, newAdmin } from './fixtures';
 import { axeViolations, expectNoHorizontalOverflow, settle, signIn, trackErrors } from './helpers';
 
 /** Signs in through the real form, then opens an admin route. Mock admin data lives in this context's localStorage. */
 async function openAdmin(page: Page, api: Parameters<typeof signIn>[1], path = '/admin') {
-  await signIn(page, api, newUser('admin'));
+  await signIn(page, api, newAdmin('admin'));
   await page.goto(path);
   await expect(page.getByRole('navigation', { name: 'Admin sections' })).toBeVisible();
 }
@@ -35,7 +35,7 @@ test.describe('admin: access and shell', () => {
   });
 
   test('existing dashboard links to administration, and sign out works from the admin shell', async ({ page, api }) => {
-    await signIn(page, api, newUser('admin-link'));
+    await signIn(page, api, newAdmin('admin-link'));
     await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Administration' }).click();
     await page.waitForURL('**/admin');
     await page.getByRole('button', { name: /Account menu/ }).click();
@@ -59,7 +59,7 @@ test.describe('admin: overview', () => {
   });
 
   test('error state offers retry and recovers', async ({ page, api }) => {
-    await signIn(page, api, newUser('overview-err'));
+    await signIn(page, api, newAdmin('overview-err'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
     await page.goto('/admin');
     await expect(page.getByRole('alert').filter({ hasText: 'We couldn’t load this.' }).first()).toBeVisible();
@@ -228,7 +228,7 @@ test.describe('admin: users', () => {
   });
 
   test('error state offers retry', async ({ page, api }) => {
-    await signIn(page, api, newUser('users-err'));
+    await signIn(page, api, newAdmin('users-err'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
     await page.goto('/admin/users');
     await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' })).toBeVisible();
@@ -347,7 +347,7 @@ test.describe('admin: technicians', () => {
   });
 
   test('error state offers retry', async ({ page, api }) => {
-    await signIn(page, api, newUser('tech-err'));
+    await signIn(page, api, newAdmin('tech-err'));
     await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
     await page.goto('/admin/technicians');
     await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' })).toBeVisible();
@@ -360,7 +360,7 @@ test.describe('admin: technicians', () => {
 test.describe('admin: quality', () => {
   for (const path of ['/admin', '/admin/users', '/admin/technicians']) {
     test(`${path} has no axe violations and no console errors`, async ({ page, api }) => {
-      await signIn(page, api, newUser('axe'));
+      await signIn(page, api, newAdmin('axe'));
       const errors = trackErrors(page);
       await page.goto(path);
       if (path !== '/admin') await expect(rows(page).first()).toBeVisible();
@@ -384,7 +384,7 @@ test.describe('admin: responsive', () => {
 
   for (const path of ['/admin', '/admin/users', '/admin/technicians']) {
     test(`${path} has no horizontal page overflow and the nav opens as a drawer`, async ({ page, api }) => {
-      await signIn(page, api, newUser('mobile'));
+      await signIn(page, api, newAdmin('mobile'));
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       await page.waitForLoadState('networkidle');

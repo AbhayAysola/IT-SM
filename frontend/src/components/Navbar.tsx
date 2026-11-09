@@ -34,6 +34,8 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(getCachedUser());
+  // Only the live /api/users/me answer may reveal admin navigation; the cached user is display-only.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -43,6 +45,7 @@ export default function Navbar() {
         if (isMounted && userData) {
           setUser(userData);
           setCachedUser(userData);
+          setIsAdmin(userData.role === 'ADMIN');
         }
       })
       .catch((err) => {
@@ -65,11 +68,15 @@ export default function Navbar() {
       href: '/dashboard',
       icon: LayoutDashboard,
     },
-    {
-      name: 'Administration',
-      href: '/admin',
-      icon: Settings2,
-    },
+    ...(isAdmin
+      ? [
+          {
+            name: 'Administration',
+            href: '/admin',
+            icon: Settings2,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -129,7 +136,7 @@ export default function Navbar() {
                     {user?.name ? user.name[0].toUpperCase() : <UserIcon className="h-3.5 w-3.5" aria-hidden="true" />}
                   </span>
                   <span className="hidden text-left sm:block">
-                    <span className="block text-xs font-semibold leading-none">{user?.name || 'Administrator'}</span>
+                    <span className="block text-xs font-semibold leading-none">{user?.name || 'My account'}</span>
                     <span className="mt-0.5 block max-w-[140px] truncate text-[11px] leading-tight text-sidebar-muted">
                       {user?.email || 'user@example.com'}
                     </span>

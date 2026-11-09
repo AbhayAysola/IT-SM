@@ -131,7 +131,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
-    <AuthGuard>
+    <AuthGuard requiredRole="ADMIN">
       <ToastProvider>
         <SidebarProvider>
           <Shell>{children}</Shell>
