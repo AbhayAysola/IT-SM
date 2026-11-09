@@ -56,4 +56,12 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Failures must be diagnosable from the CI log alone: full stack traces, and every non-passing test named.
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showStackTraces = true
+        showStandardStreams = false // container logs are in the uploaded HTML/XML reports
+    }
 }

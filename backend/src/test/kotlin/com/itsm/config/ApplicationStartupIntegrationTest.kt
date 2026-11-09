@@ -6,12 +6,16 @@ import com.itsm.common.error.ErrorCode
 import com.itsm.user.UserEntity
 import com.itsm.user.UserRepository
 import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.MigrationState
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.core.env.Environment
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
@@ -28,7 +32,8 @@ import org.testcontainers.junit.jupiter.Testcontainers
  * Full Spring Boot startup against a real PostgreSQL 16: Flyway runs, Hibernate validates the schema,
  * the security wiring (incl. the @Lazy cycle fix) loads, and the existing auth flow works over MockMvc.
  * Redis/RabbitMQ are not needed for startup (their connections are lazy).
- * Skipped (not failed) when Docker is unavailable.
+ * Skipped (not failed) when Docker is unavailable, EXCEPT where ITSM_REQUIRE_DOCKER=true (CI): there
+ * [DockerAvailabilityGuardTest] fails the build and the workflow rejects any skipped test.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -45,6 +50,7 @@ class ApplicationStartupIntegrationTest {
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var users: UserRepository
     @Autowired lateinit var flyway: Flyway
+    @Autowired lateinit var env: Environment
     private val json = ObjectMapper()
 
     private fun register(email: String) = mvc.perform(
@@ -52,8 +58,25 @@ class ApplicationStartupIntegrationTest {
             .content("""{"email":"$email","password":"Passw0rd!","name":"Test"}""")
     )
 
-    @Test fun `application starts on PostgreSQL 16 with the baseline migration applied`() {
-        assertEquals("1", flyway.info().current().version.version)
+    @Test fun `application starts on a clean PostgreSQL 16 with every migration applied and the schema validated`() {
+        // Hibernate must be validating, not creating or updating: otherwise "entities match migrations" proves nothing.
+        assertEquals("validate", env.getProperty("spring.jpa.hibernate.ddl-auto"), "Schema validation must stay on")
+
+        val info = flyway.info()
+        val current = info.current()
+        assertNotNull(current, "Flyway applied no migration")
+
+        // Version-agnostic: whatever migrations exist on the classpath must ALL be applied, successfully, to a
+        // database that started empty, with the newest one being the current state. Adding V10+ needs no edit here.
+        val resolved = info.all().filter { it.version != null }
+        assertTrue(resolved.isNotEmpty() && resolved.first().version.version == "1", "Baseline V1 must exist")
+        assertTrue(info.pending().isEmpty(), "Pending migrations: ${info.pending().map { it.version }}")
+        assertTrue(resolved.all { it.state == MigrationState.SUCCESS }, "Unsuccessful migrations: " +
+            resolved.filter { it.state != MigrationState.SUCCESS }.map { "${it.version}=${it.state}" })
+        assertEquals(resolved.maxOf { it.version }, current.version, "Current version is not the newest migration")
+        assertEquals(resolved.size, info.applied().size, "Not every migration was applied from scratch")
+
+        flyway.validate() // checksums and ordering still consistent with what is on the classpath
     }
 
     @Test fun `register, duplicate register, login and me work end to end`() {
