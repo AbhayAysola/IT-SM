@@ -52,7 +52,28 @@ Note: `application.yml` has `baseline-on-migrate: true`. On a *non-empty* schema
 table Flyway baselines at version 1 and skips `V1`. Harmless on a fresh database; be aware when pointing
 the app at an existing one.
 
-## 3. P1 draft migrations
+## 3. P1 migrations
+
+**Merged into `src/main/resources/db/migration`:** `V10__p1_audit_events.sql` (the former draft `V16`). Audit goes first
+because it has no foreign keys and every later P1 change publishes audit events. `V10` stores the actor by id/role/job
+name (no email) and adds a stable `event_id`, an actor-shape CHECK and the append-only triggers.
+
+**The drafts below keep their old numbers and are NOT renumbered yet; those numbers are provisional.** The planned P1
+sequence is the order the branches merge, so that version order equals merge order (Flyway `out-of-order` stays off):
+
+| Version | Migration | Status |
+|---|---|---|
+| `V10` | audit events | merged |
+| `V11` | incident categories | draft, renumber on its branch |
+| `V12` | IT services | draft, renumber on its branch |
+| `V13` | SLA policies | draft, renumber on its branch |
+| `V14` | assignment settings | draft, renumber on its branch |
+| `V15` | user extensions | draft, renumber on its branch |
+| `V16` | technician profiles | draft, renumber on its branch |
+
+Each draft is renumbered when its own branch moves it across. Do not apply a draft under its old number.
+
+### Remaining drafts
 
 Located in [`docs/migrations/drafts/`](migrations/drafts/) and **not** in `src/main/resources`, so nothing
 is applied until the matching P1 branch moves its file across. They are the *validated* versions of the
@@ -67,19 +88,23 @@ error: one `CREATE INDEX` per statement) and a foreign key to a table created la
 | `V13__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` |
 | `V14__p1_sla_policies.sql` | `sla_policies` (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15+) + the specification defaults |
 | `V15__p1_assignment_settings.sql` | singleton `assignment_settings` (default `LOAD_BASED`), category overrides |
-| `V16__p1_audit_events.sql` | `audit_events` + triggers rejecting `UPDATE`, `DELETE` and `TRUNCATE` |
 
 Design notes
 * Audit rows carry no foreign keys on purpose (they must outlive users and incident rows). Append-only
-  is enforced by the trigger, plus `@Immutable` and a no-update repository in code (audit branch).
+  is enforced by the trigger, plus `@Immutable` and a save-only repository in code.
 * `users.created_at` from `V1` is `TIMESTAMP` (no zone) while the new tables use `TIMESTAMPTZ`. Left as is
   to avoid touching the baseline; revisit in auth hardening.
 * "This user is a TECHNICIAN" for `technician_profiles` is checked in the application, not in SQL.
 
 ## 4. Validating the complete sequence from an empty PostgreSQL 16
 
-This is what was run to validate the drafts (all eight migrations applied; a second run was a no-op).
-Re-run it whenever a migration is added, and make it a CI gate.
+This is what was run to validate the original drafts (all eight migrations applied; a second run was a no-op).
+CI now runs the main-location part of it on every PR (`Backend / Flyway on a clean PostgreSQL 16`, twice, plus `validate`),
+and the Spring startup test boots on a clean PostgreSQL 16 with `ddl-auto: validate`.
+
+> **The `/m/drafts` mount below no longer works as written:** the remaining drafts still carry the pre-renumbering
+> `V10`-`V15` numbers, which now collide with the merged `V10__p1_audit_events.sql`. Validate a draft only after
+> renumbering it as described in section 3.
 
 ```bash
 docker network create itsm-val

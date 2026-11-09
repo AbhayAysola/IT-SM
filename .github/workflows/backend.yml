@@ -94,24 +94,28 @@ jobs:
           python3 - <<'PY'
           import glob, sys
           import xml.etree.ElementTree as ET
-          REQUIRED = 'com.itsm.config.ApplicationStartupIntegrationTest'
-          MIN_REQUIRED_TESTS = 3
+          # Docker-backed classes that must each have executed at least this many tests. The purpose is to notice a class
+          # that silently stops running (renamed, excluded, skipped), not to pin the number of test methods.
+          REQUIRED = {
+              'com.itsm.config.ApplicationStartupIntegrationTest': 3,
+              'com.itsm.audit.AuditPersistenceIntegrationTest': 1,
+          }
           total = skipped = 0
-          required_ran = 0
+          executed = {}
           for path in glob.glob('build/test-results/test/*.xml'):
               suite = ET.parse(path).getroot()
               tests, skips = int(suite.get('tests')), int(suite.get('skipped'))
               total += tests
               skipped += skips
-              if suite.get('name') == REQUIRED:
-                  required_ran = tests - skips
+              executed[suite.get('name')] = tests - skips
               if skips:
                   print(f'::error::{suite.get("name")}: {skips} skipped test(s)')
-          print(f'tests={total} skipped={skipped} {REQUIRED} executed={required_ran}')
+          print(f'tests={total} skipped={skipped}', {name: executed.get(name, 0) for name in REQUIRED})
           if skipped:
               sys.exit('Skipped tests are not accepted in CI.')
-          if required_ran < MIN_REQUIRED_TESTS:
-              sys.exit(f'{REQUIRED} must execute at least {MIN_REQUIRED_TESTS} tests; it executed {required_ran}.')
+          for name, minimum in REQUIRED.items():
+              if executed.get(name, 0) < minimum:
+                  sys.exit(f'{name} must execute at least {minimum} tests; it executed {executed.get(name, 0)}.')
           PY
 
       - name: Upload test reports

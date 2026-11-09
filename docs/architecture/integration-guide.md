@@ -22,7 +22,7 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `ServiceCatalog` | P1 | P2 (validate service), P4 (criticality), P2/P4 (dependents for correlation) |
 | `SlaPolicyProvider` | P1 | P4 |
 | `AssignmentSettingsProvider` | P1 | P3 |
-| `AuditPublisher` | P1 (`SpringAuditPublisher` exists, **publishes only; events are not persisted yet**) | everyone |
+| `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
 | `TechnicianWorkloadProvider` | **P3 only** | P1 (admin technician views), P4 (SLA risk) |
 | `AssignmentStrategyCatalog` | **P3 only** | P1 (validates the configured strategy key) |
@@ -31,10 +31,9 @@ Do not write a second implementation of someone else's SPI "for testing" in `src
 
 ### Status and how to work before P1's implementations land
 
-Only `AuditPublisher` has an implementation in this branch, and it does **not** persist events yet
-(a WARN is logged at startup). Your audit calls are correct now and will be stored, with no code change,
-once P1's audit branch adds the database listener. Do not rely on reading audit rows back until then. P1's implementations arrive in this order:
-audit persistence, then categories/services, then SLA + assignment settings, then users/technician profiles.
+`AuditPublisher` is fully implemented and persists events (see foundation.md section 6): publish inside your
+`@Transactional` method and the row is written with your change, or not at all if it rolls back. The rest of P1's
+implementations arrive in this order: categories/services, then SLA + assignment settings, then users/technician profiles.
 Until a bean exists, **a `@Service` that constructor-injects it will stop the application from starting**.
 So for now:
 
@@ -90,7 +89,7 @@ Use `UnauthorizedOperation` if a technician acts on an incident that is not thei
 **Audit actions:** one per transition with `previousState` and `newState` set, e.g. `INCIDENT_ASSIGNED`
 (CLASSIFIED -> ASSIGNED), `INCIDENT_ACKNOWLEDGED`, `INCIDENT_STATUS_CHANGED`, `INCIDENT_RESOLVED`,
 `INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`. Publish **in the same
-`@Transactional` method as the state change**, so that once audit persistence lands the two commit together.
+`@Transactional` method as the state change**, so that the audit row and the state change commit together.
 
 **Migrations:** block `V30-V39`.
 

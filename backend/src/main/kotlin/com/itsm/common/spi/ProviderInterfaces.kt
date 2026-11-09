@@ -77,10 +77,9 @@ interface AssignmentSettingsProvider {
  * Provided by P1. Publish an audit event. MUST be called inside the business transaction
  * (enforced: calling it without one throws IllegalTransactionStateException).
  *
- * TEMPORARY LIMITATION: events are currently published but NOT persisted. Persistence arrives
- * with P1's audit branch as a `@TransactionalEventListener(BEFORE_COMMIT)` writing to the
- * append-only `audit_events` table; from then on the audit row and the business change commit or
- * roll back together. Callers do not change when that lands.
+ * Events are persisted by `AuditEventPersistenceListener` (`@TransactionalEventListener(BEFORE_COMMIT)`)
+ * into the append-only `audit_events` table, inside this same transaction: the audit row and the
+ * business change commit or roll back together, and a failed audit insert fails the business action.
  */
 interface AuditPublisher {
     fun publish(event: AuditableEvent)

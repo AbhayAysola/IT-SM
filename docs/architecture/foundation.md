@@ -137,14 +137,37 @@ fun assign(incidentId: String, techId: Long) {
   data (beyond ids) in metadata.
 * Audit is not for notifications. If P4 needs to react to a change, that is a separate domain event.
 
-> **Current limitation:** `SpringAuditPublisher` publishes the event on Spring's bus, but the
-> listener that **persists** it (`@TransactionalEventListener(BEFORE_COMMIT)` into the append-only
-> `audit_events` table, see `docs/migrations.md`) is not written yet. Until the audit branch lands,
-> published events are not stored anywhere. Code against the interface now; storage arrives later
-> without API changes.
->
-> Why BEFORE_COMMIT: the audit row is written in the same transaction as the business change, so
-> they commit or roll back together. If the audit insert fails, the business action fails too.
+### How persistence works
+
+`SpringAuditPublisher` (propagation `MANDATORY`) hands the event to Spring's event bus. The listener
+`AuditEventPersistenceListener` is a `@TransactionalEventListener(phase = BEFORE_COMMIT)`: it inserts one row into
+`audit_events` (V10) while the business transaction is still open, immediately before it commits.
+
+```
+@Transactional business method
+  ├─ change state
+  ├─ audit.publish(event)        -> event is queued on the transaction (nothing written yet)
+  └─ commit
+       ├─ BEFORE_COMMIT: listener INSERTs audit_events row   (same connection, same transaction)
+       └─ COMMIT  -> business change and audit row become visible together
+```
+
+* **Rollback removes the audit row.** The row was never committed on its own, so when the business transaction
+  rolls back (exception or rollback-only) there is nothing to undo. Audit never records an action that did not happen.
+* **A failed audit insert fails the business action.** The exception propagates out of the commit and rolls back
+  the whole transaction; it is not caught, logged-and-ignored, or retried in another transaction. An unaudited change must
+  not become permanent. There is no `REQUIRES_NEW` and no `AFTER_COMMIT`, either of which could keep a row for work that was
+  rolled back, or lose one for work that was committed.
+* **What is stored:** event id (UUID), `occurred_at`, actor type + stable user id + role (or a system job name),
+  `action`, `entity_type`, `entity_id`, `incident_id`, `previous_state`, `new_state`, `description`, `metadata` (JSONB).
+  The actor's **email is not stored**: audit rows are permanent, so they identify the actor by id and role only.
+  Metadata values read back as JSON (e.g. a `Long` that fits in 32 bits comes back as a number, not a `Long`).
+* **Append-only, in three layers:** (1) the PostgreSQL trigger `audit_events_reject_mutation` rejects `UPDATE`, `DELETE`
+  and `TRUNCATE` (SQLSTATE 23000) and is the authoritative guard; (2) `AuditEventEntity` is Hibernate `@Immutable` with
+  `val` properties; (3) `AuditEventRepository` extends the bare `Repository` and exposes only `save`. There is no audit
+  editing or deletion service. The trigger does not stop a database owner who drops it: restrict who owns the schema in
+  production. The table has no foreign keys so rows outlive the users and incidents they describe.
+* Reading audit data (the admin viewer and the incident audit endpoint) is a later batch; the indexes for it exist.
 
 ## 7. Planned auth hardening (not in this branch)
 
@@ -188,6 +211,17 @@ cd backend
 docker run --rm -v "$PWD":/app -w /app -u "$(id -u):$(id -g)" -e GRADLE_USER_HOME=/app/.gradle-home \
   gradle:8.8-jdk17 ./gradlew build --no-daemon
 ```
+
+Audit persistence tests (all need Docker except the first):
+
+```bash
+./gradlew test --tests 'com.itsm.audit.AuditEventPersistenceListenerTest'      # database-free: phase, no swallowing, mapping
+./gradlew test --tests 'com.itsm.audit.AuditPersistenceIntegrationTest'        # PostgreSQL 16: commit, rollback, trigger
+ITSM_REQUIRE_DOCKER=true ./gradlew test   # what CI does: fails instead of silently skipping the Docker tests
+```
+
+`AuditPersistenceIntegrationTest` never deletes rows (the table is append-only); each test writes under its own
+unique entity id and only inspects those rows.
 
 Almost all tests are database-free. `ApplicationStartupIntegrationTest` needs Docker (it starts
 `postgres:16` with Testcontainers) and is **skipped, not failed**, when Docker is unavailable, so check the
