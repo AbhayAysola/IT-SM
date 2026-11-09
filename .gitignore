@@ -1,4 +1,2 @@
 # Local / machine-specific Claude Code files (never commit)
 .claude/settings.local.json
-# Impeccable engine binary: machine-specific, re-downloaded + SHA-256 verified by the launcher
-.claude/skills/impeccable/scripts/bin/
