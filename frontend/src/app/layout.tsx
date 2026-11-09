@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'IT-SM | User Management & Order Processing',
-  description: 'Enterprise User Management and Order Processing Platform built with Next.js 14 and Tailwind CSS',
+  title: 'IT-SM | IT Service Management',
+  description: 'Intelligent IT Service Management & Incident Resolution System',
 };
 
 export default function RootLayout({
@@ -19,10 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} dark`}>
-      <body className="min-h-screen bg-[#0a0a0f] text-slate-100 antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
-        {children}
-      </body>
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen">{children}</body>
     </html>
   );
 }

@@ -3,7 +3,7 @@ import { getToken } from './auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
-class ApiErrorResponse extends Error {
+export class ApiErrorResponse extends Error {
   status: number;
   constructor(message: string, status: number) {
     super(message);

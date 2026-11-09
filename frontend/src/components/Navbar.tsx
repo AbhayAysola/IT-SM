@@ -6,19 +6,36 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clearToken, getCachedUser, setCachedUser } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { User } from '@/types';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
   LogOut,
   User as UserIcon,
   ShieldCheck,
+  Settings2,
   ChevronDown,
 } from 'lucide-react';
+
+// Navigation family tokens (deep navy): bg-sidebar / text-sidebar-* / border-sidebar-border.
+const navFocus =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar';
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(getCachedUser());
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  // Only the live /api/users/me answer may reveal admin navigation; the cached user is display-only.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -28,6 +45,7 @@ export default function Navbar() {
         if (isMounted && userData) {
           setUser(userData);
           setCachedUser(userData);
+          setIsAdmin(userData.role === 'ADMIN');
         }
       })
       .catch((err) => {
@@ -50,28 +68,34 @@ export default function Navbar() {
       href: '/dashboard',
       icon: LayoutDashboard,
     },
+    ...(isAdmin
+      ? [
+          {
+            name: 'Administration',
+            href: '/admin',
+            icon: Settings2,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-[#1f1f2e] bg-[#0d0d14]/80 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Brand Logo */}
-          <div className="flex items-center gap-8">
+    <header className="sticky top-0 z-50 w-full border-b border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-14 items-center justify-between">
+          {/* Brand + primary navigation */}
+          <div className="flex items-center gap-6">
             <Link
               href="/dashboard"
-              className="flex items-center gap-2.5 text-white font-bold text-lg tracking-tight group"
+              className={cn('flex items-center gap-2.5 rounded-md text-base font-semibold tracking-tight text-white', navFocus)}
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-glow-sm group-hover:shadow-glow transition-all duration-300">
-                <ShieldCheck className="w-5 h-5 text-white" />
-              </div>
-              <span className="bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent font-extrabold tracking-wide">
-                IT-SM
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
               </span>
+              IT-SM
             </Link>
 
-            {/* Desktop Navigation Links */}
-            <div className="hidden md:flex items-center space-x-1">
+            <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
               {navLinks.map((link) => {
                 const Icon = link.icon;
                 const isActive = pathname === link.href;
@@ -79,92 +103,95 @@ export default function Navbar() {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    aria-current={isActive ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      navFocus,
                       isActive
-                        ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-inner'
-                        : 'text-slate-400 hover:text-slate-100 hover:bg-[#1a1a26]'
-                    }`}
+                        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                        : 'text-sidebar-muted hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'
+                    )}
                   >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
+                    <Icon className="h-4 w-4" aria-hidden="true" />
                     {link.name}
                   </Link>
                 );
               })}
-            </div>
+            </nav>
           </div>
 
-          {/* User profile & Actions */}
-          <div className="flex items-center gap-3">
-            {/* User Info Capsule */}
-            <div className="relative">
-              <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-[#222234] bg-[#14141e] hover:bg-[#1c1c2b] transition-all text-left"
-              >
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-semibold text-xs border border-indigo-500/30">
-                  {user?.name ? user.name[0].toUpperCase() : <UserIcon className="w-3.5 h-3.5" />}
-                </div>
-                <div className="hidden sm:block text-left">
-                  <p className="text-xs font-semibold text-slate-200 leading-none">
-                    {user?.name || 'Administrator'}
-                  </p>
-                  <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate max-w-[140px]">
-                    {user?.email || 'user@example.com'}
-                  </p>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block ml-0.5" />
-              </button>
-
-              {/* Dropdown Menu */}
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[#26263b] bg-[#141420] shadow-2xl py-2 z-50">
-                  <div className="px-4 py-2 border-b border-[#232338]">
-                    <p className="text-xs font-medium text-slate-400">Signed in as</p>
-                    <p className="text-sm font-semibold text-white truncate mt-0.5">
+          {/* Account menu */}
+          <div className="flex items-center gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    'h-10 gap-2.5 px-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent',
+                    navFocus
+                  )}
+                >
+                  <span className="sr-only">Account menu</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground">
+                    {user?.name ? user.name[0].toUpperCase() : <UserIcon className="h-3.5 w-3.5" aria-hidden="true" />}
+                  </span>
+                  <span className="hidden text-left sm:block">
+                    <span className="block text-xs font-semibold leading-none">{user?.name || 'My account'}</span>
+                    <span className="mt-0.5 block max-w-[140px] truncate text-[11px] leading-tight text-sidebar-muted">
                       {user?.email || 'user@example.com'}
-                    </p>
-                    {user?.role && (
-                      <span className="inline-block mt-1 px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        {user.role}
-                      </span>
-                    )}
-                  </div>
+                    </span>
+                  </span>
+                  <ChevronDown className="hidden h-3.5 w-3.5 sm:block" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
 
-                  <div className="md:hidden py-1 border-b border-[#232338]">
-                    {navLinks.map((link) => (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        onClick={() => setDropdownOpen(false)}
-                        className="block px-4 py-2 text-sm text-slate-300 hover:bg-[#1e1e30] hover:text-white"
-                      >
-                        {link.name}
-                      </Link>
-                    ))}
-                  </div>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <span className="block text-xs text-muted-foreground">Signed in as</span>
+                  <span className="mt-0.5 block truncate text-sm font-semibold">
+                    {user?.email || 'user@example.com'}
+                  </span>
+                  {user?.role && (
+                    <Badge variant="secondary" className="mt-1.5 uppercase tracking-wide">
+                      {user.role}
+                    </Badge>
+                  )}
+                </DropdownMenuLabel>
 
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Sign out
-                  </button>
+                {/* Mobile-only: primary links live in the menu below md */}
+                <div className="md:hidden">
+                  <DropdownMenuSeparator />
+                  {navLinks.map((link) => (
+                    <DropdownMenuItem key={link.href} asChild>
+                      <Link href={link.href}>{link.name}</Link>
+                    </DropdownMenuItem>
+                  ))}
                 </div>
-              )}
-            </div>
 
-            {/* Logout icon button */}
-            <button
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={handleLogout}
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <LogOut aria-hidden="true" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleLogout}
-              title="Logout"
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all duration-200"
+              aria-label="Sign out"
+              title="Sign out"
+              className={cn('h-10 w-10 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-accent-foreground', navFocus)}
             >
-              <LogOut className="w-4 h-4" />
-            </button>
+              <LogOut aria-hidden="true" />
+            </Button>
           </div>
         </div>
       </div>
-    </nav>
+    </header>
   );
 }

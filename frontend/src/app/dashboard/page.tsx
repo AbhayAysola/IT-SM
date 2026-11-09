@@ -5,9 +5,17 @@ import AuthGuard from '@/components/AuthGuard';
 import Navbar from '@/components/Navbar';
 import { api } from '@/lib/api';
 import { User } from '@/types';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { User as UserIcon, Mail, ShieldCheck, Calendar } from 'lucide-react';
 
-export default function DashboardPage() {
+/**
+ * Everything that talks to the API lives here, inside <AuthGuard>, so it only mounts (and only calls
+ * getMe()) once the guard has confirmed a token. Previously the fetch ran in the page component itself,
+ * outside the guard, and fired an unauthenticated request whenever the guard was about to redirect.
+ */
+function DashboardContent() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,92 +27,95 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const details = user
+    ? [
+        { label: 'Full name', value: user.name, icon: UserIcon },
+        { label: 'Email', value: user.email, icon: Mail },
+        { label: 'Role', value: user.role, icon: ShieldCheck },
+        {
+          label: 'Member since',
+          value: new Date(user.createdAt).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          }),
+          icon: Calendar,
+        },
+      ]
+    : [];
+
   return (
-    <AuthGuard>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex flex-col">
-        <Navbar />
+    <div className="flex min-h-screen flex-col bg-background">
+      <Navbar />
 
-        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="mb-8">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Dashboard
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">Your account overview.</p>
-          </div>
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Your account overview.</p>
+        </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center h-40">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : user ? (
-            <div className="rounded-2xl bg-[#13131a] border border-[#1f1f2e] p-6 sm:p-8 shadow-xl">
+        {loading ? (
+          <Card role="status" aria-label="Loading profile">
+            <CardContent className="p-6 sm:p-8">
+              <div className="mb-8 flex items-center gap-4 border-b pb-8">
+                <Skeleton className="h-14 w-14 rounded-lg" />
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-[76px] w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : user ? (
+          <Card>
+            <CardContent className="p-6 sm:p-8">
               {/* Avatar + name */}
-              <div className="flex items-center gap-5 mb-8 pb-8 border-b border-[#1f1f2e]">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-indigo-600/30">
+              <div className="mb-8 flex items-center gap-4 border-b pb-8">
+                <div
+                  aria-hidden="true"
+                  className="flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10 text-2xl font-semibold text-primary"
+                >
                   {user.name[0].toUpperCase()}
                 </div>
                 <div>
-                  <p className="text-xl font-bold text-white">{user.name}</p>
-                  <span className="inline-block mt-1 px-2.5 py-0.5 text-[11px] uppercase font-bold tracking-wider rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+                  <p className="text-xl font-semibold text-foreground">{user.name}</p>
+                  <Badge variant="secondary" className="mt-1 uppercase tracking-wide">
                     {user.role}
-                  </span>
+                  </Badge>
                 </div>
               </div>
 
               {/* Profile details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-[#0d0d14] border border-[#1f1f2e]">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
-                    <UserIcon className="w-4 h-4" />
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {details.map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="min-w-0 rounded-lg border bg-muted/50 p-4">
+                    <dt className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                      {label}
+                    </dt>
+                    <dd className="mt-1.5 break-words text-sm font-medium text-foreground">{value}</dd>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Full Name</p>
-                    <p className="text-sm text-white font-medium mt-0.5">{user.name}</p>
-                  </div>
-                </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
+        ) : (
+          <p className="text-muted-foreground">Could not load user profile.</p>
+        )}
+      </main>
+    </div>
+  );
+}
 
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-[#0d0d14] border border-[#1f1f2e]">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Email</p>
-                    <p className="text-sm text-white font-medium mt-0.5">{user.email}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-[#0d0d14] border border-[#1f1f2e]">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Role</p>
-                    <p className="text-sm text-white font-medium mt-0.5">{user.role}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-[#0d0d14] border border-[#1f1f2e]">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
-                    <Calendar className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Member Since</p>
-                    <p className="text-sm text-white font-medium mt-0.5">
-                      {new Date(user.createdAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-slate-400">Could not load user profile.</p>
-          )}
-        </main>
-      </div>
+export default function DashboardPage() {
+  return (
+    <AuthGuard>
+      <DashboardContent />
     </AuthGuard>
   );
 }
