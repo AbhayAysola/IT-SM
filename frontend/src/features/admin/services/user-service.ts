@@ -27,7 +27,7 @@ export function validateUserInput(input: UserInput): Partial<Record<keyof UserIn
   const errors: Partial<Record<keyof UserInput, string>> = {};
   if (input.name.trim().length < 2) errors.name = 'Enter the full name (at least 2 characters).';
   if (input.name.trim().length > 80) errors.name = 'Name must be 80 characters or fewer.';
-  if (!EMAIL_RE.test(input.email.trim())) errors.email = 'Enter a valid email address, like name@campus.edu.';
+  if (!EMAIL_RE.test(input.email.trim())) errors.email = 'Enter a valid email address, like name@campus.example.';
   if (!input.role) errors.role = 'Choose a role.';
   if (!input.department) errors.department = 'Choose a department.';
   return errors;

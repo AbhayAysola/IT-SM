@@ -126,13 +126,13 @@ test.describe('admin: users', () => {
     await expect(dlg).toBeVisible();
 
     await dlg.getByLabel('Full name').fill('Test Person');
-    await dlg.getByLabel('Email address').fill('priya.natarajan@campus.edu');
+    await dlg.getByLabel('Email address').fill('priya.natarajan@campus.example');
     await dlg.getByLabel('Department').click();
     await page.getByRole('option', { name: 'Finance' }).click();
     await dlg.getByRole('button', { name: 'Add user' }).click();
     await expect(dlg.getByRole('alert')).toContainText('already registered');
 
-    await dlg.getByLabel('Email address').fill('test.person@campus.edu');
+    await dlg.getByLabel('Email address').fill('test.person@campus.example');
     await dlg.getByRole('button', { name: 'Add user' }).click();
     await toast(page, 'Test Person was invited.');
     await expect(dlg).toBeHidden();
@@ -331,7 +331,7 @@ test.describe('admin: technicians', () => {
     await page.getByRole('button', { name: 'Add user' }).first().click();
     const dlg = page.getByRole('dialog');
     await dlg.getByLabel('Full name').fill('Nora Technician');
-    await dlg.getByLabel('Email address').fill('nora.tech@campus.edu');
+    await dlg.getByLabel('Email address').fill('nora.tech@campus.example');
     await dlg.getByLabel('Role').click();
     await page.getByRole('option', { name: 'Technician' }).click();
     await dlg.getByLabel('Department').click();

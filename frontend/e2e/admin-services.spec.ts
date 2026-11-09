@@ -71,8 +71,8 @@ test.describe('storage robustness', () => {
 
 test.describe('users', () => {
   test('duplicate emails are rejected case-insensitively, without an audit entry', async () => {
-    await rejectsWithoutAudit(() => M.users.userService.create({ name: 'Dup', email: 'PRIYA.Natarajan@campus.edu', role: 'EMPLOYEE', department: 'Finance' }), 'DUPLICATE');
-    await rejectsWithoutAudit(() => M.users.userService.update('u-009', { name: 'Elena', email: 'amara.okafor@campus.edu', role: 'EMPLOYEE', department: 'Finance' }), 'DUPLICATE');
+    await rejectsWithoutAudit(() => M.users.userService.create({ name: 'Dup', email: 'PRIYA.Natarajan@campus.example', role: 'EMPLOYEE', department: 'Finance' }), 'DUPLICATE');
+    await rejectsWithoutAudit(() => M.users.userService.update('u-009', { name: 'Elena', email: 'amara.okafor@campus.example', role: 'EMPLOYEE', department: 'Finance' }), 'DUPLICATE');
   });
 
   test('invalid input is rejected by the service, not only by the form', async () => {
@@ -82,7 +82,7 @@ test.describe('users', () => {
   test('the last active administrator cannot be suspended, demoted or deleted', async () => {
     await M.users.userService.setStatus('u-002', 'SUSPENDED');
     await rejectsWithoutAudit(() => M.users.userService.setStatus('u-001', 'SUSPENDED'), 'CONFLICT', /only active administrator/);
-    await rejectsWithoutAudit(() => M.users.userService.update('u-001', { name: 'Amara Okafor', email: 'amara.okafor@campus.edu', role: 'EMPLOYEE', department: 'Information Technology' }), 'CONFLICT');
+    await rejectsWithoutAudit(() => M.users.userService.update('u-001', { name: 'Amara Okafor', email: 'amara.okafor@campus.example', role: 'EMPLOYEE', department: 'Information Technology' }), 'CONFLICT');
     await rejectsWithoutAudit(() => M.users.userService.remove('u-001'), 'CONFLICT');
   });
 
@@ -97,7 +97,7 @@ test.describe('users', () => {
   });
 
   test('updates record only the changed fields', async () => {
-    await M.users.userService.update('u-009', { name: 'Elena Petrova', email: 'elena.petrova@campus.edu', role: 'EMPLOYEE', department: 'Library' });
+    await M.users.userService.update('u-009', { name: 'Elena Petrova', email: 'elena.petrova@campus.example', role: 'EMPLOYEE', department: 'Library' });
     expect(auditEntries()[0]).toMatchObject({ action: 'UPDATE', before: { department: 'Finance' }, after: { department: 'Library' } });
     expect(Object.keys(auditEntries()[0].after!)).toEqual(['department']);
   });
