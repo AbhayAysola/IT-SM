@@ -99,6 +99,8 @@ jobs:
           REQUIRED = {
               'com.itsm.config.ApplicationStartupIntegrationTest': 3,
               'com.itsm.audit.AuditPersistenceIntegrationTest': 1,
+              'com.itsm.admin.category.CategoryAdminIntegrationTest': 1,
+              'com.itsm.admin.itservice.ItServiceAdminIntegrationTest': 1,
           }
           total = skipped = 0
           executed = {}

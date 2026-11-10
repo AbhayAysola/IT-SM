@@ -58,14 +58,31 @@ the app at an existing one.
 because it has no foreign keys and every later P1 change publishes audit events. `V10` stores the actor by id/role/job
 name (no email) and adds a stable `event_id`, an actor-shape CHECK and the append-only triggers.
 
+**Merged:** `V11__p1_incident_categories.sql` and `V12__p1_it_services.sql` (replacing the old drafts of the same
+numbers). Differences from those drafts:
+
+* `V11` keeps keywords in a child table `incident_category_keywords` (not a `TEXT[]` column) so PostgreSQL can enforce
+  keyword rules: primary key `(category_id, keyword)` = no duplicate within a category; a CHECK = stored normalised
+  (trimmed, lower-case, single spaces, 2-30 chars of `[a-z0-9 '&./+-]`); a partial unique index on `keyword WHERE
+  category_active` = no keyword shared by two active categories. `category_active` mirrors the owner's `active` through
+  an insert trigger and a composite FK `(category_id, category_active) -> incident_categories (id, active) ON UPDATE
+  CASCADE`, so deactivating a category frees its keywords and reactivating one that collides fails, even under races.
+  Also: case-insensitive unique `lower(name)`, unique immutable `code`, `version` (optimistic locking),
+  `created_at`/`updated_at`, and the 9 specification categories as seed data.
+* `V12` adds case-insensitive unique `lower(name)`, `version`, timestamps, normalisation CHECKs, an index on
+  `lower(owner_team)`, and a trigger on `service_dependencies` that rejects cycles (recursive walk under
+  `pg_advisory_xact_lock(7310002)`, the same key the application takes; SQLSTATE 23000 -> 409). Self-dependency (CHECK)
+  and duplicate edges (primary key) were already in the draft. Edges are direct only.
+* Neither table is ever deleted from; retiring a row means `active = FALSE`, so incident references stay valid.
+
 **The drafts below keep their old numbers and are NOT renumbered yet; those numbers are provisional.** The planned P1
 sequence is the order the branches merge, so that version order equals merge order (Flyway `out-of-order` stays off):
 
 | Version | Migration | Status |
 |---|---|---|
 | `V10` | audit events | merged |
-| `V11` | incident categories | draft, renumber on its branch |
-| `V12` | IT services | draft, renumber on its branch |
+| `V11` | incident categories | merged |
+| `V12` | IT services | merged |
 | `V13` | SLA policies | draft, renumber on its branch |
 | `V14` | assignment settings | draft, renumber on its branch |
 | `V15` | user extensions | draft, renumber on its branch |
@@ -83,8 +100,6 @@ error: one `CREATE INDEX` per statement) and a foreign key to a table created la
 | File | Creates |
 |---|---|
 | `V10__p1_extend_users.sql` | `active, token_version, failed_logins, locked_until, department, phone, updated_at`; `USER` -> `EMPLOYEE`; role `CHECK` |
-| `V11__p1_incident_categories.sql` | `incident_categories` + the 9 specification categories |
-| `V12__p1_it_services.sql` | `it_services`, `service_dependencies` |
 | `V13__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` |
 | `V14__p1_sla_policies.sql` | `sla_policies` (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15+) + the specification defaults |
 | `V15__p1_assignment_settings.sql` | singleton `assignment_settings` (default `LOAD_BASED`), category overrides |
@@ -103,7 +118,8 @@ CI now runs the main-location part of it on every PR (`Backend / Flyway on a cle
 and the Spring startup test boots on a clean PostgreSQL 16 with `ddl-auto: validate`.
 
 > **The `/m/drafts` mount below no longer works as written:** the remaining drafts still carry the pre-renumbering
-> `V10`-`V15` numbers, which now collide with the merged `V10__p1_audit_events.sql`. Validate a draft only after
+> numbers (`V10`, `V13`-`V15`): `V10` collides with the merged audit migration and the others do not match the planned
+> sequence. Validate a draft only after
 > renumbering it as described in section 3.
 
 ```bash
