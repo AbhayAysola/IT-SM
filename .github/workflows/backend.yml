@@ -115,6 +115,9 @@ jobs:
               'com.itsm.migration.TechnicianProfilesMigrationIntegrationTest': 1,
               'com.itsm.admin.technician.TechnicianAdminIntegrationTest': 1,
               'com.itsm.admin.technician.TechnicianDirectoryIntegrationTest': 1,
+              'com.itsm.integration.ProviderFailureSemanticsIntegrationTest': 1,
+              'com.itsm.integration.RouteAuthorizationMatrixIntegrationTest': 1,
+              'com.itsm.integration.ListQueryCountIntegrationTest': 1,
           }
           total = skipped = 0
           executed = {}

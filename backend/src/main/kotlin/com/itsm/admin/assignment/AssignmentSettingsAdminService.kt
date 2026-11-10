@@ -9,9 +9,7 @@ import com.itsm.common.error.ItsmException
 import com.itsm.common.event.AuditActor
 import com.itsm.common.event.AuditableEvent
 import com.itsm.common.security.CurrentUserProvider
-import com.itsm.common.spi.AssignmentStrategyCatalog
 import com.itsm.common.spi.AuditPublisher
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -28,13 +26,13 @@ import java.time.Instant
 class AssignmentSettingsAdminService(
     private val settings: AssignmentSettingsRepository,
     private val categories: CategoryRepository,
-    private val strategyCatalog: ObjectProvider<AssignmentStrategyCatalog>,
+    private val strategyCatalog: StrategyCatalogGateway,
     private val audit: AuditPublisher,
     private val currentUser: CurrentUserProvider
 ) {
 
     @Transactional(readOnly = true)
-    fun get(): AssignmentSettingsResponse = toResponse(load())
+    fun get(): AssignmentSettingsResponse = toResponse(load(), strategyCatalog.inspect())
 
     @Transactional
     fun update(request: UpdateAssignmentSettingsRequest): AssignmentSettingsResponse {
@@ -46,7 +44,7 @@ class AssignmentSettingsAdminService(
         AssignmentSettingsRules.workload(workload)
         val overrides = AssignmentSettingsRules.overrides(request.categoryOverrides)
 
-        requireRegistered(strategy, overrides)
+        val registered = StrategyCatalogState.Available(requireRegistered(strategy, overrides))
         requireCategoriesExist(overrides.keys)
 
         val changed = buildList {
@@ -54,7 +52,7 @@ class AssignmentSettingsAdminService(
             if (workload != current.defaultMaxWorkload) add("defaultMaxWorkload")
             if (overrides != current.categoryOverrides) add("categoryOverrides")
         }
-        if (changed.isEmpty()) return toResponse(current)
+        if (changed.isEmpty()) return toResponse(current, registered)
 
         val before = Snapshot(current.activeStrategy, current.defaultMaxWorkload, LinkedHashMap(current.categoryOverrides))
         current.activeStrategy = strategy
@@ -75,19 +73,27 @@ class AssignmentSettingsAdminService(
                 metadata = auditMetadata(changed, before, saved)
             )
         )
-        return toResponse(saved)
+        return toResponse(saved, registered)
     }
 
     // --- rules -------------------------------------------------------------------------------------------------------
 
-    /** 503 without P3's catalog (never trust an unverified key); 400 for a key the catalog does not know. */
-    private fun requireRegistered(strategy: String, overrides: Map<Long, String>) {
-        val catalog = strategyCatalog.getIfAvailable() ?: throw ItsmException(
-            ErrorCode.SERVICE_UNAVAILABLE,
-            "Assignment settings cannot be changed right now: the assignment strategy catalog is not available, " +
-                "so strategy keys cannot be verified. Try again later."
-        )
-        val registered = catalog.registeredKeys()
+    /**
+     * Fails closed. ABSENT -> 503 with a specific message (never trust an unverified key). FAILED -> the catalog's own
+     * exception, rethrown so the global handler maps it generically (503 for a data-access or transaction failure, 500
+     * otherwise) without a message. AVAILABLE -> 400 for a key the catalog does not know. In every failing case nothing
+     * has been written yet, so the transaction rolls back with no audit row.
+     */
+    private fun requireRegistered(strategy: String, overrides: Map<Long, String>): Set<String> {
+        val registered = when (val state = strategyCatalog.inspect()) {
+            is StrategyCatalogState.Available -> state.keys
+            is StrategyCatalogState.Failed -> throw state.cause
+            StrategyCatalogState.Absent -> throw ItsmException(
+                ErrorCode.SERVICE_UNAVAILABLE,
+                "Assignment settings cannot be changed right now: the assignment strategy catalog is not available, " +
+                    "so strategy keys cannot be verified. Try again later."
+            )
+        }
         val errors = buildList {
             if (strategy !in registered) add(FieldError("activeStrategy", "'$strategy' is not a registered strategy"))
             overrides.entries.forEachIndexed { i, (_, key) ->
@@ -95,6 +101,7 @@ class AssignmentSettingsAdminService(
             }
         }
         if (errors.isNotEmpty()) throw InvalidInput("Unregistered assignment strategy. Registered: ${registered.sorted()}", errors)
+        return registered
     }
 
     private fun requireCategoriesExist(ids: Set<Long>) {
@@ -113,7 +120,7 @@ class AssignmentSettingsAdminService(
     private fun load(): AssignmentSettingsEntity = settings.findById(AssignmentSettingsEntity.SINGLETON_ID)
         .orElseThrow { IllegalStateException("The assignment settings row is missing (migration V14 seeds it)") }
 
-    private fun toResponse(s: AssignmentSettingsEntity): AssignmentSettingsResponse {
+    private fun toResponse(s: AssignmentSettingsEntity, catalog: StrategyCatalogState): AssignmentSettingsResponse {
         val names = if (s.categoryOverrides.isEmpty()) emptyMap()
         else categories.findAllById(s.categoryOverrides.keys).associateBy { it.id }
         val overrides = s.categoryOverrides.map { (categoryId, strategy) ->
@@ -122,7 +129,8 @@ class AssignmentSettingsAdminService(
         }.sortedBy { it.categoryName.lowercase() }
         return AssignmentSettingsResponse(
             activeStrategy = s.activeStrategy, defaultMaxWorkload = s.defaultMaxWorkload, categoryOverrides = overrides,
-            availableStrategies = strategyCatalog.getIfAvailable()?.registeredKeys()?.sorted(),
+            availableStrategies = (catalog as? StrategyCatalogState.Available)?.keys?.sorted(),
+            strategyCatalogStatus = catalog.status,
             version = s.version, updatedAt = s.updatedAt, updatedByUserId = s.updatedBy
         )
     }

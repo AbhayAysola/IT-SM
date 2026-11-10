@@ -119,6 +119,7 @@ class AssignmentSettingsIntegrationTest {
             .andExpect(jsonPath("$.categoryOverrides").isEmpty)
             .andExpect(jsonPath("$.availableStrategies[0]").value("LOAD_BASED"))
             .andExpect(jsonPath("$.availableStrategies.length()").value(3))
+            .andExpect(jsonPath("$.strategyCatalogStatus").value("AVAILABLE"))
     }
 
     // --- authorization ---------------------------------------------------------------------------------------------

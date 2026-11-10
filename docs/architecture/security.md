@@ -7,6 +7,25 @@ migration `V15` mapped legacy `USER` rows to `EMPLOYEE`, and `Role.fromStored` s
 The permission model (`RolePermissions`) is unchanged: EMPLOYEE reports and follows its own incidents, TECHNICIAN works
 assigned incidents, ADMIN holds every permission (`USER_MANAGE`, `CATALOG_MANAGE`, `SLA_CONFIGURE`, ...).
 
+## Where authorization is decided (B9)
+
+Two layers, both required to pass:
+
+1. **Filter chain (`SecurityConfig`)**: URL rules for every admin area, mirroring the controller permissions
+   (`/api/admin/users|technicians` -> `USER_MANAGE`, `categories|services` -> `CATALOG_MANAGE`, `sla-policies` ->
+   `SLA_CONFIGURE`, `assignment-settings` -> `ASSIGNMENT_CONFIGURE`, `audit-events` -> `AUDIT_VIEW`; any other
+   `/api/admin/**` path is ADMIN-only, so a new admin controller fails closed until it is listed).
+2. **Method security (`@PreAuthorize` on each controller)**: unchanged, the fine-grained check.
+
+The URL layer exists because `@PreAuthorize` runs after the request body is bound and validated: with the annotation alone,
+an authenticated EMPLOYEE or TECHNICIAN posting an invalid body to an admin endpoint received 400 with field-level
+validation messages rather than 403. `RouteAuthorizationMatrixIntegrationTest` discovers every `/api` route at runtime and
+fails if a protected route answers an anonymous caller with anything but 401, or a non-admin with anything but 403 (even
+with an empty body). It also checks the specific permission, not just refusal: every admin handler's `@PreAuthorize` must name
+exactly its area's permission, a principal holding only that permission must reach every route of the area with a valid
+request, and a principal holding only any other admin permission must get 403. A future endpoint, or a route wired to the
+wrong permission, fails the build. Add new admin permissions to both layers, and a probe for each new route to the test.
+
 ## Public registration
 
 `POST /api/auth/register {email, password, name}` ALWAYS creates an `EMPLOYEE`. The DTO has no role field, and unknown JSON
