@@ -93,7 +93,7 @@ numbers). Differences from those drafts:
   checks them against P3's `AssignmentStrategyCatalog`. The seed `LOAD_BASED`/5 is the default from the earlier draft and
   the integration guide; it is **not verified** against P3 (see "Assignment settings" in the integration guide).
 
-**The drafts below keep their old numbers and are NOT renumbered yet; those numbers are provisional.** The planned P1
+**`V10`-`V15` are merged; the one remaining draft already carries its final number (`V16`).** The planned P1
 sequence is the order the branches merge, so that version order equals merge order (Flyway `out-of-order` stays off):
 
 | Version | Migration | Status |
@@ -103,10 +103,11 @@ sequence is the order the branches merge, so that version order equals merge ord
 | `V12` | IT services | merged |
 | `V13` | SLA policies | merged |
 | `V14` | assignment settings | merged |
-| `V15` | user extensions | draft, renumber on its branch |
-| `V16` | technician profiles | draft, renumber on its branch |
+| `V15` | user extensions (`active`, `token_version`, `version`, `updated_at`, canonical roles, unique lower-case email) | merged on `feat/p1-admin-backend` (B5) |
+| `V16` | technician profiles (B6) | draft, file already renamed `V16__...`; moves into `src/main/resources` with B6 |
+| `V17`+ | refresh tokens (future, needs frontend coordination) | not started; must not reuse `V16` |
 
-Each draft is renumbered when its own branch moves it across. Do not apply a draft under its old number.
+Drafts live outside `src/main/resources` and are applied only when their branch moves them across. Within P1's block `V10-V19`, `V18` and `V19` stay free.
 
 ### Remaining drafts
 
@@ -117,8 +118,20 @@ error: one `CREATE INDEX` per statement) and a foreign key to a table created la
 
 | File | Creates |
 |---|---|
-| `V10__p1_extend_users.sql` | `active, token_version, failed_logins, locked_until, department, phone, updated_at`; `USER` -> `EMPLOYEE`; role `CHECK` (to be renumbered `V15`) |
-| `V13__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` (to be renumbered `V16`) |
+| `V16__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` (B6; renamed from `V13`) |
+
+### V15 (users) — what it does and what it deliberately leaves out
+
+* Aborts (RAISE EXCEPTION, whole migration rolls back) if two users share an email differing only by case/whitespace,
+  or if a role is not `EMPLOYEE`/`TECHNICIAN`/`ADMIN`/legacy `USER` (after trim + upper-case). Nothing is merged or deleted:
+  resolve the data by hand and re-run. Covered by `UsersMigrationIntegrationTest`.
+* Maps `USER` -> `EMPLOYEE`, trims/lower-cases emails, adds `active` (default true), `token_version` (0), `version` (0,
+  optimistic lock) and `updated_at`; CHECKs for role, normalised email and `token_version >= 0`; unique index on `lower(email)`.
+* Default role is now `EMPLOYEE`. Existing accounts stay active. JWTs issued before this release (subject = email, no
+  version claim) are rejected, so every user signs in once more after the deploy.
+* Dropped from the old draft: `failed_logins`, `locked_until`, `department`, `phone` (no lockout feature or consumer yet).
+* The old `docs/migrations/drafts/V10__p1_extend_users.sql` was removed; The B6 draft was renamed `V13__...` -> `V16__...`
+  during the B5 review.
 
 Design notes
 * Audit rows carry no foreign keys on purpose (they must outlive users and incident rows). Append-only

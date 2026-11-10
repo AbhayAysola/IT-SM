@@ -27,7 +27,7 @@ class AdminApiTestSupport(
     fun caller(role: Role): Caller {
         val email = "${role.name.lowercase()}-${UUID.randomUUID()}@campus.example"
         val user = users.save(UserEntity(email = email, password = "not-used", name = "Test ${role.name}", role = role.name))
-        return Caller(user.id, email, role, "Bearer " + jwt.generateToken(email))
+        return Caller(user.id, email, role, "Bearer " + jwt.generateToken(user.id, user.tokenVersion))
     }
 
     /** Runs [block] with [caller] as the authenticated principal, for calling services directly. */

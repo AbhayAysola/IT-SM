@@ -13,7 +13,12 @@ import com.itsm.common.security.CurrentUser
  * inside another module. "Provided by" says who writes the implementation bean.
  */
 
-/** Provided by P1 (access). Users and technician profiles. */
+/**
+ * Provided by P1 (access). Users and technician profiles.
+ *
+ * Until B6 lands, `findTechnician` is null and `listAvailableTechnicians` / `escalationChain` are empty because there is
+ * NO profile data, not because there are no technicians (see `JpaUserDirectory.TECHNICIAN_PROFILES_AVAILABLE`).
+ */
 interface UserDirectory {
     fun findById(userId: Long): UserSummary?
     fun requireById(userId: Long): UserSummary = findById(userId) ?: throw ResourceNotFound("User", userId)

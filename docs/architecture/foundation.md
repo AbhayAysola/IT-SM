@@ -185,26 +185,21 @@ Documented here so teammates can rely on the direction:
 * Public registration creates EMPLOYEE only; the `role` claim and a `token_version` are added to the JWT
   for revocation; login lockout; the secret moves out of `application.yml`.
 
-## 8. Startup cycle fix in `SecurityConfig` (`@Lazy`)
+## 8. Startup cycle in `SecurityConfig` (resolved in B5)
 
-The boilerplate on `main` never started: `JwtAuthFilter` needs the `userDetailsService` bean, which is
-declared *inside* `SecurityConfig`, and `SecurityConfig`'s constructor needs `JwtAuthFilter`. That is a
-constructor cycle, which Spring cannot resolve (`APPLICATION FAILED TO START ... form a cycle`).
-`@Lazy` on the `jwtAuthFilter` constructor parameter injects a proxy, so `SecurityConfig` can be built
-first and the real filter is created on first use. `JwtAuthFilter` itself is unchanged.
+The boilerplate on `main` never started: `JwtAuthFilter` needed the `userDetailsService` bean, declared *inside*
+`SecurityConfig`, whose constructor needed `JwtAuthFilter` (a constructor cycle). This branch first worked around it with
+`@Lazy` on the filter parameter, which injects a CGLIB proxy (and logs "Unable to proxy interface-implementing method ...
+final" warnings, because `OncePerRequestFilter.doFilter/init` are final). B5 made `JwtAuthFilter` depend on `UserRepository`
+directly, which removed the cycle, so `@Lazy` was dropped and the real filter bean is injected.
 
-Guarded by `SecurityWiringContextTest` (no Docker needed) and `ApplicationStartupIntegrationTest`
-(full Spring Boot startup on PostgreSQL 16 via Testcontainers). The clean fix (moving
-`userDetailsService`/`passwordEncoder` into their own configuration class) belongs to auth hardening.
+Guarded by `SecurityWiringContextTest` (no Docker needed) and `ApplicationStartupIntegrationTest`.
 
-## 9. Known pre-existing issues this branch did not fix
+## 9. Known pre-existing issues (status after B5)
 
-* `POST /api/auth/register` is open and assigns `role = 'USER'`. (Duplicate emails now return
-  409 `DUPLICATE_RESOURCE`; a concurrent duplicate that slips past the check is caught by the unique
-  constraint and also maps to 409.) Emails are not normalised, so `A@x.com` and `a@x.com` are distinct.
-* `JwtAuthFilter` throws (-> 500) for a token whose user no longer exists, and `Role.fromStored`
-  throws for an unknown stored role. Both are auth-hardening work (the filter is out of scope here).
-* The JWT secret is hardcoded in `application.yml`.
+All three issues originally listed here were fixed by B5: public registration now always creates an `EMPLOYEE` with
+normalised, case-insensitively unique emails; `JwtAuthFilter` no longer throws for deleted users or unknown roles (401; a
+database outage is 503); and the JWT secret comes from `JWT_SECRET` with no default. See [security.md](security.md).
 
 ## 10. Running the build and tests
 

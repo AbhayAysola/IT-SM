@@ -34,7 +34,7 @@ Do not write a second implementation of someone else's SPI "for testing" in `src
 `AuditPublisher` is fully implemented and persists events (see foundation.md section 6): publish inside your
 `@Transactional` method and the row is written with your change, or not at all if it rolls back. `CategoryCatalog` and
 `ServiceCatalog`, `SlaPolicyProvider` and `AssignmentSettingsProvider` are implemented (see "Category and service catalogs"
-and "SLA policies and assignment settings" below). The rest of P1's implementations (users, technician profiles) come last.
+and "SLA policies and assignment settings" below). `UserDirectory` is implemented for users (see "Users, authentication and roles"); technician-profile methods return "no data" until B6.
 Until a bean exists, **a `@Service` that constructor-injects it will stop the application from starting**.
 So for now:
 
@@ -334,6 +334,23 @@ added/removed/changed as category ids plus counts). Rejected requests, 503s and 
 4. **P4:** should the backend enforce the cross-priority rule (more urgent targets never looser) per scope? It is a UI-only rule today.
 5. **P4:** confirm that resolving an inactive service against its active policies, and 422 when nothing applies, suit SLA tracking.
 6. **P1 limit to confirm:** `defaultMaxWorkload` is capped at 100 (the SPI only says positive); say if another limit is wanted.
+
+## Users, authentication and roles (P1, `V15`)
+
+Full detail: [security.md](security.md). What other modules need:
+
+* **Identity**: inject `CurrentUserProvider` (`current()` -> `CurrentUser(id, email, role)`). Never read the role from a token
+  or request. The role is always the stored one.
+* **`UserDirectory`** (`JpaUserDirectory`): `findById`/`requireById`, `listAdmins` (active ADMINs only) return immutable
+  `UserSummary(id, email, name, role, active)`. **`findTechnician`, `listAvailableTechnicians` and `escalationChain` return
+  null / empty until B6 adds technician profiles — that means "no profile data", not "no technicians".
+  `JpaUserDirectory.TECHNICIAN_PROFILES_AVAILABLE` is `false` until then (the SPI cannot express it) and the first call logs a
+  WARN. P3: treat an empty technician list as "cannot assign" while it is false.** Inactive users are
+  still returned by `findById` (check `active`).
+* **Authorization**: `@PreAuthorize("hasAuthority('<PERMISSION>')")`; permissions are unchanged. Roles: `EMPLOYEE`,
+  `TECHNICIAN`, `ADMIN`, nothing else.
+* **Tests**: `AdminApiTestSupport.caller(role)` inserts a user and mints a valid token (`generateToken(userId, tokenVersion)`).
+  Test emails must be lower-case (DB CHECK). The test JVM gets `JWT_SECRET` from `build.gradle.kts`.
 
 ## Recipes
 

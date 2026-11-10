@@ -22,7 +22,7 @@ backend:
   service:
     port: 8080
   jwt:
-    secret: change-me-in-production-minimum-32-chars-required
+    secret: ""   # REQUIRED: >= 32 bytes of random secret (set via --set / a secret manager); the chart fails without it
     expiration: 86400000
 
 postgres:

@@ -250,8 +250,8 @@ curl -X POST http://localhost:8080/api/orders \
 
 | Property | Default | Description |
 |---|---|---|
-| `app.jwt.secret` | `your-256-bit-secret...` | **Change in production** |
-| `app.jwt.expiration` | `86400000` | Token TTL (ms), default 24h |
+| `app.jwt.secret` (env `JWT_SECRET`) | none | **Required**: >= 32 bytes of random secret; startup fails if missing, short or a placeholder. See `docs/architecture/security.md` |
+| `app.jwt.expiration` (env `JWT_EXPIRATION`) | `86400000` | Token TTL (ms), default 24h |
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5432/itsm` | PostgreSQL URL |
 | `spring.data.redis.host` | `localhost` | Redis host |
 | `spring.rabbitmq.host` | `localhost` | RabbitMQ host |

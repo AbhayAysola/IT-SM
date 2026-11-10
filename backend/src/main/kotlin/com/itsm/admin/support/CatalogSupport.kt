@@ -77,5 +77,8 @@ class AdvisoryLocks(private val entityManager: EntityManager) {
 
         /** Service dependency graph and activation state. MUST match the key in V12's cycle trigger. */
         const val SERVICE_GRAPH = 7310002L
+
+        /** Set of active ADMIN accounts: admin bootstrap, role change, deactivation ("never zero active admins"). */
+        const val ADMIN_ACCOUNTS = 7310003L
     }
 }

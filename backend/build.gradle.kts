@@ -56,6 +56,8 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // The application has no default JWT secret (it refuses to start without one); tests get a throwaway one.
+    environment("JWT_SECRET", "test-only-jwt-signing-secret-0123456789-abcdefXYZ")
     // Failures must be diagnosable from the CI log alone: full stack traces, and every non-passing test named.
     testLogging {
         events("failed", "skipped")

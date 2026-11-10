@@ -186,7 +186,7 @@ class AuditPersistenceIntegrationTest {
     }
 
     @Test fun `the audit row and the business change commit or roll back together`() {
-        val email = "atomic-${uniqueId()}@campus.example"
+        val email = "atomic-${uniqueId()}@campus.example".lowercase()   // V15 stores emails lower-case
         val id = uniqueId()
         fun usersWith(e: String) = jdbc.queryForObject("select count(*) from users where email = ?", Long::class.java, e)
         fun createUser() = jdbc.update("insert into users (email, password, name) values (?, 'x', 'N')", email)
@@ -265,7 +265,7 @@ class AuditPersistenceIntegrationTest {
 
     @Test fun `an UPDATE inside a larger transaction aborts that whole transaction`() {
         val id = uniqueId()
-        val email = "guard-${uniqueId()}@campus.example"
+        val email = "guard-${uniqueId()}@campus.example".lowercase()
         tx.executeWithoutResult { publisher.publish(userEvent(id)) }
         assertThrows<DataAccessException> {
             tx.executeWithoutResult {

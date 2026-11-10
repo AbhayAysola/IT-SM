@@ -21,7 +21,8 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc
 /**
  * Regression guard for the pre-existing JwtAuthFilter <-> SecurityConfig constructor cycle
  * (see docs/architecture/foundation.md section 8). Wires the REAL security beans, no database,
- * no Docker. Without `@Lazy` in SecurityConfig this context fails to load.
+ * no Docker. The filter must depend only on UserRepository/JwtService/ObjectMapper (not on beans declared in SecurityConfig), otherwise this
+ * context fails to load with a cycle, which is what the former `@Lazy` workaround hid.
  */
 @SpringJUnitWebConfig(SecurityWiringContextTest.Config::class)
 @TestPropertySource(properties = ["app.jwt.secret=test-secret-test-secret-test-secret-123456", "app.jwt.expiration=60000"])
