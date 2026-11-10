@@ -24,10 +24,13 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `AssignmentSettingsProvider` | P1 (`JpaAssignmentSettingsProvider`, implemented) | P3 |
 | `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction; read API: [audit-retrieval.md](audit-retrieval.md)) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
-| `TechnicianWorkloadProvider` | **P3 only** | P1 (admin technician views), P4 (SLA risk) |
+| `TechnicianWorkloadProvider` | **P3 only** (no bean exists yet) | P4 (SLA risk); P1 admin technician views are an intention only, no P1 code uses it today |
 | `AssignmentStrategyCatalog` | **P3 only** (no bean exists yet) | P1 (validates configured strategy keys; looked up lazily, see "Assignment settings") |
 
 Do not write a second implementation of someone else's SPI "for testing" in `src/main`; mock it in tests.
+
+The full contract matrix (provider status, availability and failure semantics, HTTP surface, per-team handoff) is in
+[p1-contract-matrix.md](p1-contract-matrix.md).
 
 ### Status and how to work before P1's implementations land
 
@@ -260,9 +263,26 @@ P3 owns and which has **no bean yet**. P1 injects it as `ObjectProvider` so the 
 * reads (`GET`, `current()`) always work and return what is persisted;
 * a **write answers 503 `SERVICE_UNAVAILABLE`** while the catalog is unavailable: an unverified key is never accepted;
 * once P3's bean exists no P1 change is needed; keys the catalog does not register are rejected with 400.
-`GET` includes `availableStrategies`: **`null` means P3's catalog is unavailable** (writes will answer 503), whereas an empty
-list `[]` would mean a catalog is available but registers no strategy (every write would then be rejected with 400). Treat
-`null` as "cannot configure right now", never as "no strategies exist".
+`GET` reports the catalog in **three states** through `strategyCatalogStatus` (additive field; `availableStrategies` is unchanged):
+
+| `strategyCatalogStatus` | Meaning | `availableStrategies` | A write (`PUT`) |
+|---|---|---|---|
+| `AVAILABLE` | the catalog answered | its keys, sorted; **`[]` if it registers no strategy** | validated against the keys: unknown key 400 |
+| `ABSENT` | no catalog bean exists (P3 not deployed) | `null` | **503** `SERVICE_UNAVAILABLE` with a specific message |
+| `FAILED` | a bean exists but threw while being asked | `null` | **generic 500 or 503** (503 for a data-access or transaction failure, 500 otherwise); never a message from the failure |
+
+`availableStrategies` is non-null exactly when the status is `AVAILABLE`. `null` therefore never means "no strategies
+exist" (that is `[]`); it means "cannot be verified right now", and `strategyCatalogStatus` says whether that is permanent
+until P3 deploys (`ABSENT`) or worth retrying (`FAILED`). Neither state ever permits a write. A `FAILED` catalog never makes
+the `GET` itself fail (the stored configuration is served), and a failed write saves nothing and writes no audit row.
+
+**Why a failing catalog cannot poison the read.** `GET` runs in a read-only transaction. A P3 catalog backed by a database
+would *join* it, and an exception leaving a joined transactional bean marks the shared transaction rollback-only, so the
+`GET` would fail at commit with `UnexpectedRollbackException` even though P1 caught the exception (reproduced in
+`ProviderFailureSemanticsIntegrationTest` with a `@Transactional` catalog before the fix). P1 therefore asks the catalog
+through `StrategyCatalogGateway`, a separate bean with `Propagation.NOT_SUPPORTED`: the caller's transaction is suspended
+for the call, so a transactional catalog runs and rolls back in a transaction of its own. P3 does not need to do anything.
+Cost: the caller's connection stays checked out while the catalog runs.
 
 **`LOAD_BASED` is seeded but unverified.** `V14` seeds `LOAD_BASED` / workload 5 (taken from the earlier draft and from the
 promise made to P3 above). P3 has not registered it, because P3 has no code on this branch. If P3 registers a different key
@@ -279,7 +299,7 @@ Until then the first admin write must pick a key P3 registers.
 | `POST /api/admin/sla-policies` `{serviceId?, priority, responseMinutes, resolutionMinutes, warningThresholdPct?}` | `SLA_CONFIGURE` | 201 + `Location`; omit `serviceId` for the global policy |
 | `PUT /api/admin/sla-policies/{id}` `{responseMinutes, resolutionMinutes, warningThresholdPct?, version}` | `SLA_CONFIGURE` | 200; service and priority cannot change; omitted threshold keeps the current value |
 | `POST /api/admin/sla-policies/{id}/activate` / `deactivate` | `SLA_CONFIGURE` | 200; repeating one is a no-op. No DELETE: policies are kept for history. Deactivating a global policy may leave a priority without an effective policy (see resolution) |
-| `GET /api/admin/assignment-settings` | `ASSIGNMENT_CONFIGURE` | 200 `{activeStrategy, defaultMaxWorkload, categoryOverrides[{categoryId, categoryName, categoryActive, strategy}], availableStrategies, version, updatedAt, updatedByUserId}` |
+| `GET /api/admin/assignment-settings` | `ASSIGNMENT_CONFIGURE` | 200 `{activeStrategy, defaultMaxWorkload, categoryOverrides[{categoryId, categoryName, categoryActive, strategy}], availableStrategies (string[] or null), strategyCatalogStatus (AVAILABLE, ABSENT or FAILED), version, updatedAt, updatedByUserId}` |
 | `PUT /api/admin/assignment-settings` `{activeStrategy, defaultMaxWorkload, categoryOverrides[{categoryId, strategy}], version}` | `ASSIGNMENT_CONFIGURE` | 200; replaces the whole configuration (overrides not listed are removed) |
 
 `SlaPolicyResponse` = `id, service{id,name,active} or null, priority, responseMinutes, resolutionMinutes,

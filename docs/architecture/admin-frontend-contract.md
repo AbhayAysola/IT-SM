@@ -20,9 +20,8 @@ Conventions common to all rows:
     re-check their invariants inside it; SLA policies rely on the V13 unique indexes. A concurrent edit still loses
     cleanly (entities carry `@Version`, a lost race is a 409). The one consequence: a toggle acts on whatever the stored
     state is *now*, not on the snapshot the admin saw.
-* Every admin permission is held by ADMIN only; reads included. Anonymous → 401, non-admin → 403. **Updated backend contract (B9,
-  not yet merged or deployed):** the 403 is decided at the URL layer *before* the body is read, so a non-admin sending an
-  invalid body gets 403, not a 400 with validation detail. On the current base the same request answers 400. The frontend
+* Every admin permission is held by ADMIN only; reads included. Anonymous → 401, non-admin → 403. **Backend contract since B9:** the 403 is decided at the URL layer *before* the body is read, so a non-admin sending an
+  invalid body gets 403, not a 400 with validation detail. Before B9 the same request answered 400. The frontend
   treats both as "no access" and never shows a validation message from a refused call.
 * None of these endpoints has DELETE: records are deactivated. Every mutation below publishes a persistent audit event
   (B2). The frontend never writes audit records.
@@ -107,7 +106,7 @@ The profile-creation picker uses only these capabilities: `GET /users?role=TECHN
 
 `AssignmentSettings = {activeStrategy, defaultMaxWorkload, categoryOverrides:[{categoryId, categoryName, categoryActive, strategy}], strategyCatalogStatus: AVAILABLE|ABSENT|FAILED, availableStrategies: string[]|null, version, updatedAt, updatedByUserId|null}`.
 
-**The three catalog states** (`strategyCatalogStatus` is the source of truth; `availableStrategies` is an array exactly when it is `AVAILABLE`). This is the **updated backend contract (B9), not yet merged or deployed**; a backend without the field is read from the list alone (array → AVAILABLE, null → ABSENT), and a response whose status and list contradict each other is refused.
+**The three catalog states** (`strategyCatalogStatus` is the source of truth; `availableStrategies` is an array exactly when it is `AVAILABLE`). This is the **backend contract since B9** (merged here, not yet deployed); a backend without the field is read from the list alone (array → AVAILABLE, null → ABSENT), and a response whose status and list contradict each other is refused.
 
 | Status | `availableStrategies` | `PUT` | The page |
 |---|---|---|---|
@@ -160,6 +159,6 @@ Forms keep what was typed after any failure. Nothing updates optimistically: lis
 
 1. There is no "users without a technician profile" filter. B8 identifies profiles through the technicians list with the same search term, which is complete up to 100 matches per search; beyond that the server's 409 is the safety net.
 2. `GET /sla-policies?search=` filters by service name, so it can never return global policies (documented and surfaced in the UI).
-3. The B9 matrix still says every update "must send the one last read". That is true of users and technicians, and of `PUT` on the catalog resources, but **not** of catalog activate/deactivate, which are version-less idempotent target-state operations. The matrix should say so.
+3. ~~The B9 matrix said every update "must send the one last read".~~ Resolved in the B8+B9 merge: the matrix now states that catalog activate/deactivate are version-less idempotent target-state operations, while users and technicians require the version.
 4. `CategoryRules` KDoc still says it matches `features/admin/services/category-service.ts`, which no longer exists.
 5. `AdminUserResponse.createdAt` is a `String` while `updatedAt` is an `Instant` (both serialise as ISO text, so harmless).

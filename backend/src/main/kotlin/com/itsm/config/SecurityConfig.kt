@@ -5,6 +5,7 @@ import com.itsm.common.model.Role
 import com.itsm.common.security.ItsmUserDetails
 import com.itsm.common.security.JsonAccessDeniedHandler
 import com.itsm.common.security.JsonAuthenticationEntryPoint
+import com.itsm.common.security.Permission
 import com.itsm.user.EmailNormalizer
 import com.itsm.user.UserRepository
 import org.springframework.beans.factory.annotation.Value
@@ -93,6 +94,17 @@ class SecurityConfig(
                 it.requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
                 it.requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                 it.requestMatchers("/actuator/**").hasRole("ADMIN")
+                // Admin APIs are authorised HERE, in the filter chain, in addition to each controller's @PreAuthorize.
+                // @PreAuthorize runs after request-body binding, so on its own an authenticated non-admin would get a 400
+                // with validation detail instead of a 403. The rules below mirror the controllers' permissions; the
+                // controller annotations stay as the second layer. A new /api/admin path that is not listed falls to the
+                // ADMIN-only rule (fail closed).
+                it.requestMatchers("/api/admin/users/**", "/api/admin/technicians/**").hasAuthority(Permission.USER_MANAGE.name)
+                it.requestMatchers("/api/admin/categories/**", "/api/admin/services/**").hasAuthority(Permission.CATALOG_MANAGE.name)
+                it.requestMatchers("/api/admin/sla-policies/**").hasAuthority(Permission.SLA_CONFIGURE.name)
+                it.requestMatchers("/api/admin/assignment-settings/**").hasAuthority(Permission.ASSIGNMENT_CONFIGURE.name)
+                it.requestMatchers("/api/admin/audit-events/**").hasAuthority(Permission.AUDIT_VIEW.name)
+                it.requestMatchers("/api/admin/**").hasRole("ADMIN")
                 it.anyRequest().authenticated()
             }
             .exceptionHandling {

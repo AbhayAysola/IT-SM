@@ -87,6 +87,7 @@ class AssignmentSettingsWithoutCatalogIntegrationTest {
             .andExpect(jsonPath("$.defaultMaxWorkload").value(5))
             .andExpect(jsonPath("$.categoryOverrides").isEmpty)
             .andExpect(jsonPath("$.availableStrategies").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.strategyCatalogStatus").value("ABSENT"))
             .andExpect(jsonPath("$.version").value(0))
         val view = provider.current()
         assertEquals("LOAD_BASED", view.activeStrategy)

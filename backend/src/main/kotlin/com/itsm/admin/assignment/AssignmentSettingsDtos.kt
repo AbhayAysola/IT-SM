@@ -39,10 +39,18 @@ data class AssignmentSettingsResponse(
     /** Sorted by category name. */
     val categoryOverrides: List<OverrideResponse>,
     /**
-     * Strategy keys currently registered by P3's AssignmentStrategyCatalog, sorted; null when that catalog is not
-     * available (P3 has not merged yet). Informational: writes are validated against the catalog, not this list.
+     * Strategy keys currently registered by P3's AssignmentStrategyCatalog, sorted. Non-null exactly when
+     * [strategyCatalogStatus] is AVAILABLE (and then possibly empty: a catalog that registers nothing). null when the
+     * catalog is ABSENT or FAILED, which must never be read as "no strategies exist". Informational: writes are
+     * validated against the catalog, not this list.
      */
     val availableStrategies: List<String>?,
+    /**
+     * AVAILABLE: the catalog answered. ABSENT: no catalog bean exists (P3 not deployed); writes answer 503.
+     * FAILED: a catalog exists but threw while being asked; writes fail with a generic 500/503. Neither ABSENT nor FAILED
+     * allows a write. Never carries an exception message.
+     */
+    val strategyCatalogStatus: StrategyCatalogStatus,
     val version: Long,
     val updatedAt: Instant,
     /** User id of the last editor; null for the seeded default. */
