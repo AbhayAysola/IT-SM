@@ -1,4 +1,5 @@
 import { test as base, expect } from '@playwright/test';
+import { AdminFake } from './admin-fake';
 
 /** Run against a real backend instead of the in-browser fake: `E2E_LIVE_API=1 npm run test:e2e`. */
 export const LIVE = process.env.E2E_LIVE_API === '1';
@@ -42,6 +43,8 @@ export interface ApiHelper {
   calls: string[];
   /** Fake of the backend audit API (`/api/admin/audit-events`). Hermetic mode only. */
   audit: AuditFake;
+  /** Stateful fake of the other admin APIs (users, technicians, categories, services, SLA, assignment). Hermetic mode only. */
+  admin: AdminFake;
 }
 
 export interface FakeAuditEvent {
@@ -127,12 +130,14 @@ export const test = base.extend<{ api: ApiHelper }>({
       });
 
       const audit: AuditFake = { events: makeAuditEvents(25), requests: [], detailRequests: [], fail: null };
+      const admin = new AdminFake();
 
       if (LIVE) {
         await use({
           live: true,
           calls,
           audit,
+          admin,
           seed: async (u) => {
             testInfo.skip(
               !!u.role && u.role !== 'USER',
@@ -206,6 +211,17 @@ export const test = base.extend<{ api: ApiHelper }>({
           audit.requests.push(url.searchParams);
           return route.fulfill(ok(auditPage(audit.events, url.searchParams)));
         }
+        if (path.startsWith('/api/admin/')) {
+          // Every admin API: 401 without a valid token, 403 unless the caller is an ADMIN, then the stateful fake.
+          const token = (req.headers()['authorization'] ?? '').replace('Bearer ', '');
+          const caller = token.startsWith('mock.') ? users.get(token.slice(5)) : undefined;
+          if (!caller) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
+          if (caller.role !== 'ADMIN') return route.fulfill(problem(403, 'FORBIDDEN', 'Operation not permitted'));
+          admin.selfEmail = caller.email;
+          const url = new URL(req.url());
+          const out = admin.handle({ method: req.method(), path, query: url.searchParams, body: req.postData() ? req.postDataJSON() : undefined });
+          return route.fulfill({ status: out.status, headers: { ...CORS, 'content-type': out.status >= 400 ? 'application/problem+json' : 'application/json' }, body: out.body === undefined ? undefined : JSON.stringify(out.body) });
+        }
         return route.fulfill(problem(404, 'RESOURCE_NOT_FOUND', 'Not found'));
       });
 
@@ -213,6 +229,7 @@ export const test = base.extend<{ api: ApiHelper }>({
         live: false,
         calls,
         audit,
+        admin,
         seed: async (u) => {
           users.set(u.email, { ...u, id: nextId++, createdAt: new Date().toISOString() });
         },

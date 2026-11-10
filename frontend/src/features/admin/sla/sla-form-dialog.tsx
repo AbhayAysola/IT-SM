@@ -6,133 +6,117 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FormError, withServerFields } from '../components/form-error';
 import { FormField } from '../components/form-field';
-import { formatMinutes } from '../format';
 import { useResource } from '../hooks/use-resource';
-import { itServiceService } from '../services/service-service';
-import { slaService, validateSlaInput } from '../services/sla-service';
-import { PRIORITIES, PRIORITY_LABEL, type Priority, type SlaPolicyView } from '../types';
-
-type Unit = 'min' | 'h' | 'd';
-const UNIT_MIN: Record<Unit, number> = { min: 1, h: 60, d: 1440 };
-const UNIT_LABEL: Record<Unit, string> = { min: 'minutes', h: 'hours', d: 'days' };
-
-const split = (minutes: number): { n: string; unit: Unit } =>
-  minutes % 1440 === 0 ? { n: String(minutes / 1440), unit: 'd' } : minutes % 60 === 0 ? { n: String(minutes / 60), unit: 'h' } : { n: String(minutes), unit: 'min' };
-
-const toMinutes = (n: string, unit: Unit) => (n.trim() === '' || !/^\d+$/.test(n.trim()) ? NaN : Number(n.trim()) * UNIT_MIN[unit]);
+import { itServiceApi } from '../services/it-service-api';
+import { SLA_DEFAULT_WARNING_PCT, slaApi, validateSla, type SlaForm } from '../services/sla-api';
+import { PRIORITIES, PRIORITY_LABEL, ServiceError, type Priority, type SlaPolicy } from '../types';
 
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  policy?: SlaPolicyView | null;
-  onSaved: (p: SlaPolicyView, mode: 'created' | 'updated') => void;
+  policy?: SlaPolicy | null;
+  onSaved: (p: SlaPolicy, mode: 'created' | 'updated') => void;
 }
 
-type Errors = Partial<Record<'serviceId' | 'priority' | 'responseMinutes' | 'resolutionMinutes', string>>;
-
-function DurationField({ id, label, n, unit, error, onN, onUnit }: { id: string; label: string; n: string; unit: Unit; error?: string; onN: (v: string) => void; onUnit: (u: Unit) => void }) {
-  return (
-    <FormField id={id} label={label} error={error}>
-      <div className="flex gap-2">
-        <Input id={id} inputMode="numeric" value={n} aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined} onChange={(e) => onN(e.target.value)} className="min-w-0 flex-1" />
-        <Select value={unit} onValueChange={(v) => onUnit(v as Unit)}>
-          <SelectTrigger aria-label={`${label} unit`} className="w-[110px]"><SelectValue /></SelectTrigger>
-          <SelectContent>{(Object.keys(UNIT_LABEL) as Unit[]).map((u) => <SelectItem key={u} value={u}>{UNIT_LABEL[u]}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-    </FormField>
-  );
-}
+const GLOBAL = 'GLOBAL';
+const EMPTY: SlaForm = { serviceId: '', priority: 'P3', responseMinutes: '', resolutionMinutes: '', warningThresholdPct: String(SLA_DEFAULT_WARNING_PCT) };
+const asError = (e: unknown) => (e instanceof ServiceError ? e : new ServiceError('UNAVAILABLE', 'Could not save the policy.'));
+const toForm = (p: SlaPolicy): SlaForm => ({
+  serviceId: p.service ? String(p.service.id) : '', priority: p.priority, responseMinutes: String(p.responseMinutes),
+  resolutionMinutes: String(p.resolutionMinutes), warningThresholdPct: String(p.warningThresholdPct),
+});
 
 export function SlaFormDialog({ open, onOpenChange, policy, onSaved }: Props) {
   const editing = !!policy;
-  const [serviceId, setServiceId] = useState('');
-  const [priority, setPriority] = useState<Priority | ''>('');
-  const [resp, setResp] = useState({ n: '', unit: 'min' as Unit });
-  const [reso, setReso] = useState({ n: '', unit: 'h' as Unit });
-  const [errors, setErrors] = useState<Errors>({});
-  const [formError, setFormError] = useState<string | null>(null);
+  const [v, setV] = useState<SlaForm>(EMPTY);
+  const [version, setVersion] = useState(0);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [failure, setFailure] = useState<ServiceError | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const services = useResource(() => (open && !editing ? itServiceService.options() : Promise.resolve([])), [open, editing]);
+  const services = useResource(() => (open && !editing ? itServiceApi.list({ active: 'true', sort: 'name', size: 100 }) : Promise.resolve(null)), [open, editing]);
 
   useEffect(() => {
     if (!open) return;
-    setServiceId(policy?.serviceId ?? '');
-    setPriority(policy?.priority ?? '');
-    setResp(policy ? split(policy.responseMinutes) : { n: '', unit: 'min' });
-    setReso(policy ? split(policy.resolutionMinutes) : { n: '', unit: 'h' });
-    setErrors({});
-    setFormError(null);
+    setV(policy ? toForm(policy) : EMPTY); setVersion(policy?.version ?? 0); setErrors({}); setFailure(null);
   }, [open, policy]);
 
-  const responseMinutes = toMinutes(resp.n, resp.unit);
-  const resolutionMinutes = toMinutes(reso.n, reso.unit);
-  const serviceName = editing ? policy!.serviceName : services.data?.find((s) => s.id === serviceId)?.name;
-  const summary = priority && serviceName && Number.isFinite(responseMinutes) && Number.isFinite(resolutionMinutes) && responseMinutes > 0 && resolutionMinutes > 0
-    ? `${priority} incidents on ${serviceName}: respond within ${formatMinutes(responseMinutes)}, resolve within ${formatMinutes(resolutionMinutes)}.` : null;
+  const set = <K extends keyof SlaForm>(k: K, val: SlaForm[K]) => { setV((p) => ({ ...p, [k]: val })); setErrors((p) => ({ ...p, [k]: '' })); };
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const input = { serviceId, priority, responseMinutes, resolutionMinutes };
-    const e = validateSlaInput(input);
-    setErrors(e);
-    if (Object.keys(e).length) return;
-    setBusy(true);
-    setFormError(null);
+    const local = validateSla(v, editing ? 'edit' : 'create');
+    setErrors(local);
+    if (Object.keys(local).length) return;
+    setBusy(true); setFailure(null);
     try {
-      const saved = editing ? await slaService.update(policy!.id, { responseMinutes, resolutionMinutes }) : await slaService.create(input);
+      const saved = editing ? await slaApi.update(policy!.id, v, version) : await slaApi.create(v);
       onSaved(saved, editing ? 'updated' : 'created');
       onOpenChange(false);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not save the policy.');
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) {
+      const err = asError(e); setFailure(err); setErrors(withServerFields(local, err));
+    } finally { setBusy(false); }
   };
-
-  const activeServices = (services.data ?? []).filter((s) => s.status === 'ACTIVE');
+  const keepMine = async () => {
+    setBusy(true);
+    try { setVersion((await slaApi.get(policy!.id)).version); setFailure(null); } catch (e) { setFailure(asError(e)); } finally { setBusy(false); }
+  };
+  const loadLatest = async () => {
+    setBusy(true);
+    try { const p = await slaApi.get(policy!.id); setV(toForm(p)); setVersion(p.version); setFailure(null); } catch (e) { setFailure(asError(e)); } finally { setBusy(false); }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit SLA policy' : 'Add SLA policy'}</DialogTitle>
-          <DialogDescription>Targets run from the moment an incident is reported.</DialogDescription>
+          <DialogDescription>
+            These are configured targets only. The warning threshold is the share of the target time after which monitoring will warn; nothing is enforced here.
+            {editing && ' The service and priority identify a policy and cannot be changed.'}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate className="space-y-4">
-          {formError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{formError}</p>}
-
-          {editing ? (
-            <dl className="grid grid-cols-2 gap-3 rounded-md border bg-muted/50 p-3 text-sm">
-              <div><dt className="text-xs text-muted-foreground">Service</dt><dd className="font-medium">{policy!.serviceName}</dd></div>
-              <div><dt className="text-xs text-muted-foreground">Priority</dt><dd className="font-medium">{PRIORITY_LABEL[policy!.priority]}</dd></div>
-            </dl>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField id="sla-service" label="Service" error={errors.serviceId}>
-                <Select value={serviceId} onValueChange={(v) => { setServiceId(v); setErrors((p) => ({ ...p, serviceId: undefined })); }}>
-                  <SelectTrigger id="sla-service" aria-invalid={!!errors.serviceId}><SelectValue placeholder={services.loading ? 'Loading…' : 'Choose…'} /></SelectTrigger>
-                  <SelectContent>{activeServices.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+          <FormError error={failure} onKeepMine={editing ? keepMine : undefined} onLoadLatest={editing ? loadLatest : undefined} busy={busy} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField id="sla-service" label="Applies to" error={errors.serviceId} hint={editing ? undefined : 'A global policy is the fallback for services without their own.'}>
+              {editing ? (
+                <Input id="sla-service" value={policy!.service ? policy!.service.name : 'Global default'} disabled />
+              ) : (
+                <Select value={v.serviceId === '' ? GLOBAL : v.serviceId} onValueChange={(x) => set('serviceId', x === GLOBAL ? '' : x)}>
+                  <SelectTrigger id="sla-service"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={GLOBAL}>Global default</SelectItem>
+                    {(services.data?.items ?? []).map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                  </SelectContent>
                 </Select>
-              </FormField>
-              <FormField id="sla-priority" label="Priority" error={errors.priority}>
-                <Select value={priority} onValueChange={(v) => { setPriority(v as Priority); setErrors((p) => ({ ...p, priority: undefined })); }}>
-                  <SelectTrigger id="sla-priority" aria-invalid={!!errors.priority}><SelectValue placeholder="Choose…" /></SelectTrigger>
+              )}
+            </FormField>
+            <FormField id="sla-priority" label="Priority" error={errors.priority}>
+              {editing ? (
+                <Input id="sla-priority" value={PRIORITY_LABEL[policy!.priority]} disabled />
+              ) : (
+                <Select value={v.priority} onValueChange={(x) => set('priority', x as Priority)}>
+                  <SelectTrigger id="sla-priority"><SelectValue /></SelectTrigger>
                   <SelectContent>{PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_LABEL[p]}</SelectItem>)}</SelectContent>
                 </Select>
-              </FormField>
-            </div>
-          )}
-
-          <DurationField id="sla-response" label="Response target" n={resp.n} unit={resp.unit} error={errors.responseMinutes}
-            onN={(v) => { setResp((p) => ({ ...p, n: v })); setErrors((p) => ({ ...p, responseMinutes: undefined })); }} onUnit={(u) => setResp((p) => ({ ...p, unit: u }))} />
-          <DurationField id="sla-resolution" label="Resolution target" n={reso.n} unit={reso.unit} error={errors.resolutionMinutes}
-            onN={(v) => { setReso((p) => ({ ...p, n: v })); setErrors((p) => ({ ...p, resolutionMinutes: undefined })); }} onUnit={(u) => setReso((p) => ({ ...p, unit: u }))} />
-
-          {summary && <p className="rounded-md bg-muted p-3 text-sm" data-testid="sla-summary">{summary}</p>}
-
+              )}
+            </FormField>
+          </div>
+          {services.error && <p role="alert" className="text-sm text-destructive">{services.error}</p>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField id="sla-response" label="Response target (minutes)" error={errors.responseMinutes}>
+              <Input id="sla-response" inputMode="numeric" value={v.responseMinutes} aria-invalid={!!errors.responseMinutes} aria-describedby={errors.responseMinutes ? 'sla-response-error' : undefined} onChange={(e) => set('responseMinutes', e.target.value)} />
+            </FormField>
+            <FormField id="sla-resolution" label="Resolution target (minutes)" error={errors.resolutionMinutes} hint="Longer than the response target, at most 43,200 (30 days).">
+              <Input id="sla-resolution" inputMode="numeric" value={v.resolutionMinutes} aria-invalid={!!errors.resolutionMinutes} aria-describedby={errors.resolutionMinutes ? 'sla-resolution-error' : 'sla-resolution-hint'} onChange={(e) => set('resolutionMinutes', e.target.value)} />
+            </FormField>
+          </div>
+          <FormField id="sla-warning" label="Warning threshold (%)" error={errors.warningThresholdPct} hint="1–99. Leave blank to use 80 (new) or keep the current value (edit).">
+            <Input id="sla-warning" inputMode="numeric" value={v.warningThresholdPct} aria-invalid={!!errors.warningThresholdPct} aria-describedby={errors.warningThresholdPct ? 'sla-warning-error' : 'sla-warning-hint'} onChange={(e) => set('warningThresholdPct', e.target.value)} />
+          </FormField>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
             <Button type="submit" disabled={busy}>{busy && <Loader2 className="animate-spin" aria-hidden="true" />}{editing ? 'Save changes' : 'Add policy'}</Button>

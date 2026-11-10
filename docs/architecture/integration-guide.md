@@ -197,7 +197,9 @@ Each successful mutation publishes in its transaction (actor id + role, `entityI
 `IT_SERVICE_DEACTIVATED` (entity type `IT_SERVICE`). Activation events carry `previousState`/`newState`. Rejected
 requests and no-ops publish nothing.
 
-### Frontend adapter (not yet connected; the admin pages still use mocks)
+### Frontend adapter (connected in B8; kept as the record of how the old mocks mapped)
+
+The admin pages now call this API directly: see [admin-frontend-contract.md](admin-frontend-contract.md). The table below is the mapping that was applied.
 
 | Frontend mock | Backend | Adapter needed |
 |---|---|---|
@@ -307,7 +309,9 @@ fields with before/after targets and threshold), `SLA_POLICY_ACTIVATED`, `SLA_PO
 (entity type `ASSIGNMENT_SETTINGS`, `entityId` `1`; changed fields, strategy and workload before/after, overrides
 added/removed/changed as category ids plus counts). Rejected requests, 503s and no-ops publish nothing.
 
-### Frontend adapter (not yet connected; the admin pages still use mocks)
+### Frontend adapter (connected in B8; kept as the record of how the old mocks mapped)
+
+The admin pages now call this API directly: see [admin-frontend-contract.md](admin-frontend-contract.md). The table below is the mapping that was applied.
 
 | Frontend mock | Backend | Adapter needed |
 |---|---|---|
@@ -389,7 +393,7 @@ P3 cannot tell "inactive" from "unknown". Use `findById` for the account itself.
 2. The SPI cannot express "profile exists but inactive". If P3 needs that (e.g. an incident assigned to a technician who was
    deactivated) the smallest compatible change is a default method such as `findTechnicianIncludingInactive` or an `active`
    field with a default; propose it before using it.
-3. Frontend mocks use `skillLevel`, `availability` (AVAILABLE/BUSY/OFF_SHIFT/ON_LEAVE), `team`, `shift`, `currentWorkload`.
+3. The retired frontend mocks used `skillLevel`, `availability` (AVAILABLE/BUSY/OFF_SHIFT/ON_LEAVE), `team`, `shift`, `currentWorkload`.
    None exist in the SPI or V16 and none were added (no use case): proficiency is per category, availability is one boolean,
    `currentWorkload` comes from P3, `team`/`shift` are deferred.
 

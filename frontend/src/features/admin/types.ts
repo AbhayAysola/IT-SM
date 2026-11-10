@@ -1,187 +1,194 @@
+/**
+ * Types of the admin area. Everything here mirrors the backend's JSON (see docs/architecture/admin-frontend-contract.md);
+ * nothing is a frontend-only invention. Ids are numbers, `version` is the optimistic-lock value, timestamps are ISO strings.
+ */
+
 export type AdminRole = 'EMPLOYEE' | 'TECHNICIAN' | 'ADMIN';
-export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'INVITED';
+export const ADMIN_ROLES: readonly AdminRole[] = ['EMPLOYEE', 'TECHNICIAN', 'ADMIN'];
 
-export interface ManagedUser {
-  id: string;
-  name: string;
-  email: string;
-  role: AdminRole;
-  department: string;
-  status: AccountStatus;
-  createdAt: string; // ISO
-  lastLoginAt: string | null;
-}
-
-export type Availability = 'AVAILABLE' | 'BUSY' | 'OFF_SHIFT' | 'ON_LEAVE';
-export type SkillLevel = 'JUNIOR' | 'INTERMEDIATE' | 'SENIOR';
-
-export interface TechnicianProfile {
-  id: string;
-  /** Links to a ManagedUser with role TECHNICIAN. */
-  userId: string;
-  skills: string[];
-  skillLevel: SkillLevel;
-  availability: Availability;
-  /** Max incidents the technician may hold at once. */
-  maxWorkload: number;
-  currentWorkload: number;
-  isTeamLead: boolean;
-  team: string;
-  shift: string;
-  updatedAt: string;
-}
-
-/** Technician profile joined with its user, for display. */
-export interface TechnicianView extends TechnicianProfile {
-  name: string;
-  email: string;
-  accountStatus: AccountStatus;
-}
-
-export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'STATUS_CHANGE' | 'ROLE_CHANGE';
-export type AuditEntity = 'USER' | 'TECHNICIAN' | 'CATEGORY' | 'SERVICE' | 'SLA_POLICY' | 'ASSIGNMENT_SETTINGS';
-
-/** Append-only. The audit viewer (a later batch) reads these; services only ever add. */
-export interface AuditEntry {
-  id: string;
-  at: string;
-  actor: string;
-  action: AuditAction;
-  entity: AuditEntity;
-  entityId: string;
-  summary: string;
-  /** Display-ready field values before/after the change; only the fields that changed. Absent when not recorded. */
-  before?: Record<string, string>;
-  after?: Record<string, string>;
-  /** True for clearly-labelled demo history shipped with the mock data (never written by a real action). */
-  seed?: boolean;
-}
-
-export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
-  CREATE: 'Create', UPDATE: 'Update', DELETE: 'Delete', STATUS_CHANGE: 'Status change', ROLE_CHANGE: 'Role change',
-};
-export const AUDIT_ENTITY_LABEL: Record<AuditEntity, string> = {
-  USER: 'User', TECHNICIAN: 'Technician', CATEGORY: 'Category', SERVICE: 'IT service', SLA_POLICY: 'SLA policy', ASSIGNMENT_SETTINGS: 'Assignment settings',
-};
-
+/** The backend's page envelope: `page` is 0-based. */
 export interface Page<T> {
   items: T[];
-  total: number;
   page: number;
-  pageSize: number;
+  size: number;
+  totalItems: number;
+  totalPages: number;
 }
 
-export interface ListQuery {
-  search?: string;
-  page?: number;
-  pageSize?: number;
-}
+export type SortDir = 'asc' | 'desc';
 
-export class ServiceError extends Error {
-  code: 'NOT_FOUND' | 'DUPLICATE' | 'VALIDATION' | 'UNAVAILABLE' | 'CONFLICT' | 'FORBIDDEN' | 'UNAUTHENTICATED';
-  constructor(code: ServiceError['code'], message: string) {
-    super(message);
-    this.name = 'ServiceError';
-    this.code = code;
-  }
-}
+// ---- users (/api/admin/users) ----
 
-export const SKILL_OPTIONS = [
-  'Networking', 'Hardware', 'Email & Calendar', 'Identity & Access', 'Printers',
-  'Windows', 'macOS', 'Linux', 'Database', 'Security', 'VPN & Remote', 'Cloud', 'Audio/Visual', 'Wi-Fi',
-] as const;
-
-export const DEPARTMENTS = [
-  'Information Technology', 'Finance', 'Human Resources', 'Academic Affairs', 'Facilities',
-  'Library', 'Student Services', 'Research Office', 'Procurement',
-] as const;
-
-export const TEAMS = ['Service Desk', 'Infrastructure', 'Applications', 'Security'] as const;
-export const SHIFTS = ['Day (08:00-16:00)', 'Evening (14:00-22:00)', 'Night (22:00-06:00)'] as const;
-
-// ---- Batch 3: categories, services, SLA policies ----
-
-export type Priority = 'P1' | 'P2' | 'P3' | 'P4';
-export const PRIORITIES: Priority[] = ['P1', 'P2', 'P3', 'P4'];
-export const PRIORITY_LABEL: Record<Priority, string> = { P1: 'P1 Critical', P2: 'P2 High', P3: 'P3 Medium', P4: 'P4 Low' };
-
-export type ActiveStatus = 'ACTIVE' | 'INACTIVE';
-
-export interface IncidentCategory {
-  id: string;
+export interface AdminUser {
+  id: number;
+  email: string;
   name: string;
-  description: string;
-  /** Lower-case phrases the smart-categorisation logic matches against ticket text. */
-  keywords: string[];
-  defaultPriority: Priority;
-  status: ActiveStatus;
+  role: AdminRole;
+  active: boolean;
+  version: number;
+  createdAt: string;
   updatedAt: string;
 }
 
-export type Criticality = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-export const CRITICALITIES: Criticality[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-export const CRITICALITY_LABEL: Record<Criticality, string> = { CRITICAL: 'Critical', HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' };
+// ---- technicians (/api/admin/technicians; the path id is the USER id) ----
+
+export interface TechnicianSkill {
+  categoryId: number;
+  categoryCode: string;
+  categoryName: string;
+  categoryActive: boolean;
+  /** 1..5 */
+  proficiency: number;
+}
+
+export interface Technician {
+  userId: number;
+  name: string;
+  email: string;
+  userRole: AdminRole;
+  userActive: boolean;
+  /** Profile state. Inactive profiles are kept for history. */
+  active: boolean;
+  /** Set by an administrator (leave, off shift). It is eligibility only: not workload, not "assignable now". */
+  available: boolean;
+  /** A configured ceiling, not the live workload. */
+  maxWorkload: number;
+  experienceYears: number;
+  isTeamLead: boolean;
+  reportsToUserId: number | null;
+  skills: TechnicianSkill[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- incident categories (/api/admin/categories) ----
+
+export interface Category {
+  id: number;
+  /** Immutable UPPER_SNAKE_CASE identifier. */
+  code: string;
+  name: string;
+  description: string | null;
+  /** Normalised and sorted by the server. */
+  keywords: string[];
+  active: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- IT services (/api/admin/services) ----
+
+export interface ServiceRef {
+  id: number;
+  name: string;
+  active: boolean;
+}
 
 export interface ItService {
-  id: string;
+  id: number;
   name: string;
-  description: string;
-  ownerTeam: string;
-  criticality: Criticality;
-  /** Ids of services this one needs in order to work. Must stay acyclic. */
-  dependsOn: string[];
-  status: ActiveStatus;
+  description: string | null;
+  /** 1 (low) .. 5 (mission critical) */
+  businessCriticality: number;
+  ownerTeam: string | null;
+  active: boolean;
+  dependsOn: ServiceRef[];
+  /** Services that directly depend on this one (active and inactive). */
+  dependents: ServiceRef[];
+  version: number;
+  createdAt: string;
   updatedAt: string;
 }
 
-export interface ServiceView extends ItService {
-  dependencyNames: string[];
-  /** Active services that depend on this one. */
-  dependentNames: string[];
-  policyCount: number;
-}
+export const CRITICALITY_LEVELS = [1, 2, 3, 4, 5] as const;
+export const CRITICALITY_LABEL: Record<number, string> = {
+  1: '1 · Low', 2: '2 · Minor', 3: '3 · Moderate', 4: '4 · High', 5: '5 · Mission critical',
+};
+
+// ---- SLA policies (/api/admin/sla-policies) ----
+
+export type Priority = 'P1' | 'P2' | 'P3' | 'P4';
+export const PRIORITIES: readonly Priority[] = ['P1', 'P2', 'P3', 'P4'];
+export const PRIORITY_LABEL: Record<Priority, string> = { P1: 'P1 Critical', P2: 'P2 High', P3: 'P3 Medium', P4: 'P4 Low' };
 
 export interface SlaPolicy {
-  id: string;
-  serviceId: string;
+  id: number;
+  /** null for the global policy of that priority. */
+  service: ServiceRef | null;
   priority: Priority;
   responseMinutes: number;
   resolutionMinutes: number;
-  status: ActiveStatus;
+  warningThresholdPct: number;
+  active: boolean;
+  version: number;
+  createdAt: string;
   updatedAt: string;
 }
 
-export interface SlaPolicyView extends SlaPolicy {
-  serviceName: string;
-  serviceStatus: ActiveStatus;
+export interface EffectiveSla {
+  serviceId: number;
+  priority: Priority;
+  scope: 'SERVICE' | 'GLOBAL';
+  policyId: number;
+  responseMinutes: number;
+  resolutionMinutes: number;
+  warningThresholdPct: number;
 }
 
-// ---- Batch 4: assignment settings (configuration only; P3 owns the algorithms) ----
+// ---- assignment settings (/api/admin/assignment-settings) ----
+
+export interface AssignmentOverride {
+  categoryId: number;
+  categoryName: string;
+  categoryActive: boolean;
+  strategy: string;
+}
 
 /**
- * Mock strategy names. The project contracts for P3's routing engine are not available yet, so these names are
- * this frontend's own and only describe configuration. They are not an API contract.
+ * The state of P3's strategy catalog, as the backend reports it (the source of truth for what the page may do):
+ *  - AVAILABLE: the catalog answered. `availableStrategies` is its keys, possibly an empty array (nothing registered).
+ *  - ABSENT: no catalog is deployed yet. `availableStrategies` is null.
+ *  - FAILED: a catalog exists but could not be reached. `availableStrategies` is null: never read that as "no strategies".
  */
-export type AssignmentStrategy = 'MANUAL' | 'ROUND_ROBIN' | 'SKILL_BASED';
-export const ASSIGNMENT_STRATEGIES: AssignmentStrategy[] = ['MANUAL', 'ROUND_ROBIN', 'SKILL_BASED'];
-
-export type RoundRobinPool = 'ALL_TECHNICIANS' | 'BY_TEAM';
-export type TieBreaker = 'LOWEST_WORKLOAD' | 'HIGHEST_SKILL_LEVEL';
+export type StrategyCatalogStatus = 'AVAILABLE' | 'ABSENT' | 'FAILED';
 
 export interface AssignmentSettings {
-  strategy: AssignmentStrategy;
-  /** Strategy tried when the selected one finds nobody. Not used by MANUAL. */
-  fallbackStrategy: AssignmentStrategy;
-  /** Common to every strategy. */
-  unassignedEscalationMinutes: number;
-  /** How many technician recommendations assigners are shown; 0 turns them off. */
-  recommendationCount: number;
-  manual: { notifyTeamLeads: boolean };
-  roundRobin: { pool: RoundRobinPool; teams: string[]; skipAtCapacity: boolean };
-  skillBased: { minSkillMatchPct: number; minSkillLevel: SkillLevel; tieBreaker: TieBreaker };
+  activeStrategy: string;
+  defaultMaxWorkload: number;
+  categoryOverrides: AssignmentOverride[];
+  strategyCatalogStatus: StrategyCatalogStatus;
+  /** Registered strategy keys: an array exactly when `strategyCatalogStatus` is AVAILABLE, otherwise null. Writes are validated server-side. */
+  availableStrategies: string[] | null;
+  version: number;
+  updatedAt: string;
+  updatedByUserId: number | null;
 }
 
-export interface AssignmentSettingsRecord extends AssignmentSettings {
-  updatedAt: string;
-  updatedBy: string;
+/**
+ * What a failed call turns into. `message` is safe to show: it is either written by the backend for clients
+ * (400/404/409/422/503) or one of this client's own fixed texts (401/403/5xx/network). Never raw server internals.
+ */
+export type ServiceErrorCode =
+  | 'NOT_FOUND' | 'DUPLICATE' | 'VALIDATION' | 'UNAVAILABLE' | 'CONFLICT' | 'FORBIDDEN' | 'UNAUTHENTICATED'
+  /** 409 CONCURRENT_MODIFICATION: someone else saved first; reload and re-apply. */
+  | 'STALE'
+  /** 422 domain precondition (e.g. no SLA policy configured). */
+  | 'UNPROCESSABLE'
+  /** 503: a provider/catalog this operation needs (P3's strategy catalog) is not deployed. */
+  | 'DEPENDENCY_UNAVAILABLE';
+
+export class ServiceError extends Error {
+  code: ServiceErrorCode;
+  status?: number;
+  /** Server field name -> message, e.g. `keywords[2]`, `skills[0].proficiency`. */
+  fieldErrors: Record<string, string>;
+  constructor(code: ServiceErrorCode, message: string, opts: { status?: number; fieldErrors?: Record<string, string> } = {}) {
+    super(message);
+    this.name = 'ServiceError';
+    this.code = code;
+    this.status = opts.status;
+    this.fieldErrors = opts.fieldErrors ?? {};
+  }
 }

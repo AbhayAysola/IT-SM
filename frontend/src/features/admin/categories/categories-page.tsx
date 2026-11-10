@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { CircleOff, CircleCheck, MoreHorizontal, Pencil, Plus, Tags } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CircleCheck, CircleOff, MoreHorizontal, Pencil, Plus, Tags } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,141 +13,119 @@ import { PageHeader } from '../components/page-header';
 import { Pagination } from '../components/pagination';
 import { SortHead } from '../components/sort-head';
 import { EmptyState, ErrorState, TableSkeleton } from '../components/states';
-import { ActiveBadge, PriorityBadge, formatDate } from '../components/status-badges';
+import { ActiveBadge, formatDate } from '../components/status-badges';
 import { useToast } from '../components/toast';
-import { useDebounced, useResource } from '../hooks/use-resource';
-import { categoryService, type CategoryQuery } from '../services/category-service';
-import { PRIORITIES, PRIORITY_LABEL, type ActiveStatus, type IncidentCategory, type Priority } from '../types';
+import { useListState } from '../hooks/use-list';
+import { useResource } from '../hooks/use-resource';
+import { categoryApi, type CategorySort } from '../services/category-api';
+import { ServiceError, type Category } from '../types';
 import { CategoryFormDialog } from './category-form-dialog';
 
-const PAGE_SIZE = 8;
-type SortKey = NonNullable<CategoryQuery['sort']>;
+const PAGE_SIZE = 10;
+const MAX_CHIPS = 4;
 
 export default function CategoriesPage() {
   const toast = useToast();
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<ActiveStatus | 'ALL'>('ALL');
-  const [priority, setPriority] = useState<Priority | 'ALL'>('ALL');
-  const [sort, setSort] = useState<SortKey>('name');
-  const [dir, setDir] = useState<'asc' | 'desc'>('asc');
-  const [page, setPage] = useState(1);
-
+  const [active, setActive] = useState<'true' | 'false' | 'ALL'>('ALL');
+  const list = useListState<CategorySort>('name', 'asc', [active]);
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<IncidentCategory | null>(null);
-  const [deactivating, setDeactivating] = useState<IncidentCategory | null>(null);
-
-  const debounced = useDebounced(search);
-  useEffect(() => setPage(1), [debounced, status, priority]);
+  const [editing, setEditing] = useState<Category | null>(null);
+  const [toggling, setToggling] = useState<Category | null>(null);
 
   const { data, loading, error, reload } = useResource(
-    () => categoryService.list({ search: debounced, status, priority, sort, dir, page, pageSize: PAGE_SIZE }),
-    [debounced, status, priority, sort, dir, page]
+    () => categoryApi.list({ search: list.debounced, active, sort: list.sort, dir: list.dir, page: list.page, size: PAGE_SIZE }),
+    [list.debounced, active, list.sort, list.dir, list.page]
   );
-  const items = data?.items ?? [];
-  const filtersActive = !!(search || status !== 'ALL' || priority !== 'ALL');
-  const clear = () => { setSearch(''); setStatus('ALL'); setPriority('ALL'); };
-  const sortBy = (k: SortKey) => { if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc')); else { setSort(k); setDir('asc'); } setPage(1); };
+  const items = useMemo(() => data?.items ?? [], [data]);
+  const filtersActive = !!(list.search || active !== 'ALL');
+  const clear = () => { list.setSearch(''); setActive('ALL'); };
   const openAdd = () => { setEditing(null); setFormOpen(true); };
-
-  const activate = async (c: IncidentCategory) => {
-    try {
-      await categoryService.setStatus(c.id, 'ACTIVE');
-      toast.success(`${c.name} was activated.`);
-      reload();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not activate the category.');
-    }
-  };
 
   return (
     <>
-      <PageHeader
-        title="Incident categories"
-        description="How incidents are classified. Keywords drive the automatic category suggestion when someone reports a problem."
-        actions={<Button onClick={openAdd}><Plus aria-hidden="true" /> Add category</Button>}
-      />
+      <PageHeader title="Incident categories" description="The categories incidents are sorted into. They are deactivated, never deleted, so existing incidents keep a valid category."
+        actions={<Button onClick={openAdd}><Plus aria-hidden="true" /> Add category</Button>} />
       <Card>
         <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center">
-          <SearchBox value={search} onChange={setSearch} label="Search categories" placeholder="Search by name, description or keyword" />
+          <SearchBox value={list.search} onChange={list.setSearch} label="Search categories" placeholder="Search by code, name or keyword" />
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
-            <FilterSelect label="Filter by status" value={status} onChange={(v) => setStatus(v as ActiveStatus | 'ALL')} allLabel="All statuses"
-              options={[{ value: 'ACTIVE', label: 'Active' }, { value: 'INACTIVE', label: 'Inactive' }]} />
-            <FilterSelect label="Filter by default priority" value={priority} onChange={(v) => setPriority(v as Priority | 'ALL')} allLabel="Any priority"
-              options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] }))} />
+            <FilterSelect label="Filter by status" value={active} onChange={(v) => setActive(v as 'true' | 'false' | 'ALL')} allLabel="All statuses" options={[{ value: 'true', label: 'Active' }, { value: 'false', label: 'Inactive' }]} />
             <ClearFilters show={filtersActive} onClear={clear} />
           </div>
         </div>
-
-        {error && !data ? <ErrorState message={error} onRetry={reload} />
-          : loading && !data ? <TableSkeleton label="Loading categories" />
-          : items.length === 0 && !loading ? (
-            filtersActive
-              ? <EmptyState title="No categories match your filters" description="Try a different search term or clear the filters." action={<Button variant="outline" size="sm" onClick={clear}>Clear filters</Button>} />
-              : <EmptyState icon={Tags} title="No categories yet" description="Add a category so incidents can be classified." action={<Button size="sm" onClick={openAdd}><Plus aria-hidden="true" /> Add category</Button>} />
+        {error && !data ? (
+          <ErrorState message={error} onRetry={reload} />
+        ) : loading && !data ? (
+          <TableSkeleton label="Loading categories" />
+        ) : items.length === 0 && !loading ? (
+          filtersActive ? (
+            <EmptyState title="No categories match your filters" description="Try a different search or clear the filters." action={<Button variant="outline" size="sm" onClick={clear}>Clear filters</Button>} />
           ) : (
-            <div className={loading ? 'opacity-60 transition-opacity' : undefined} aria-busy={loading}>
-              {error && <div className="border-b"><ErrorState message={error} onRetry={reload} /></div>}
-              <Table>
-                <TableHeader className="bg-muted/60">
-                  <TableRow>
-                    <SortHead k="name" sort={sort} dir={dir} onSort={sortBy}>Category</SortHead>
-                    <TableHead>Keywords</TableHead>
-                    <TableHead>Default priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <SortHead k="updatedAt" sort={sort} dir={dir} onSort={sortBy}>Updated</SortHead>
-                    <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>
+            <EmptyState icon={Tags} title="No categories yet" description="Add the first category." action={<Button size="sm" onClick={openAdd}><Plus aria-hidden="true" /> Add category</Button>} />
+          )
+        ) : (
+          <div className={loading ? 'opacity-60 transition-opacity' : undefined} aria-busy={loading}>
+            {error && <div className="border-b"><ErrorState message={error} onRetry={reload} /></div>}
+            <Table>
+              <TableHeader className="bg-muted/60">
+                <TableRow>
+                  <SortHead k="name" sort={list.sort} dir={list.dir} onSort={list.sortBy}>Category</SortHead>
+                  <SortHead k="code" sort={list.sort} dir={list.dir} onSort={list.sortBy}>Code</SortHead>
+                  <TableHead>Keywords</TableHead>
+                  <TableHead>Status</TableHead>
+                  <SortHead k="updatedAt" sort={list.sort} dir={list.dir} onSort={list.sortBy}>Updated</SortHead>
+                  <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="font-medium text-foreground">{c.name}</div>
+                      {c.description && <div className="max-w-xs truncate text-xs text-muted-foreground">{c.description}</div>}
+                    </TableCell>
+                    <TableCell><code className="text-xs">{c.code}</code></TableCell>
+                    <TableCell>
+                      <ul className="flex max-w-xs flex-wrap gap-1">
+                        {c.keywords.slice(0, MAX_CHIPS).map((k) => <li key={k}><Badge variant="outline">{k}</Badge></li>)}
+                        {c.keywords.length > MAX_CHIPS && <li><Badge variant="secondary">+{c.keywords.length - MAX_CHIPS}</Badge></li>}
+                      </ul>
+                    </TableCell>
+                    <TableCell><ActiveBadge active={c.active} /></TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(c.updatedAt)}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" aria-label={`Actions for ${c.name}`}><MoreHorizontal aria-hidden="true" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => { setEditing(c); setFormOpen(true); }}><Pencil aria-hidden="true" /> Edit</DropdownMenuItem>
+                          {c.active ? (
+                            <DropdownMenuItem onSelect={() => setToggling(c)} className="text-destructive focus:bg-destructive/10 focus:text-destructive"><CircleOff aria-hidden="true" /> Deactivate</DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => setToggling(c)}><CircleCheck aria-hidden="true" /> Activate</DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="max-w-[320px]">
-                        <div className="font-medium text-foreground">{c.name}</div>
-                        <div className="line-clamp-2 text-xs text-muted-foreground">{c.description}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex max-w-[260px] flex-wrap gap-1">
-                          {c.keywords.slice(0, 3).map((k) => <Badge key={k} variant="secondary">{k}</Badge>)}
-                          {c.keywords.length > 3 && <Badge variant="outline" title={c.keywords.slice(3).join(', ')}>+{c.keywords.length - 3}</Badge>}
-                        </div>
-                      </TableCell>
-                      <TableCell><PriorityBadge priority={c.defaultPriority} /></TableCell>
-                      <TableCell><ActiveBadge status={c.status} /></TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(c.updatedAt)}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Actions for ${c.name}`}><MoreHorizontal aria-hidden="true" /></Button></DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => { setEditing(c); setFormOpen(true); }}><Pencil aria-hidden="true" /> Edit</DropdownMenuItem>
-                            {c.status === 'ACTIVE'
-                              ? <DropdownMenuItem onSelect={() => setDeactivating(c)}><CircleOff aria-hidden="true" /> Deactivate</DropdownMenuItem>
-                              : <DropdownMenuItem onSelect={() => activate(c)}><CircleCheck aria-hidden="true" /> Activate</DropdownMenuItem>}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <Pagination page={data?.page ?? 1} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPage={setPage} noun="categories" />
-            </div>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+            <Pagination page={(data?.page ?? 0) + 1} pageSize={PAGE_SIZE} total={data?.totalItems ?? 0} onPage={(p) => list.setPage(p - 1)} noun="categories" />
+          </div>
+        )}
       </Card>
-
       <CategoryFormDialog open={formOpen} onOpenChange={setFormOpen} category={editing}
-        onSaved={(c, mode) => { toast.success(mode === 'created' ? `${c.name} was added.` : `${c.name} was updated.`); reload(); }} />
-
+        onSaved={(c, mode) => { toast.success(mode === 'created' ? `Category “${c.name}” was added.` : `Category “${c.name}” was updated.`); reload(); }} />
       <ConfirmDialog
-        open={!!deactivating}
-        onOpenChange={(o) => !o && setDeactivating(null)}
-        title={`Deactivate ${deactivating?.name ?? ''}?`}
-        description="New incidents will no longer be classified into this category. Existing incidents keep it, and you can activate it again later."
-        confirmLabel="Deactivate category"
-        destructive
+        open={!!toggling} onOpenChange={(o) => !o && setToggling(null)}
+        title={`${toggling?.active ? 'Deactivate' : 'Activate'} “${toggling?.name ?? ''}”?`}
+        description={toggling?.active ? 'New incidents can no longer be filed under it. Existing incidents keep it. The server refuses to deactivate the last active category.' : 'It becomes available for new incidents again.'}
+        confirmLabel={toggling?.active ? 'Deactivate category' : 'Activate category'} destructive={!!toggling?.active}
         onConfirm={async () => {
-          await categoryService.setStatus(deactivating!.id, 'INACTIVE');
-          toast.success(`${deactivating!.name} was deactivated.`);
-          reload();
+          try { const c = await categoryApi.setActive(toggling!.id, !toggling!.active); toast.success(`Category “${c.name}” was ${c.active ? 'activated' : 'deactivated'}.`); reload(); }
+          catch (e) { throw new Error(e instanceof ServiceError ? e.message : 'Could not change the category.'); }
         }}
       />
     </>

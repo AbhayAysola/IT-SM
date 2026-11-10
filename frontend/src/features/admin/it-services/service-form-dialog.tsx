@@ -6,134 +6,117 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FormError, withServerFields } from '../components/form-error';
 import { FormField } from '../components/form-field';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useResource } from '../hooks/use-resource';
-import { itServiceService, validateServiceInput, wouldCreateCycle, type ServiceInput } from '../services/service-service';
-import { CRITICALITIES, CRITICALITY_LABEL, TEAMS, type Criticality, type ServiceView } from '../types';
+import { itServiceApi, validateService, type ServiceForm } from '../services/it-service-api';
+import { CRITICALITY_LABEL, CRITICALITY_LEVELS, ServiceError, type ItService } from '../types';
 
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  service?: ServiceView | null;
-  onSaved: (s: ServiceView, mode: 'created' | 'updated') => void;
+  service?: ItService | null;
+  onSaved: (s: ItService, mode: 'created' | 'updated') => void;
 }
 
-const EMPTY: ServiceInput = { name: '', description: '', ownerTeam: '', criticality: 'MEDIUM', dependsOn: [] };
-type Errors = Partial<Record<keyof ServiceInput, string>>;
+const EMPTY: ServiceForm = { name: '', description: '', businessCriticality: 3, ownerTeam: '', dependsOnServiceIds: [] };
+const asError = (e: unknown) => (e instanceof ServiceError ? e : new ServiceError('UNAVAILABLE', 'Could not save the service.'));
+const toForm = (s: ItService): ServiceForm => ({
+  name: s.name, description: s.description ?? '', businessCriticality: s.businessCriticality, ownerTeam: s.ownerTeam ?? '', dependsOnServiceIds: s.dependsOn.map((d) => d.id),
+});
+const TEXTAREA = 'flex min-h-[76px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive';
 
 export function ServiceFormDialog({ open, onOpenChange, service, onSaved }: Props) {
   const editing = !!service;
-  const [values, setValues] = useState<ServiceInput>(EMPTY);
-  const [errors, setErrors] = useState<Errors>({});
-  const [formError, setFormError] = useState<string | null>(null);
+  const [v, setV] = useState<ServiceForm>(EMPTY);
+  const [version, setVersion] = useState(0);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [failure, setFailure] = useState<ServiceError | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const options = useResource(() => (open ? itServiceService.options() : Promise.resolve([])), [open]);
+  const all = useResource(() => (open ? itServiceApi.list({ sort: 'name', size: 100 }) : Promise.resolve(null)), [open]);
+  const options = useMemo(() => {
+    const byId = new Map<number, { id: number; name: string; active: boolean }>();
+    (all.data?.items ?? []).forEach((s) => byId.set(s.id, s));
+    service?.dependsOn.forEach((d) => { if (!byId.has(d.id)) byId.set(d.id, d); });
+    return Array.from(byId.values()).filter((s) => s.id !== service?.id);
+  }, [all.data, service]);
 
   useEffect(() => {
     if (!open) return;
-    setValues(service ? { name: service.name, description: service.description, ownerTeam: service.ownerTeam, criticality: service.criticality, dependsOn: service.dependsOn } : EMPTY);
-    setErrors({});
-    setFormError(null);
+    setV(service ? toForm(service) : EMPTY); setVersion(service?.version ?? 0); setErrors({}); setFailure(null);
   }, [open, service]);
 
-  const set = <K extends keyof ServiceInput>(k: K, v: ServiceInput[K]) => {
-    setValues((p) => ({ ...p, [k]: v }));
-    setErrors((p) => ({ ...p, [k]: undefined }));
-  };
-  const all = useMemo(() => options.data ?? [], [options.data]);
-
-  // For each candidate: why it cannot be chosen (or null if it can).
-  const blockedReason = useMemo(() => {
-    const out = new Map<string, string>();
-    for (const s of all) {
-      if (service && s.id === service.id) continue; // excluded from the list entirely
-      const checked = values.dependsOn.includes(s.id);
-      if (s.status === 'INACTIVE' && !checked) out.set(s.id, 'Inactive');
-      else if (!checked && service && wouldCreateCycle(all, service.id, s.id)) out.set(s.id, 'Would create a cycle');
-    }
-    return out;
-  }, [all, service, values.dependsOn]);
-
-  const toggleDep = (id: string) => {
-    set('dependsOn', values.dependsOn.includes(id) ? values.dependsOn.filter((x) => x !== id) : [...values.dependsOn, id]);
-    setErrors((p) => ({ ...p, dependsOn: undefined }));
-  };
+  const set = <K extends keyof ServiceForm>(k: K, val: ServiceForm[K]) => { setV((p) => ({ ...p, [k]: val })); setErrors((p) => ({ ...p, [k]: '' })); };
+  const toggleDep = (id: number) => set('dependsOnServiceIds', v.dependsOnServiceIds.includes(id) ? v.dependsOnServiceIds.filter((x) => x !== id) : [...v.dependsOnServiceIds, id]);
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const e = validateServiceInput(values);
-    setErrors(e);
-    if (Object.keys(e).length) return;
-    setBusy(true);
-    setFormError(null);
+    const local = validateService(v, service?.id);
+    setErrors(local);
+    if (Object.keys(local).length) return;
+    setBusy(true); setFailure(null);
     try {
-      const saved = editing ? await itServiceService.update(service!.id, values) : await itServiceService.create(values);
+      const saved = editing ? await itServiceApi.update(service!.id, v, version) : await itServiceApi.create(v);
       onSaved(saved, editing ? 'updated' : 'created');
       onOpenChange(false);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not save the service.');
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) {
+      const err = asError(e); setFailure(err); setErrors(withServerFields(local, err));
+    } finally { setBusy(false); }
+  };
+  const keepMine = async () => {
+    setBusy(true);
+    try { setVersion((await itServiceApi.get(service!.id)).version); setFailure(null); } catch (e) { setFailure(asError(e)); } finally { setBusy(false); }
+  };
+  const loadLatest = async () => {
+    setBusy(true);
+    try { const s = await itServiceApi.get(service!.id); setV(toForm(s)); setVersion(s.version); setFailure(null); } catch (e) { setFailure(asError(e)); } finally { setBusy(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit service' : 'Add service'}</DialogTitle>
-          <DialogDescription>Criticality and dependencies show who is affected when this service has a problem.</DialogDescription>
+          <DialogTitle>{editing ? 'Edit IT service' : 'Add IT service'}</DialogTitle>
+          <DialogDescription>Services are deactivated, never deleted. Dependencies must not form a loop; the server checks that when you save.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate className="space-y-4">
-          {formError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{formError}</p>}
+          <FormError error={failure} onKeepMine={editing ? keepMine : undefined} onLoadLatest={editing ? loadLatest : undefined} busy={busy} />
           <FormField id="svc-name" label="Name" error={errors.name}>
-            <Input id="svc-name" value={values.name} aria-invalid={!!errors.name} aria-describedby={errors.name ? 'svc-name-error' : undefined}
-              onChange={(e) => set('name', e.target.value)} />
+            <Input id="svc-name" value={v.name} autoComplete="off" aria-invalid={!!errors.name} aria-describedby={errors.name ? 'svc-name-error' : undefined} onChange={(e) => set('name', e.target.value)} />
           </FormField>
-          <FormField id="svc-description" label="Description" error={errors.description}>
-            <textarea id="svc-description" rows={3} value={values.description} aria-invalid={!!errors.description}
-              aria-describedby={errors.description ? 'svc-description-error' : undefined}
-              onChange={(e) => set('description', e.target.value)}
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-[invalid=true]:border-destructive md:text-sm" />
+          <FormField id="svc-desc" label="Description (optional)" error={errors.description}>
+            <textarea id="svc-desc" className={TEXTAREA} value={v.description} aria-invalid={!!errors.description} aria-describedby={errors.description ? 'svc-desc-error' : undefined} onChange={(e) => set('description', e.target.value)} />
           </FormField>
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField id="svc-team" label="Owner team" error={errors.ownerTeam}>
-              <Select value={values.ownerTeam} onValueChange={(v) => { set('ownerTeam', v); setErrors((p) => ({ ...p, ownerTeam: undefined })); }}>
-                <SelectTrigger id="svc-team" aria-invalid={!!errors.ownerTeam}><SelectValue placeholder="Choose…" /></SelectTrigger>
-                <SelectContent>{TEAMS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-              </Select>
+            <FormField id="svc-owner" label="Owner team (optional)" error={errors.ownerTeam}>
+              <Input id="svc-owner" value={v.ownerTeam} autoComplete="off" aria-invalid={!!errors.ownerTeam} aria-describedby={errors.ownerTeam ? 'svc-owner-error' : undefined} onChange={(e) => set('ownerTeam', e.target.value)} />
             </FormField>
-            <FormField id="svc-criticality" label="Business criticality">
-              <Select value={values.criticality} onValueChange={(v) => set('criticality', v as Criticality)}>
-                <SelectTrigger id="svc-criticality"><SelectValue /></SelectTrigger>
-                <SelectContent>{CRITICALITIES.map((c) => <SelectItem key={c} value={c}>{CRITICALITY_LABEL[c]}</SelectItem>)}</SelectContent>
+            <FormField id="svc-crit" label="Business criticality" error={errors.businessCriticality}>
+              <Select value={String(v.businessCriticality)} onValueChange={(x) => set('businessCriticality', Number(x))}>
+                <SelectTrigger id="svc-crit"><SelectValue /></SelectTrigger>
+                <SelectContent>{CRITICALITY_LEVELS.map((n) => <SelectItem key={n} value={String(n)}>{CRITICALITY_LABEL[n]}</SelectItem>)}</SelectContent>
               </Select>
             </FormField>
           </div>
-
-          <fieldset className="space-y-1.5">
-            <legend className="text-sm font-medium leading-none">Depends on</legend>
-            <p className="text-xs text-muted-foreground">Services this one needs in order to work. Circular and inactive choices are unavailable.</p>
-            {options.loading ? <Skeleton className="h-24 w-full" /> : (
-              <ul className="max-h-48 divide-y overflow-y-auto rounded-md border" data-testid="dependency-options">
-                {all.filter((s) => !service || s.id !== service.id).map((s) => {
-                  const reason = blockedReason.get(s.id);
-                  const id = `dep-${s.id}`;
-                  return (
-                    <li key={s.id} className="flex items-center gap-3 px-3 py-2">
-                      <input id={id} type="checkbox" className="h-4 w-4 accent-primary" checked={values.dependsOn.includes(s.id)} disabled={!!reason} onChange={() => toggleDep(s.id)} />
-                      <label htmlFor={id} className="flex-1 text-sm">{s.name}</label>
-                      {reason && <span className="text-xs text-muted-foreground">{reason}</span>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {errors.dependsOn && <p role="alert" className="text-sm font-medium text-destructive">{errors.dependsOn}</p>}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Depends on</legend>
+            <p className="text-xs text-muted-foreground">Services this one needs in order to work.</p>
+            {all.error && <p role="alert" className="text-sm text-destructive">{all.error}</p>}
+            <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border p-2" data-testid="dependency-options">
+              {all.loading && !all.data ? <p className="text-sm text-muted-foreground">Loading services…</p> : options.length === 0 ? <p className="text-sm text-muted-foreground">No other services yet.</p> : options.map((s) => {
+                const id = `dep-${s.id}`;
+                return (
+                  <label key={s.id} htmlFor={id} className="flex items-center gap-2 text-sm">
+                    <input id={id} type="checkbox" className="h-4 w-4 accent-primary" checked={v.dependsOnServiceIds.includes(s.id)} onChange={() => toggleDep(s.id)} />
+                    {s.name}{!s.active && <span className="text-xs text-muted-foreground">(inactive)</span>}
+                  </label>
+                );
+              })}
+            </div>
+            {all.data && all.data.totalItems > 100 && <p className="text-xs text-muted-foreground">Showing the first 100 of {all.data.totalItems} services.</p>}
+            {errors.dependsOnServiceIds && <p role="alert" className="text-sm font-medium text-destructive">{errors.dependsOnServiceIds}</p>}
           </fieldset>
-
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
             <Button type="submit" disabled={busy}>{busy && <Loader2 className="animate-spin" aria-hidden="true" />}{editing ? 'Save changes' : 'Add service'}</Button>

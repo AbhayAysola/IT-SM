@@ -1,135 +1,94 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FormError, withServerFields } from '../components/form-error';
 import { FormField } from '../components/form-field';
-import { Badge } from '@/components/ui/badge';
-import {
-  categoryService, MAX_KEYWORDS, normalizeKeyword, validateCategoryInput, validateKeyword, type CategoryInput,
-} from '../services/category-service';
-import { PRIORITIES, PRIORITY_LABEL, type IncidentCategory, type Priority } from '../types';
+import { categoryApi, parseKeywords, validateCategory, type CategoryForm } from '../services/category-api';
+import { ServiceError, type Category } from '../types';
 
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  category?: IncidentCategory | null;
-  onSaved: (c: IncidentCategory, mode: 'created' | 'updated') => void;
+  category?: Category | null;
+  onSaved: (c: Category, mode: 'created' | 'updated') => void;
 }
 
-const EMPTY: CategoryInput = { name: '', description: '', keywords: [], defaultPriority: 'P3' };
-type Errors = Partial<Record<keyof CategoryInput, string>>;
+const EMPTY: CategoryForm = { code: '', name: '', description: '', keywords: '' };
+const asError = (e: unknown) => (e instanceof ServiceError ? e : new ServiceError('UNAVAILABLE', 'Could not save the category.'));
+const toForm = (c: Category): CategoryForm => ({ code: c.code, name: c.name, description: c.description ?? '', keywords: c.keywords.join(', ') });
+const TEXTAREA = 'flex min-h-[76px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive';
 
 export function CategoryFormDialog({ open, onOpenChange, category, onSaved }: Props) {
   const editing = !!category;
-  const [values, setValues] = useState<CategoryInput>(EMPTY);
-  const [draft, setDraft] = useState('');
-  const [errors, setErrors] = useState<Errors>({});
-  const [formError, setFormError] = useState<string | null>(null);
+  const [v, setV] = useState<CategoryForm>(EMPTY);
+  const [version, setVersion] = useState(0);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [failure, setFailure] = useState<ServiceError | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setValues(category ? { name: category.name, description: category.description, keywords: category.keywords, defaultPriority: category.defaultPriority } : EMPTY);
-    setDraft('');
-    setErrors({});
-    setFormError(null);
+    setV(category ? toForm(category) : EMPTY); setVersion(category?.version ?? 0); setErrors({}); setFailure(null);
   }, [open, category]);
 
-  const set = <K extends keyof CategoryInput>(k: K, v: CategoryInput[K]) => {
-    setValues((p) => ({ ...p, [k]: v }));
-    setErrors((p) => ({ ...p, [k]: undefined }));
-  };
+  const set = (k: keyof CategoryForm, val: string) => { setV((p) => ({ ...p, [k]: val })); setErrors((p) => ({ ...p, [k]: '' })); };
 
-  /** Adds one or more comma-separated keywords from the draft; returns false if any was rejected. */
-  const commitDraft = (): boolean => {
-    const parts = draft.split(',').map(normalizeKeyword).filter(Boolean);
-    if (parts.length === 0) return true;
-    let next = values.keywords;
-    for (const k of parts) {
-      const bad = validateKeyword(k);
-      if (bad) { setErrors((p) => ({ ...p, keywords: bad })); return false; }
-      if (next.includes(k)) { setErrors((p) => ({ ...p, keywords: `“${k}” is already in the list.` })); return false; }
-      if (next.length >= MAX_KEYWORDS) { setErrors((p) => ({ ...p, keywords: `Use at most ${MAX_KEYWORDS} keywords.` })); return false; }
-      next = [...next, k];
-    }
-    set('keywords', next);
-    setDraft('');
-    setErrors((p) => ({ ...p, keywords: undefined }));
-    return true;
+  // The server reports keyword problems per entry (`keywords[2]`); show them on the one keywords field.
+  const fold = (errs: Record<string, string>) => {
+    const out = { ...errs };
+    for (const k of Object.keys(out)) if (k.startsWith('keywords[')) { out.keywords = out.keywords || `${parseKeywords(v.keywords)[Number(k.slice(9, -1))] ?? 'A keyword'}: ${out[k]}`; delete out[k]; }
+    return out;
   };
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    if (!commitDraft()) return;
-    // commitDraft may have appended; recompute from the draft synchronously for validation
-    const pending = draft.split(',').map(normalizeKeyword).filter(Boolean);
-    const final = { ...values, keywords: [...values.keywords, ...pending.filter((k) => !values.keywords.includes(k))] };
-    const e = validateCategoryInput(final);
-    setErrors(e);
-    if (Object.keys(e).length) return;
-    setBusy(true);
-    setFormError(null);
+    const local = validateCategory(v, editing ? 'edit' : 'create');
+    setErrors(local);
+    if (Object.keys(local).length) return;
+    setBusy(true); setFailure(null);
     try {
-      const saved = editing ? await categoryService.update(category!.id, final) : await categoryService.create(final);
+      const saved = editing ? await categoryApi.update(category!.id, v, version) : await categoryApi.create(v);
       onSaved(saved, editing ? 'updated' : 'created');
       onOpenChange(false);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not save the category.');
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) {
+      const err = asError(e); setFailure(err); setErrors(fold(withServerFields(local, err)));
+    } finally { setBusy(false); }
+  };
+  const keepMine = async () => {
+    setBusy(true);
+    try { setVersion((await categoryApi.get(category!.id)).version); setFailure(null); } catch (e) { setFailure(asError(e)); } finally { setBusy(false); }
+  };
+  const loadLatest = async () => {
+    setBusy(true);
+    try { const c = await categoryApi.get(category!.id); setV(toForm(c)); setVersion(c.version); setFailure(null); } catch (e) { setFailure(asError(e)); } finally { setBusy(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit category' : 'Add category'}</DialogTitle>
-          <DialogDescription>Keywords help the system suggest this category when someone describes a problem.</DialogDescription>
+          <DialogDescription>Incident categories are matched against ticket text using their keywords. Priority is not set here.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate className="space-y-4">
-          {formError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{formError}</p>}
+          <FormError error={failure} onKeepMine={editing ? keepMine : undefined} onLoadLatest={editing ? loadLatest : undefined} busy={busy} />
+          <FormField id="cat-code" label="Code" error={errors.code} hint={editing ? 'The code is permanent and cannot be changed.' : 'Permanent identifier, UPPER_SNAKE_CASE, e.g. NETWORK. Unique ignoring case.'}>
+            <Input id="cat-code" value={v.code} disabled={editing} autoComplete="off" aria-invalid={!!errors.code} aria-describedby={errors.code ? 'cat-code-error' : 'cat-code-hint'}
+              onChange={(e) => set('code', e.target.value.toUpperCase())} />
+          </FormField>
           <FormField id="cat-name" label="Name" error={errors.name}>
-            <Input id="cat-name" value={values.name} aria-invalid={!!errors.name} aria-describedby={errors.name ? 'cat-name-error' : undefined}
-              onChange={(e) => set('name', e.target.value)} />
+            <Input id="cat-name" value={v.name} autoComplete="off" aria-invalid={!!errors.name} aria-describedby={errors.name ? 'cat-name-error' : undefined} onChange={(e) => set('name', e.target.value)} />
           </FormField>
-          <FormField id="cat-description" label="Description" error={errors.description} hint={`${values.description.trim().length}/300`}>
-            <textarea id="cat-description" rows={3} value={values.description} aria-invalid={!!errors.description}
-              aria-describedby={errors.description ? 'cat-description-error' : 'cat-description-hint'}
-              onChange={(e) => set('description', e.target.value)}
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-[invalid=true]:border-destructive md:text-sm" />
+          <FormField id="cat-desc" label="Description (optional)" error={errors.description}>
+            <textarea id="cat-desc" className={TEXTAREA} value={v.description} aria-invalid={!!errors.description} aria-describedby={errors.description ? 'cat-desc-error' : undefined} onChange={(e) => set('description', e.target.value)} />
           </FormField>
-          <FormField id="cat-priority" label="Default priority">
-            <Select value={values.defaultPriority} onValueChange={(v) => set('defaultPriority', v as Priority)}>
-              <SelectTrigger id="cat-priority"><SelectValue /></SelectTrigger>
-              <SelectContent>{PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_LABEL[p]}</SelectItem>)}</SelectContent>
-            </Select>
+          <FormField id="cat-keywords" label="Keywords" error={errors.keywords} hint="Separate with commas or new lines. 1–15 keywords of 2–30 characters; stored lower-case.">
+            <textarea id="cat-keywords" className={TEXTAREA} value={v.keywords} aria-invalid={!!errors.keywords} aria-describedby={errors.keywords ? 'cat-keywords-error' : 'cat-keywords-hint'} onChange={(e) => set('keywords', e.target.value)} />
           </FormField>
-          <FormField id="cat-keyword" label="Keywords" error={errors.keywords} hint={`Press Enter or comma to add. ${values.keywords.length}/${MAX_KEYWORDS} used.`}>
-            <Input id="cat-keyword" value={draft} placeholder="e.g. no internet" aria-invalid={!!errors.keywords}
-              aria-describedby={errors.keywords ? 'cat-keyword-error' : 'cat-keyword-hint'}
-              onChange={(e) => { setDraft(e.target.value); if (errors.keywords) setErrors((p) => ({ ...p, keywords: undefined })); }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitDraft(); } }} />
-          </FormField>
-          {values.keywords.length > 0 && (
-            <ul className="flex flex-wrap gap-1.5" aria-label="Added keywords">
-              {values.keywords.map((k) => (
-                <li key={k}>
-                  <Badge variant="secondary" className="gap-1 pr-1">
-                    {k}
-                    <button type="button" aria-label={`Remove keyword ${k}`} onClick={() => set('keywords', values.keywords.filter((x) => x !== k))}
-                      className="rounded p-0.5 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <X className="h-3 w-3" aria-hidden="true" />
-                    </button>
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
             <Button type="submit" disabled={busy}>{busy && <Loader2 className="animate-spin" aria-hidden="true" />}{editing ? 'Save changes' : 'Add category'}</Button>

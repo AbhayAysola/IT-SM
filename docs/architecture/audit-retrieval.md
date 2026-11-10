@@ -154,15 +154,10 @@ so this endpoint answers 503 in a real deployment until P2's bean lands. Tests u
   message, never server text), `403` → permission message and **all rows removed**, no retry; `401` → token cleared and
   redirect to sign-in (as the route guard does).
 * Detail dialog loads `GET …/{id}`; metadata is rendered as a field/value table of plain text.
-* **Audit logs is the only authoritative view of persisted events.** The overview's "Recent changes" card still reads
-  the local mock log and is now labelled **Demo data** ("not the audit history") with a link to Audit logs. It was not
-  connected to the API because the data around it (counts, the mutations that fill it) is mock too: a real feed would sit
-  beside figures that disagree with it, and mock edits would never appear in it.
-* **Mock-only mutation flows (no backend call, so no persisted audit event):** all of them. `services/*-service.ts` for
-  users, technicians, categories, IT services, SLA policies and assignment settings use `simulate()`/localStorage;
-  the only frontend code that calls the backend is `audit-api.ts`. The backend admin APIs for users (B5), categories,
-  IT services, SLA and assignment (B2–B4) do emit audit events, so these pages will produce real history as they are
-  connected. Technicians (B6) is not in this branch. The frontend never writes audit records.
+* **Audit logs is the authoritative view of persisted events.** The overview's "Recent changes" card reads the latest
+  six events from the same endpoint (B8). Every admin mutation flow now calls a backend endpoint that publishes a
+  persistent audit event, so the old browser-local mock log and its "Demo data" label no longer exist. The frontend
+  never writes audit events. See [admin-frontend-contract.md](admin-frontend-contract.md).
 * The frontend does not call the incident trail endpoint yet (no incident UI exists; that is P2's surface).
 
 ## Tests
@@ -184,4 +179,3 @@ fake of the endpoint in `e2e/fixtures.ts` (the real semantics are covered by the
 * Exposing `recorded_at` (requires mapping the column on the B2 entity).
 * A "distinct actions / entity types" endpoint so filters can be dropdowns.
 * Keyset pagination / approximate counts if the table grows very large.
-* Removing the now-unused mock `auditService.list/get` once the mock mutation services are connected.
