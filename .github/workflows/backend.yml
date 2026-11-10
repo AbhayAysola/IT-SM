@@ -101,6 +101,9 @@ jobs:
               'com.itsm.audit.AuditPersistenceIntegrationTest': 1,
               'com.itsm.admin.category.CategoryAdminIntegrationTest': 1,
               'com.itsm.admin.itservice.ItServiceAdminIntegrationTest': 1,
+              'com.itsm.admin.sla.SlaPolicyAdminIntegrationTest': 1,
+              'com.itsm.admin.assignment.AssignmentSettingsIntegrationTest': 1,
+              'com.itsm.admin.assignment.AssignmentSettingsWithoutCatalogIntegrationTest': 1,
           }
           total = skipped = 0
           executed = {}

@@ -107,6 +107,11 @@ ids except incident ids (strings like `INC1024`). Lists use `PageQuery` (`page` 
 default 20) and return `PageResponse` (`items, page, size, totalItems, totalPages`). Create returns
 201 + `Location`, update 200, delete 204.
 
+> **Fixed bug:** `PageQuery` used to reject every input, including the default, because its validation read `size`
+> inside `buildList { }`, where a bare `size` is the builder list's own size (always 0), not the requested page size.
+> It is fixed in `common/api/PageResponse.kt` and guarded by `PageQueryTest`. Inside a `buildList`/`apply`/`with`
+> block, qualify properties of the enclosing class (`this@PageQuery.size`) when the receiver has a member of the same name.
+
 ## 6. Auditing
 
 Publish an `AuditableEvent` through `AuditPublisher` **inside your `@Transactional` method**:

@@ -75,6 +75,24 @@ numbers). Differences from those drafts:
   and duplicate edges (primary key) were already in the draft. Edges are direct only.
 * Neither table is ever deleted from; retiring a row means `active = FALSE`, so incident references stay valid.
 
+**Merged:** `V13__p1_sla_policies.sql` and `V14__p1_assignment_settings.sql` (replacing the old drafts `V14`/`V15`).
+
+* `V13 sla_policies`: nullable `service_id` (NULL = global policy for that priority), `priority` CHECK `P1..P4`,
+  `response_minutes > 0`, `resolution_minutes > response_minutes`, `resolution_minutes <= 43200` (30 days),
+  `warning_threshold_pct` 1-99 (default 80, required by `SlaPolicyView`), `active`, `version`, timestamps. Seeds the four
+  specification globals (5/30, 15/120, 60/480, 240/1440 minutes); nothing depends on them existing.
+  **Uniqueness uses two partial unique indexes, not `NULLS NOT DISTINCT`:** one active policy per `(service_id, priority)`
+  and one active global policy per `priority`. `UNIQUE NULLS NOT DISTINCT (service_id, priority)` (the old draft)
+  treats a NULL service as one value and covers inactive rows too, so it would forbid keeping an inactive policy next to its
+  replacement and destroy history. With the partial indexes a service-specific and a global policy for the same priority
+  coexist, and any number of inactive rows are kept.
+* `V14 assignment_settings` / `assignment_category_overrides`: a singleton row (`id = 1` by CHECK; a trigger forbids
+  DELETE and TRUNCATE) with `active_strategy` (UPPER_SNAKE_CASE CHECK), `default_max_workload` 1-100, `updated_by` (user id
+  only), `version`, `updated_at`; overrides are one row per category (`category_id` is the primary key and a foreign key to
+  `incident_categories`). Strategy keys are **not** validated in SQL: the set of strategies is P3's, so the application
+  checks them against P3's `AssignmentStrategyCatalog`. The seed `LOAD_BASED`/5 is the default from the earlier draft and
+  the integration guide; it is **not verified** against P3 (see "Assignment settings" in the integration guide).
+
 **The drafts below keep their old numbers and are NOT renumbered yet; those numbers are provisional.** The planned P1
 sequence is the order the branches merge, so that version order equals merge order (Flyway `out-of-order` stays off):
 
@@ -83,8 +101,8 @@ sequence is the order the branches merge, so that version order equals merge ord
 | `V10` | audit events | merged |
 | `V11` | incident categories | merged |
 | `V12` | IT services | merged |
-| `V13` | SLA policies | draft, renumber on its branch |
-| `V14` | assignment settings | draft, renumber on its branch |
+| `V13` | SLA policies | merged |
+| `V14` | assignment settings | merged |
 | `V15` | user extensions | draft, renumber on its branch |
 | `V16` | technician profiles | draft, renumber on its branch |
 
@@ -99,10 +117,8 @@ error: one `CREATE INDEX` per statement) and a foreign key to a table created la
 
 | File | Creates |
 |---|---|
-| `V10__p1_extend_users.sql` | `active, token_version, failed_logins, locked_until, department, phone, updated_at`; `USER` -> `EMPLOYEE`; role `CHECK` |
-| `V13__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` |
-| `V14__p1_sla_policies.sql` | `sla_policies` (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15+) + the specification defaults |
-| `V15__p1_assignment_settings.sql` | singleton `assignment_settings` (default `LOAD_BASED`), category overrides |
+| `V10__p1_extend_users.sql` | `active, token_version, failed_logins, locked_until, department, phone, updated_at`; `USER` -> `EMPLOYEE`; role `CHECK` (to be renumbered `V15`) |
+| `V13__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` (to be renumbered `V16`) |
 
 Design notes
 * Audit rows carry no foreign keys on purpose (they must outlive users and incident rows). Append-only
@@ -118,7 +134,7 @@ CI now runs the main-location part of it on every PR (`Backend / Flyway on a cle
 and the Spring startup test boots on a clean PostgreSQL 16 with `ddl-auto: validate`.
 
 > **The `/m/drafts` mount below no longer works as written:** the remaining drafts still carry the pre-renumbering
-> numbers (`V10`, `V13`-`V15`): `V10` collides with the merged audit migration and the others do not match the planned
+> numbers (`V10`, `V13`): `V10` collides with the merged audit migration and neither matches the planned
 > sequence. Validate a draft only after
 > renumbering it as described in section 3.
 

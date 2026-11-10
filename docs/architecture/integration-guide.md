@@ -20,12 +20,12 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `UserDirectory` | P1 | P2 (reporter lookup), P3 (technicians), P4 (escalation chain, admins) |
 | `CategoryCatalog` | P1 (`JpaCategoryCatalog`, implemented) | P2 (validate, keywords for suggestion), P3, P4 |
 | `ServiceCatalog` | P1 (`JpaServiceCatalog`, implemented) | P2 (validate service), P4 (criticality), P2/P4 (dependents for correlation) |
-| `SlaPolicyProvider` | P1 | P4 |
-| `AssignmentSettingsProvider` | P1 | P3 |
+| `SlaPolicyProvider` | P1 (`JpaSlaPolicyProvider`, implemented) | P4 |
+| `AssignmentSettingsProvider` | P1 (`JpaAssignmentSettingsProvider`, implemented) | P3 |
 | `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
 | `TechnicianWorkloadProvider` | **P3 only** | P1 (admin technician views), P4 (SLA risk) |
-| `AssignmentStrategyCatalog` | **P3 only** | P1 (validates the configured strategy key) |
+| `AssignmentStrategyCatalog` | **P3 only** (no bean exists yet) | P1 (validates configured strategy keys; looked up lazily, see "Assignment settings") |
 
 Do not write a second implementation of someone else's SPI "for testing" in `src/main`; mock it in tests.
 
@@ -33,8 +33,8 @@ Do not write a second implementation of someone else's SPI "for testing" in `src
 
 `AuditPublisher` is fully implemented and persists events (see foundation.md section 6): publish inside your
 `@Transactional` method and the row is written with your change, or not at all if it rolls back. `CategoryCatalog` and
-`ServiceCatalog` are implemented (see "Category and service catalogs" below). The rest of P1's implementations arrive
-in this order: SLA + assignment settings, then users/technician profiles.
+`ServiceCatalog`, `SlaPolicyProvider` and `AssignmentSettingsProvider` are implemented (see "Category and service catalogs"
+and "SLA policies and assignment settings" below). The rest of P1's implementations (users, technician profiles) come last.
 Until a bean exists, **a `@Service` that constructor-injects it will stop the application from starting**.
 So for now:
 
@@ -132,7 +132,7 @@ The interfaces leave a few points open; this is what the implementations do.
 | `CategoryCatalog.listActive` | Active categories ordered by name. `keywords` are normalised (trimmed, lower-case, single spaces) and sorted. |
 | `CategoryCatalog.requireActive` | 404 `RESOURCE_NOT_FOUND` if unknown, 400 `INVALID_INPUT` if inactive (interface default). |
 | `ServiceCatalog.findById` / `listActive` | As above. `dependsOnServiceIds` are the **direct** dependencies. |
-| `ServiceCatalog.dependentsOf` | **Direct** dependents only (reverse edges), active **and** inactive; empty set for an unknown id. Walk it yourself for transitive impact; filter with `findById(id)?.active` if you only want live services. |
+| `ServiceCatalog.dependentsOf` | **Direct** dependents only (reverse edges), active **and** inactive; empty set for an unknown id. Walk it yourself for transitive impact; filter with `findById(id)?.active` if you only want live services. **Current behaviour, pending P2/P4 confirmation** (see "Integration decisions" below). |
 | `ServiceCatalog.requireActive` | 404 `SERVICE_NOT_FOUND` if unknown, 400 `INVALID_INPUT` if inactive. |
 
 All views are immutable copies (no JPA entity crosses the boundary). Calls join your transaction if you have one.
@@ -149,8 +149,8 @@ ADMIN only: every endpoint requires `CATALOG_MANAGE` (`@PreAuthorize`), reads in
 |---|---|
 | `GET /api/admin/categories?page&size&search&active&sort&dir` | 200 `PageResponse<CategoryResponse>`; `search` matches name, code, description, keywords; `sort` = `name` (default), `code`, `createdAt`, `updatedAt` |
 | `GET /api/admin/categories/{id}` | 200 `CategoryResponse` |
-| `POST /api/admin/categories` `{code, name, description?, keywords}` | 201 + `Location` |
-| `PUT /api/admin/categories/{id}` `{name, description?, keywords, version}` | 200; `code` cannot change |
+| `POST /api/admin/categories` `{code, name, description?, keywords}` | 201 + `Location`; `code` is **required** here and nowhere else |
+| `PUT /api/admin/categories/{id}` `{name, description?, keywords, version}` | 200; the request has no `code` field: the code is **immutable** after creation |
 | `POST /api/admin/categories/{id}/activate` / `deactivate` | 200; repeating one is a no-op |
 | `GET /api/admin/services?page&size&search&active&criticality&ownerTeam&sort&dir` | 200 `PageResponse<ServiceResponse>`; `sort` = `name` (default), `businessCriticality`, `createdAt`, `updatedAt` |
 | `GET /api/admin/services/{id}` | 200 `ServiceResponse` |
@@ -200,14 +200,140 @@ requests and no-ops publish nothing.
 | String ids (`c-001`) | Numeric `id` | Use the number; stringify only for display |
 | `Page {items, total, page (1-based), pageSize}` | `PageResponse {items, page (0-based), size, totalItems, totalPages}` | Map names; `page - 1` on the way out |
 | `status: ACTIVE/INACTIVE`, `setStatus(id, s)` | `active: boolean`, `POST /{id}/activate`/`deactivate` | Map both ways |
-| Category has no code | `code` required on create, immutable | The create form needs a code field (or derive one client-side) |
-| Category `defaultPriority` | **Not supported** | No shared contract has it (`CategoryView` has none and P4 owns priority). Drop it or agree a contract change with P4 first |
+| Category has no code | `code` required on create, immutable (`^[A-Z][A-Z0-9_]{0,39}$`, unique) | The create form needs a code field (or derive one client-side); the edit form must not offer to change it |
+| Category `defaultPriority` | **Not supported, and will not be added by P1** | No shared contract has it (`CategoryView` has none) and priority belongs to P4. The frontend must drop the field; a backend field would need a P4-agreed contract change |
 | Category `description` required (10-300) | Optional, max 300 | Frontend may stay stricter |
-| `criticality: CRITICAL/HIGH/MEDIUM/LOW` | `businessCriticality: 1..5` | Mapping must be agreed (4 labels vs 5 levels) |
+| `criticality: CRITICAL/HIGH/MEDIUM/LOW` | `businessCriticality: 1..5` (integer only) | **No mapping is defined and none should be invented client-side.** 4 labels vs 5 levels needs agreement with P4 (see "Integration decisions") |
 | `dependsOn: string[]`, `dependencyNames`, `dependentNames` (active only) | `dependsOnServiceIds` in requests; `dependsOn[]`/`dependents[]` refs (active and inactive) in responses | Filter `dependents` by `active` for the old display |
 | `policyCount` | Not part of this API | Comes with the SLA batch |
 | `updatedAt` for change detection | `version` | Send `version` back in PUT; handle 409 `CONCURRENT_MODIFICATION` |
 | `ServiceError` codes `VALIDATION`, `DUPLICATE`, `CONFLICT`, `NOT_FOUND` | Problem `code` field | Map `VALIDATION_FAILED`/`INVALID_INPUT`/`MALFORMED_REQUEST` -> VALIDATION, etc. |
+
+### Integration decisions (recorded after B3)
+
+| # | Decision | Status | Who must act |
+|---|---|---|---|
+| 1 | **`PageQuery` bug fixed (shared code).** `PageQuery.init` read `size` inside `buildList { }`, where a bare `size` resolves to the builder list's own size (always 0), not the requested page size. Every `PageQuery` was therefore rejected with 400 "size must be between 1 and 100", including the default one. Fixed in `common/api/PageResponse.kt` by qualifying the references (`this@PageQuery.size`); `PageQueryTest` is the regression test. Nothing could have used `PageQuery` successfully before, so no earlier endpoint changed behaviour. | Done, merged with B3 | Everyone: any paged endpoint can now rely on `PageQuery` as documented. Do not revert or rework the fix. |
+| 2 | **`ServiceCatalog.dependentsOf(serviceId)` returns direct dependents only, including inactive services** (reverse edges; empty set for an unknown id). It is not transitive and does not filter on `active`. This is how the implementation behaves today and is the contract to code against until it is confirmed. The SPI and implementation will not change without agreement. | **Pending confirmation** | P2 and P4 (the consumers): confirm direct-only and active+inactive suit correlation and impact analysis, or ask P1 for a different behaviour (transitive, or active-only) as an explicit SPI change. |
+| 3 | **Categories have no `defaultPriority`.** It exists only in the frontend mock. Priority ownership belongs to P4, `CategoryView` has no such field, and P1 will not add one. | Decided | Frontend: drop it. P4: only if a category-to-priority link is ever wanted, propose the contract change. |
+| 4 | **Category `code` is required on create and immutable afterwards.** It is the stable machine identifier behind `CategoryCatalog.findByCode`, UPPER_SNAKE_CASE (`^[A-Z][A-Z0-9_]{0,39}$`), unique, and cannot be edited (the update request has no `code`). Use the numeric `id` for foreign keys and the `code` for stable references in configuration. | Decided | Frontend: add a code input to the category create form and make it read-only on edit. P2: store `categoryId`; use `code` only for lookups. |
+| 5 | **Service criticality is numeric 1-5** (`ServiceView.businessCriticality`, a database CHECK, API validation). The frontend's four labels (`CRITICAL/HIGH/MEDIUM/LOW`) have no agreed mapping onto five levels, and none has been invented. | **Pending agreement** | P4 (owner of how criticality feeds priority) with the frontend: define the label-to-number mapping (or move the UI to five levels) before the admin pages are connected. |
+| 6 | **Read-only catalog access for EMPLOYEE and TECHNICIAN is missing.** Every `/api/admin/**` endpoint requires an admin permission, but employees and technicians need the active categories and services to report incidents. A separate authenticated, read-only endpoint pair exposing only active categories and services (id, name, and the fields a reporting form needs, no admin fields such as `version`) is required. Not implemented yet. | **Proposed, not built** | Proposed owner: **P1** (it owns the catalogs). Coordinate with **P2**, whose intake form is the consumer, on the paths, fields, and whether categories should expose keywords. Likely authorisation: any authenticated user with `INCIDENT_CREATE`. |
+
+## SLA policies and assignment settings (P1, `V13`/`V14`)
+
+P1 stores and serves **configuration**. P4 owns SLA timers, breach detection, escalation, notifications and priority
+calculation. P3 owns assignment strategies, algorithms and workload. Neither is implemented or referenced here.
+
+### SLA policy resolution (`SlaPolicyProvider.resolve(serviceId, priority)`)
+
+1. the **active service-specific** policy for `(serviceId, priority)`;
+2. otherwise the **active global** policy for `priority`;
+3. otherwise `MissingSlaConfiguration` (HTTP 422 `MISSING_SLA_CONFIG`). **No duration is ever invented.**
+
+Details P4 can rely on:
+* An **inactive policy is never returned.** An inactive service-specific policy does not hide an active global one: it falls
+  back. Reactivating it makes it win again.
+* A global policy is **not guaranteed** for every priority. **Deactivating a global policy can leave a priority with no effective
+  policy** for every service that has no active policy of its own: `resolve` then throws the 422 and **no fallback duration is
+  invented**. The admin API allows it on purpose (it never blocks a deactivation); P4 must handle the 422.
+* An unknown `serviceId` throws `ServiceNotFound` (404). An **inactive service still resolves** against its active
+  policies, so historical incidents on a retired service keep working.
+* `SlaPolicyView.serviceId == null` tells you the global default supplied the targets. `warningThresholdPct` defaults to 80.
+* Cost: two small queries (service existence, then at most two candidate rows); no N+1. Safe inside P4's transaction.
+* Cross-priority consistency (P1 never looser than P2, as the frontend mock enforces) is **not** enforced by the backend; see
+  open decisions.
+
+### Assignment settings (`AssignmentSettingsProvider.current()`)
+
+`AssignmentSettingsView` is the whole contract: `activeStrategy` (key), `defaultMaxWorkload` and `categoryOverrides`
+(categoryId -> key); `strategyFor(categoryId)` returns the override or the active strategy. Nothing else is stored.
+
+**Dependency on P3.** P1 validates every key (active strategy and each override) against `AssignmentStrategyCatalog`, which
+P3 owns and which has **no bean yet**. P1 injects it as `ObjectProvider` so the application starts without it:
+* reads (`GET`, `current()`) always work and return what is persisted;
+* a **write answers 503 `SERVICE_UNAVAILABLE`** while the catalog is unavailable: an unverified key is never accepted;
+* once P3's bean exists no P1 change is needed; keys the catalog does not register are rejected with 400.
+`GET` includes `availableStrategies`: **`null` means P3's catalog is unavailable** (writes will answer 503), whereas an empty
+list `[]` would mean a catalog is available but registers no strategy (every write would then be rejected with 400). Treat
+`null` as "cannot configure right now", never as "no strategies exist".
+
+**`LOAD_BASED` is seeded but unverified.** `V14` seeds `LOAD_BASED` / workload 5 (taken from the earlier draft and from the
+promise made to P3 above). P3 has not registered it, because P3 has no code on this branch. If P3 registers a different key
+set, either P3 registers `LOAD_BASED` or P1 changes the default through a new migration (migrations are never edited).
+Until then the first admin write must pick a key P3 registers.
+
+### Admin API
+
+| Method and path | Permission | Result |
+|---|---|---|
+| `GET /api/admin/sla-policies?page&size&search&active&priority&serviceId&global&sort&dir` | `SLA_CONFIGURE` | 200 `PageResponse<SlaPolicyResponse>`; `search` matches the service name; `sort` = `priority` (default), `responseMinutes`, `resolutionMinutes`, `createdAt`, `updatedAt` |
+| `GET /api/admin/sla-policies/{id}` | `SLA_CONFIGURE` | 200 |
+| `GET /api/admin/sla-policies/effective?serviceId&priority` | `SLA_CONFIGURE` | 200 `{scope: SERVICE or GLOBAL, policyId, targets}` exactly as P4 would receive, or 404 / 422. A read-only preview of the provider, no P4 logic |
+| `POST /api/admin/sla-policies` `{serviceId?, priority, responseMinutes, resolutionMinutes, warningThresholdPct?}` | `SLA_CONFIGURE` | 201 + `Location`; omit `serviceId` for the global policy |
+| `PUT /api/admin/sla-policies/{id}` `{responseMinutes, resolutionMinutes, warningThresholdPct?, version}` | `SLA_CONFIGURE` | 200; service and priority cannot change; omitted threshold keeps the current value |
+| `POST /api/admin/sla-policies/{id}/activate` / `deactivate` | `SLA_CONFIGURE` | 200; repeating one is a no-op. No DELETE: policies are kept for history. Deactivating a global policy may leave a priority without an effective policy (see resolution) |
+| `GET /api/admin/assignment-settings` | `ASSIGNMENT_CONFIGURE` | 200 `{activeStrategy, defaultMaxWorkload, categoryOverrides[{categoryId, categoryName, categoryActive, strategy}], availableStrategies, version, updatedAt, updatedByUserId}` |
+| `PUT /api/admin/assignment-settings` `{activeStrategy, defaultMaxWorkload, categoryOverrides[{categoryId, strategy}], version}` | `ASSIGNMENT_CONFIGURE` | 200; replaces the whole configuration (overrides not listed are removed) |
+
+`SlaPolicyResponse` = `id, service{id,name,active} or null, priority, responseMinutes, resolutionMinutes,
+warningThresholdPct, active, version, createdAt, updatedAt`. Priorities are the shared codes `P1`..`P4`.
+
+### Rules and errors
+
+| Rule | Error |
+|---|---|
+| Missing field, malformed JSON | 400 `VALIDATION_FAILED` / `MALFORMED_REQUEST` |
+| Targets: response >= 1, resolution > response, resolution <= 43200 (30 days); threshold 1-99; unknown priority | 400 `INVALID_INPUT` (`errors[]`) |
+| Workload 1-100; strategy key `^[A-Z][A-Z0-9_]{1,49}$`; duplicate category in overrides; incomplete or unknown-category override; max 100 overrides | 400 `INVALID_INPUT` |
+| Strategy key not registered in P3's catalog | 400 `INVALID_INPUT` (message lists the registered keys) |
+| P3's catalog unavailable on any write | 503 `SERVICE_UNAVAILABLE` |
+| New policy for an unknown service / an inactive service | 404 `SERVICE_NOT_FOUND` / 400 `INVALID_INPUT` |
+| Another active policy in the same scope (same service and priority, or global and priority), also on activation | 409 `DUPLICATE_RESOURCE` |
+| Stale `version` | 409 `CONCURRENT_MODIFICATION` |
+| Unknown policy id | 404 `RESOURCE_NOT_FOUND` |
+
+The partial unique indexes of `V13` enforce the scope rule in PostgreSQL as well (also under races).
+
+### Audit
+
+In the mutation's transaction, with the actor's id and role: `SLA_POLICY_CREATED`, `SLA_POLICY_UPDATED` (changed
+fields with before/after targets and threshold), `SLA_POLICY_ACTIVATED`, `SLA_POLICY_DEACTIVATED` (entity type
+`SLA_POLICY`, `entityId` = policy id; activation events carry `previousState`/`newState`); `ASSIGNMENT_SETTINGS_UPDATED`
+(entity type `ASSIGNMENT_SETTINGS`, `entityId` `1`; changed fields, strategy and workload before/after, overrides
+added/removed/changed as category ids plus counts). Rejected requests, 503s and no-ops publish nothing.
+
+### Frontend adapter (not yet connected; the admin pages still use mocks)
+
+| Frontend mock | Backend | Adapter needed |
+|---|---|---|
+| SLA ids are strings (`p-...`) | Numeric `id` | Use the number |
+| `serviceId` always required | `service` is nullable: **null = global policy** | The UI can add a "global default" scope or keep only service policies |
+| `serviceName`, `serviceStatus` | `service {id, name, active}` | Map |
+| `status: ACTIVE/INACTIVE`, `setStatus` | `active`, `activate`/`deactivate` | Map both ways |
+| `remove(id)` (delete a policy) | **No delete**; deactivate instead | Replace the delete action; the row stays in history |
+| `update` takes only the two targets | Same, plus optional `warningThresholdPct`, and `version` is required | Send back `version`; handle 409 |
+| No warning threshold | `warningThresholdPct` (SPI field, default 80) | Show it or ignore it (default applies) |
+| Cross-priority rule (P1 not looser than P2) in the UI | **Not enforced by the backend** | Keep in the UI; decision needed (below) |
+| `coverageGaps` (services with no policy) | Not part of this API | Derive from list data, or ask for an endpoint |
+| `Page {total, page 1-based, pageSize}` | `PageResponse {totalItems, page 0-based, size, totalPages}` | Map names; `page - 1` |
+| Strategies `MANUAL`, `ROUND_ROBIN`, `SKILL_BASED`; default `SKILL_BASED` | Keys come from **P3's catalog**; the seeded default is `LOAD_BASED` | The UI must offer `availableStrategies` instead of a fixed list; the frontend names are placeholders, not a contract |
+| `fallbackStrategy`, `recommendationCount`, `manual.notifyTeamLeads`, `roundRobin{pool,teams,skipAtCapacity}`, `skillBased{minSkillMatchPct,minSkillLevel,tieBreaker}` | **Not supported:** the SPI carries only strategy, default workload and per-category overrides | Strategy-specific options belong to P3; send nothing for them. Decision needed |
+| `unassignedEscalationMinutes` | **Not supported** | Escalation timing is P4's domain. Decision needed |
+| Settings can be "not configured yet" (`null`) | Always configured (seeded singleton) | Drop the empty state |
+| `updatedBy` is a display name | `updatedByUserId` (id only, no personal data) | Resolve a name through the user module later |
+| Assignment has no default workload or category overrides | `defaultMaxWorkload` (1-100) and `categoryOverrides` | New form controls |
+
+### Open decisions for P3 / P4 / the frontend
+
+1. **P3:** register `LOAD_BASED` (the seeded default), or agree a different default key; provide the `AssignmentStrategyCatalog`
+   bean. Until then assignment writes return 503.
+2. **P3:** the frontend's strategy options (fallback, round-robin pool, skill thresholds, recommendations) are not in the SPI.
+   If P3 wants them stored by P1, that is a coordinated SPI change, not something P1 adds on its own.
+3. **P4:** `unassignedEscalationMinutes` (frontend) has no home in the SLA contract; decide whether it belongs to P4's configuration.
+4. **P4:** should the backend enforce the cross-priority rule (more urgent targets never looser) per scope? It is a UI-only rule today.
+5. **P4:** confirm that resolving an inactive service against its active policies, and 422 when nothing applies, suit SLA tracking.
+6. **P1 limit to confirm:** `defaultMaxWorkload` is capped at 100 (the SPI only says positive); say if another limit is wanted.
 
 ## Recipes
 
