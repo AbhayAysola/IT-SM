@@ -172,7 +172,7 @@ fun assign(incidentId: String, techId: Long) {
   `val` properties; (3) `AuditEventRepository` extends the bare `Repository` and exposes only `save`. There is no audit
   editing or deletion service. The trigger does not stop a database owner who drops it: restrict who owns the schema in
   production. The table has no foreign keys so rows outlive the users and incidents they describe.
-* Reading audit data (the admin viewer and the incident audit endpoint) is a later batch; the indexes for it exist.
+* Reading audit data (the admin viewer API and the incident trail) is implemented read-only in `AuditEventReader`/`AuditQueryService`, outside the repository above; contract in [audit-retrieval.md](audit-retrieval.md).
 
 ## 7. Planned auth hardening (not in this branch)
 

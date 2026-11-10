@@ -40,6 +40,53 @@ export interface ApiHelper {
   seed(user: TestUser): Promise<void>;
   /** Paths of every request the page made to the API (e.g. '/api/users/me'). */
   calls: string[];
+  /** Fake of the backend audit API (`/api/admin/audit-events`). Hermetic mode only. */
+  audit: AuditFake;
+}
+
+export interface FakeAuditEvent {
+  id: string;
+  occurredAt: string;
+  actor: { type: 'USER' | 'SYSTEM'; id: number | null; role: string | null; name: string | null };
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  incidentId: string | null;
+  previousState: string | null;
+  newState: string | null;
+  description: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditFake {
+  /** Rows the fake serves. Replace freely inside a test. */
+  events: FakeAuditEvent[];
+  /** Query strings of every list request, in order. */
+  requests: URLSearchParams[];
+  /** Paths of every detail request. */
+  detailRequests: string[];
+  /** When set, the next `times` audit requests answer this status (problem+json) instead of data. */
+  fail: { status: number; code: string; detail: string; times: number } | null;
+}
+
+/** `n` deterministic events, newest first by id: `evt-1` is the newest. */
+export function makeAuditEvents(n: number): FakeAuditEvent[] {
+  const base = Date.parse('2026-11-05T12:00:00Z');
+  return Array.from({ length: n }, (_, i) => ({
+    id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+    occurredAt: new Date(base - i * 3_600_000).toISOString(),
+    actor: i % 5 === 4
+      ? { type: 'SYSTEM' as const, id: null, role: null, name: 'SLA_MONITOR' }
+      : { type: 'USER' as const, id: 10 + (i % 3), role: i % 3 === 0 ? 'ADMIN' : 'TECHNICIAN', name: null },
+    action: i % 2 === 0 ? 'USER_CREATED' : 'SLA_POLICY_UPDATED',
+    entityType: i % 2 === 0 ? 'USER' : 'SLA_POLICY',
+    entityId: String(100 + i),
+    incidentId: null,
+    previousState: null,
+    newState: null,
+    description: `Event number ${i + 1}`,
+    metadata: i === 0 ? { changedFields: ['name', 'code'], count: 3, flag: true, note: '<img src=x onerror=alert(1)>' } : {},
+  }));
 }
 
 interface MockUser extends TestUser {
@@ -53,6 +100,23 @@ const CORS = {
   'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
 };
 
+/** Applies the documented filter/sort/paging semantics to `events` (the real ones are tested in the backend suite). */
+function auditPage(events: FakeAuditEvent[], q: URLSearchParams) {
+  const eq = (v: string | null, f: string | null) => !f || v === f;
+  const from = q.get('from'), to = q.get('to');
+  const rows = events.filter((e) =>
+    eq(e.action, q.get('action')) && eq(e.entityType, q.get('entityType')) && eq(e.entityId, q.get('entityId')) &&
+    eq(e.actor.role, q.get('actorRole')) && eq(e.actor.type, q.get('actorType')) &&
+    (!q.get('actorId') || String(e.actor.id) === q.get('actorId')) &&
+    (!from || Date.parse(e.occurredAt) >= Date.parse(from)) && (!to || Date.parse(e.occurredAt) < Date.parse(to)));
+  const sort = q.get('sort') ?? 'occurredAt';
+  const m = q.get('dir') === 'asc' ? 1 : -1;
+  const key = (e: FakeAuditEvent): string => (sort === 'actorRole' ? e.actor.role ?? '' : sort === 'action' ? e.action : sort === 'entityType' ? e.entityType : e.occurredAt);
+  rows.sort((a, b) => key(a).localeCompare(key(b)) * m || a.id.localeCompare(b.id) * m);
+  const size = Number(q.get('size') ?? 20), page = Number(q.get('page') ?? 0);
+  return { items: rows.slice(page * size, page * size + size), page, size, totalItems: rows.length, totalPages: Math.ceil(rows.length / size) };
+}
+
 export const test = base.extend<{ api: ApiHelper }>({
   // Installed for every test (auto) so route-guard tests can also assert "no API call was made".
   api: [
@@ -62,10 +126,13 @@ export const test = base.extend<{ api: ApiHelper }>({
         if (r.url().startsWith(`${API_URL}/api/`)) calls.push(new URL(r.url()).pathname);
       });
 
+      const audit: AuditFake = { events: makeAuditEvents(25), requests: [], detailRequests: [], fail: null };
+
       if (LIVE) {
         await use({
           live: true,
           calls,
+          audit,
           seed: async (u) => {
             testInfo.skip(
               !!u.role && u.role !== 'USER',
@@ -119,12 +186,33 @@ export const test = base.extend<{ api: ApiHelper }>({
           const u = token.startsWith('mock.') ? users.get(token.slice(5)) : undefined;
           return u ? route.fulfill(ok(publicUser(u))) : route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
         }
+        if (path === '/api/admin/audit-events' || path.startsWith('/api/admin/audit-events/')) {
+          // Like the real endpoint: 401 without a valid token, 403 unless the caller is an ADMIN, GET only.
+          const token = (req.headers()['authorization'] ?? '').replace('Bearer ', '');
+          const caller = token.startsWith('mock.') ? users.get(token.slice(5)) : undefined;
+          if (!caller) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
+          if (caller.role !== 'ADMIN') return route.fulfill(problem(403, 'FORBIDDEN', 'Operation not permitted'));
+          if (req.method() !== 'GET') return route.fulfill(problem(405, 'METHOD_NOT_ALLOWED', 'Method not allowed'));
+          if (audit.fail && audit.fail.times > 0) {
+            audit.fail.times -= 1;
+            return route.fulfill(problem(audit.fail.status, audit.fail.code, audit.fail.detail));
+          }
+          const url = new URL(req.url());
+          if (path !== '/api/admin/audit-events') {
+            audit.detailRequests.push(path);
+            const found = audit.events.find((e) => e.id === decodeURIComponent(path.split('/').pop()!));
+            return found ? route.fulfill(ok(found)) : route.fulfill(problem(404, 'RESOURCE_NOT_FOUND', 'Audit event was not found'));
+          }
+          audit.requests.push(url.searchParams);
+          return route.fulfill(ok(auditPage(audit.events, url.searchParams)));
+        }
         return route.fulfill(problem(404, 'RESOURCE_NOT_FOUND', 'Not found'));
       });
 
       await use({
         live: false,
         calls,
+        audit,
         seed: async (u) => {
           users.set(u.email, { ...u, id: nextId++, createdAt: new Date().toISOString() });
         },

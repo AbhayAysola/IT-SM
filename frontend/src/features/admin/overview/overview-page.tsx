@@ -114,10 +114,16 @@ export default function OverviewPage() {
             </Card>
           </div>
 
-          <Card>
+          <Card data-testid="recent-changes-card">
             <CardHeader>
-              <CardTitle className="text-lg">Recent changes</CardTitle>
-              <CardDescription>Latest administrative actions on users and technicians.</CardDescription>
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="text-lg">Recent changes</CardTitle>
+                <Badge variant="secondary" data-testid="demo-data-badge">Demo data</Badge>
+              </div>
+              <CardDescription data-testid="demo-data-note">
+                Changes made in this browser&apos;s local demo data only. This is not the audit history: the server&apos;s
+                persisted audit events are in Audit logs.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {activity.error ? (
@@ -138,7 +144,7 @@ export default function OverviewPage() {
                 </ul>
               )}
               <Link href="/admin/audit-logs" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
-                View all audit logs <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                Open the audit logs (persisted events) <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </CardContent>
           </Card>

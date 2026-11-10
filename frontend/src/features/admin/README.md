@@ -28,8 +28,9 @@ functions; pages and components should not need to change. No API endpoints have
 
 - Every successful mutation appends one entry through `recordAudit`. Rejected or failed mutations write nothing.
   Updates and status changes record before/after values for the changed fields only.
-- The viewer's `auditService` exposes only `recent`, `list` and `get`. There is no edit or delete anywhere in the app.
-- Seeded history is flagged `seed: true` and labelled "Demo data". Entries written before before/after recording
+- **The Audit logs page reads the backend** (`services/audit-api.ts`, `GET /api/admin/audit-events`; contract in `docs/architecture/audit-retrieval.md`). It is read-only: the client has no write method and the endpoints are GET only.
+- The mock `auditService` (`recent`, plus the now-unused `list`/`get`) still backs the overview's "Recent changes" card, which is labelled **Demo data** and is not the audit history (Audit logs is). Mutations of the other, still-mocked pages append to that local log through `recordAudit`, so they do **not** appear on the Audit logs page until those pages are connected.
+- (Mock log only.) Seeded history is flagged `seed: true`. Entries written before before/after recording
   existed show "No before/after values were recorded".
 - **Not tamper-proof.** The log is a mock in browser storage, so anyone with devtools can change it. Real
   append-only guarantees must come from the backend.

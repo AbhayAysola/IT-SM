@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { AUDIT_ACTION_LABEL, PRIORITY_LABEL, CRITICALITY_LABEL, type AccountStatus, type ActiveStatus, type AuditAction, type AdminRole, type Availability, type Criticality, type Priority, type SkillLevel } from '../types';
+import { PRIORITY_LABEL, CRITICALITY_LABEL, type AccountStatus, type ActiveStatus, type AdminRole, type Availability, type Criticality, type Priority, type SkillLevel } from '../types';
 
 export const ROLE_LABEL: Record<AdminRole, string> = { EMPLOYEE: 'Employee', TECHNICIAN: 'Technician', ADMIN: 'Administrator' };
 export const STATUS_LABEL: Record<AccountStatus, string> = { ACTIVE: 'Active', SUSPENDED: 'Suspended', INVITED: 'Invited' };
@@ -35,8 +35,3 @@ export const PriorityBadge = ({ priority }: { priority: Priority }) => (
 export const CriticalityBadge = ({ value }: { value: Criticality }) => (
   <Badge variant={value === 'CRITICAL' ? 'destructive' : value === 'HIGH' ? 'warning' : value === 'MEDIUM' ? 'secondary' : 'outline'}>{CRITICALITY_LABEL[value]}</Badge>
 );
-
-export const ActionBadge = ({ action }: { action: AuditAction }) => {
-  const variant = action === 'CREATE' ? 'success' : action === 'DELETE' ? 'destructive' : action === 'STATUS_CHANGE' ? 'warning' : action === 'ROLE_CHANGE' ? 'default' : 'secondary';
-  return <Badge variant={variant}>{AUDIT_ACTION_LABEL[action]}</Badge>;
-};

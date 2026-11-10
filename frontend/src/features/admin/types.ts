@@ -78,7 +78,7 @@ export interface ListQuery {
 }
 
 export class ServiceError extends Error {
-  code: 'NOT_FOUND' | 'DUPLICATE' | 'VALIDATION' | 'UNAVAILABLE' | 'CONFLICT';
+  code: 'NOT_FOUND' | 'DUPLICATE' | 'VALIDATION' | 'UNAVAILABLE' | 'CONFLICT' | 'FORBIDDEN' | 'UNAUTHENTICATED';
   constructor(code: ServiceError['code'], message: string) {
     super(message);
     this.name = 'ServiceError';

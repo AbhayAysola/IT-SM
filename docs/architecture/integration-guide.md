@@ -22,7 +22,7 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `ServiceCatalog` | P1 (`JpaServiceCatalog`, implemented) | P2 (validate service), P4 (criticality), P2/P4 (dependents for correlation) |
 | `SlaPolicyProvider` | P1 (`JpaSlaPolicyProvider`, implemented) | P4 |
 | `AssignmentSettingsProvider` | P1 (`JpaAssignmentSettingsProvider`, implemented) | P3 |
-| `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction) | everyone |
+| `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction; read API: [audit-retrieval.md](audit-retrieval.md)) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
 | `TechnicianWorkloadProvider` | **P3 only** | P1 (admin technician views), P4 (SLA risk) |
 | `AssignmentStrategyCatalog` | **P3 only** (no bean exists yet) | P1 (validates configured strategy keys; looked up lazily, see "Assignment settings") |
@@ -53,8 +53,12 @@ call `UserDirectory` for the caller).
 
 **Implement:** `IncidentAccessPolicy` (you are the sole owner). Contract: throw `ResourceNotFound` if
 the incident does not exist, otherwise return whether the user may see it (reporter, assigned
-technician, or admin). Nobody else re-implements these rules. P1's `GET /api/incidents/{id}/audit` calls
-`requireView(...)`.
+technician, or admin). Nobody else re-implements these rules. P1's `GET /api/incidents/{id}/audit` (implemented in B7)
+calls `requireView(...)` through an `ObjectProvider` and answers **503 until your bean exists**; see
+[audit-retrieval.md](audit-retrieval.md). Your policy decides only *whether* a caller sees the incident. P1 decides *what*
+they see of its audit trail: admins (`AUDIT_VIEW`) get full rows, everyone else a reduced projection without `description`,
+`metadata` or actor identity. Registering your bean needs no P1 change. Incident audit is not production-integrated
+until you supply and verify it, and your own audit events' metadata/descriptions still need review.
 
 **Hard rules**
 * Store `categoryId` and `serviceId` as foreign keys. **Never use a Kotlin enum for category**: categories
