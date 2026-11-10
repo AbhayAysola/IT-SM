@@ -109,6 +109,9 @@ jobs:
               'com.itsm.bootstrap.AdminBootstrapIntegrationTest': 1,
               'com.itsm.auth.JwtFilterInfrastructureFailureIntegrationTest': 1,
               'com.itsm.migration.UsersMigrationIntegrationTest': 1,
+              'com.itsm.migration.TechnicianProfilesMigrationIntegrationTest': 1,
+              'com.itsm.admin.technician.TechnicianAdminIntegrationTest': 1,
+              'com.itsm.admin.technician.TechnicianDirectoryIntegrationTest': 1,
           }
           total = skipped = 0
           executed = {}

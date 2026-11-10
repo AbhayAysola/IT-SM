@@ -69,6 +69,10 @@ class GlobalExceptionHandlerTest {
             Case("notNull", { DataIntegrityViolationException("x", sql("23502")) }, 400, "INVALID_INPUT"),
             Case("checkViolation", { DataIntegrityViolationException("x", sql("23514")) }, 400, "INVALID_INPUT"),
             Case("valueTooLong", { DataIntegrityViolationException("x", sql("22001")) }, 400, "INVALID_INPUT"),
+            // deliberate V16 trigger conflicts (and ONLY those custom states) are 409; an unknown custom state is a bug (500)
+            Case("technicianRoleGuard", { UncategorizedSQLException("task", "update users set role=$SECRET", sql("IT001")) }, 409, "CONFLICT"),
+            Case("technicianProfileGuard", { DataIntegrityViolationException("x", sql("IT002")) }, 409, "CONFLICT"),
+            Case("unknownCustomState", { UncategorizedSQLException("task", "update users set role=$SECRET", sql("IT999")) }, 500, "INTERNAL_ERROR"),
             Case("unknownIntegrity", { DataIntegrityViolationException("x $SECRET") }, 409, "CONFLICT"),
             Case("optimisticLock", { OptimisticLockingFailureException("version $SECRET") }, 409, "CONCURRENT_MODIFICATION"),
             Case("deadlock", { CannotAcquireLockException("deadlock $SECRET") }, 409, "CONCURRENT_MODIFICATION"),
@@ -125,6 +129,14 @@ class GlobalExceptionHandlerTest {
         for (forbidden in listOf(SECRET, "secret_table", "select ", "jdbc:", "Exception", "violates")) {
             assertFalse(body.contains(forbidden, ignoreCase = true), "response leaked '$forbidden': $body")
         }
+    }
+
+    @Test fun `the trigger conflicts get their own fixed wording, everything else keeps the generic one`() {
+        fun detail(kind: String) = mvc.perform(get("/throw").param("kind", kind)).andReturn().response.contentAsString
+        assertTrue(detail("technicianRoleGuard").contains("active technician profile; deactivate the profile before changing the role"))
+        assertTrue(detail("technicianProfileGuard").contains("reporting-line or role rule"))
+        assertTrue(detail("unknownIntegrity").contains("conflicts with the current state of the data"))
+        assertFalse(detail("unknownCustomState").contains("technician", ignoreCase = true))
     }
 
     @Test fun `503 carries Retry-After, 409 does not`() {

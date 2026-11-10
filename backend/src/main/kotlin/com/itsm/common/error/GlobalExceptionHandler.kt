@@ -127,7 +127,7 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
             ErrorCode.REFERENCE_CONSTRAINT -> "The resource is referenced by other data or refers to data that does not exist"
             ErrorCode.CONCURRENT_MODIFICATION -> "The resource was modified concurrently; please retry"
             ErrorCode.INVALID_INPUT -> "The request contains data that cannot be stored"
-            ErrorCode.CONFLICT -> "The request conflicts with the current state of the data"
+            ErrorCode.CONFLICT -> DatabaseErrorClassifier.conflictDetail(ex) ?: "The request conflicts with the current state of the data"
             ErrorCode.SERVICE_UNAVAILABLE -> "The service is temporarily unavailable; please retry shortly"
             else -> "An unexpected error occurred"
         }

@@ -34,7 +34,7 @@ Do not write a second implementation of someone else's SPI "for testing" in `src
 `AuditPublisher` is fully implemented and persists events (see foundation.md section 6): publish inside your
 `@Transactional` method and the row is written with your change, or not at all if it rolls back. `CategoryCatalog` and
 `ServiceCatalog`, `SlaPolicyProvider` and `AssignmentSettingsProvider` are implemented (see "Category and service catalogs"
-and "SLA policies and assignment settings" below). `UserDirectory` is implemented for users (see "Users, authentication and roles"); technician-profile methods return "no data" until B6.
+and "SLA policies and assignment settings" below). `UserDirectory` is fully implemented (see "Users, authentication and roles" and "Technician profiles").
 Until a bean exists, **a `@Service` that constructor-injects it will stop the application from starting**.
 So for now:
 
@@ -342,15 +342,62 @@ Full detail: [security.md](security.md). What other modules need:
 * **Identity**: inject `CurrentUserProvider` (`current()` -> `CurrentUser(id, email, role)`). Never read the role from a token
   or request. The role is always the stored one.
 * **`UserDirectory`** (`JpaUserDirectory`): `findById`/`requireById`, `listAdmins` (active ADMINs only) return immutable
-  `UserSummary(id, email, name, role, active)`. **`findTechnician`, `listAvailableTechnicians` and `escalationChain` return
-  null / empty until B6 adds technician profiles — that means "no profile data", not "no technicians".
-  `JpaUserDirectory.TECHNICIAN_PROFILES_AVAILABLE` is `false` until then (the SPI cannot express it) and the first call logs a
-  WARN. P3: treat an empty technician list as "cannot assign" while it is false.** Inactive users are
-  still returned by `findById` (check `active`).
+  `UserSummary(id, email, name, role, active)`. Technician methods are specified in "Technician profiles" below. `findById`
+  still returns inactive users (check `active`).
 * **Authorization**: `@PreAuthorize("hasAuthority('<PERMISSION>')")`; permissions are unchanged. Roles: `EMPLOYEE`,
   `TECHNICIAN`, `ADMIN`, nothing else.
 * **Tests**: `AdminApiTestSupport.caller(role)` inserts a user and mints a valid token (`generateToken(userId, tokenVersion)`).
   Test emails must be lower-case (DB CHECK). The test JVM gets `JWT_SECRET` from `build.gradle.kts`.
+
+## Technician profiles (P1, `V16`)
+
+Handoff for P3 (and anyone calling `UserDirectory`). **Contract status: pending P3 confirmation** (P3's consumer does not exist yet; no shared signature was changed). P1 stores and serves profile DATA; P3 owns workload, recommendation and
+assignment. Admin API: `/api/admin/technicians` (see [security.md](security.md) for the permission; `USER_MANAGE`, ADMIN only).
+
+**Identifiers.** The profile id IS the canonical user id (`TechnicianSummary.userId`); one profile per user. Skills are keyed by
+`CategoryView.id` (the SPI's `categoryId`), never by name or code (code is the stable external key, id the SPI key).
+
+**What "usable" means.** Every technician method returns only technicians whose profile is ACTIVE, whose user account is ACTIVE
+and whose role is TECHNICIAN. Inactive profiles/users are excluded, not flagged: `TechnicianSummary` has no `active` field, so
+P3 cannot tell "inactive" from "unknown". Use `findById` for the account itself.
+
+| Method | Semantics |
+|---|---|
+| `findTechnician(userId)` | the usable technician, else `null` (no profile, inactive profile, inactive user, or not a TECHNICIAN) |
+| `listAvailableTechnicians(categoryId?)` | usable technicians whose administrator-set `available` flag is true; with `categoryId`, only those with a skill for that ACTIVE category. Ordered by name (case-insensitive) then user id. **Workload is not considered** |
+| `escalationChain(technicianId)` | the reporting line above the technician, nearest first, excluding the technician; managers whose profile or account is inactive are skipped and the walk continues. Empty if no usable reporting line. No other hierarchy or fallback is invented |
+
+**Field meaning (do not over-read).**
+* `available` = an administrator's flag (on leave, off shift). It is **not** workload, not capacity and not "assignable now".
+  An active profile is not automatically available, and an available one may be at capacity: P3 must combine this with
+  its own workload calculation and `maxWorkload`.
+* `maxWorkload`: configured CEILING of concurrent incidents, never the current count. `experienceYears`: stored input (0..60).
+  P1 never computes or enforces workload; P3 compares its own current count against `maxWorkload`.
+* Inactive users and inactive profiles never appear in any technician result (only `findById` still returns an inactive account).
+* `skills`: `categoryId -> proficiency 1..5`, only for categories that are active now. Inactive-category skills are kept
+  in storage and omitted here.
+* `isTeamLead` is an attribute (not a role). `reportsToUserId` is the stored line; a manager is always an ACTIVE team lead.
+* Query cost is constant (page rows + skills; one recursive query for the chain): safe to call per incident.
+
+**Contract points for P3 to confirm (nothing was changed in shared interfaces).**
+1. `listAvailableTechnicians` filters by an admin flag only. If P3 wants a workload-aware list it should call this and filter
+   with `TechnicianWorkloadProvider`; P1 will not add workload to this SPI.
+2. The SPI cannot express "profile exists but inactive". If P3 needs that (e.g. an incident assigned to a technician who was
+   deactivated) the smallest compatible change is a default method such as `findTechnicianIncludingInactive` or an `active`
+   field with a default; propose it before using it.
+3. Frontend mocks use `skillLevel`, `availability` (AVAILABLE/BUSY/OFF_SHIFT/ON_LEAVE), `team`, `shift`, `currentWorkload`.
+   None exist in the SPI or V16 and none were added (no use case): proficiency is per category, availability is one boolean,
+   `currentWorkload` comes from P3, `team`/`shift` are deferred.
+
+**Errors.** A user with an ACTIVE profile cannot change role: `409 CONFLICT` "This user has an active technician profile; deactivate the profile before changing the role." (database trigger SQLSTATE `IT001`). Other profile invariants raise `IT002` -> 409 with generic wording. Nothing else is mapped to 409 by these codes, and no SQL, table or trigger text reaches the client.
+
+**Admin rules in short.** A profile can only be created for an existing, active TECHNICIAN user (never changes the role; 409
+otherwise); duplicates are 409; updates carry `version` (stale = 409); a user with an ACTIVE profile cannot lose the TECHNICIAN
+role (deactivate the profile first); a team lead with reports cannot be un-flagged or deactivated; reporting lines forbid
+self, cycles and inactive-profile, inactive-account or non-lead managers. Deactivating a manager's USER account does not
+remove existing reports (user administration is separate): the escalation chain simply skips an inactive manager. Deliberately deferred: bulk operations, deleting profiles, team/shift fields.
+Audit actions (entity `TECHNICIAN`, entity id = user id): `TECHNICIAN_PROFILE_CREATED|UPDATED|ACTIVATED|DEACTIVATED`,
+`TECHNICIAN_REPORTING_CHANGED`, `TECHNICIAN_SKILLS_CHANGED`; metadata has ids and numbers only, never names or emails.
 
 ## Recipes
 

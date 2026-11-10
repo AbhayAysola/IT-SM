@@ -16,8 +16,9 @@ import com.itsm.common.security.CurrentUser
 /**
  * Provided by P1 (access). Users and technician profiles.
  *
- * Until B6 lands, `findTechnician` is null and `listAvailableTechnicians` / `escalationChain` are empty because there is
- * NO profile data, not because there are no technicians (see `JpaUserDirectory.TECHNICIAN_PROFILES_AVAILABLE`).
+ * Technician methods return only USABLE technicians: active profile, active user account, role TECHNICIAN. `available` in
+ * [TechnicianSummary] is an administrator-set flag (leave / off shift), NOT a workload or assignability verdict: P3 owns
+ * workload and assignment policy. `findTechnician` returns null for anything not usable (use `findById` for the account).
  */
 interface UserDirectory {
     fun findById(userId: Long): UserSummary?

@@ -65,6 +65,12 @@ Safety rules: an admin cannot deactivate or demote **themselves** (another admin
 deactivated or demoted. The check runs under advisory lock `7310003`, shared with bootstrap, so concurrent requests cannot both
 pass. Optimistic locking: `@Version` on the entity plus the `version` field in the request.
 
+## Technician profile administration permission
+
+`/api/admin/technicians` uses the existing `USER_MANAGE` permission (ADMIN only): technician profiles are part of user
+administration and no narrower grant is needed, so no `TECHNICIAN_MANAGE` permission was added. Changing a user's role stays in
+`/api/admin/users`; a profile never alters the role. See the integration guide for the profile model.
+
 ## Audit
 
 Actions (`entityType USER`, actor = the admin, `targetUserId` in metadata): `USER_CREATED`, `USER_UPDATED`, `USER_ROLE_CHANGED`
@@ -103,7 +109,7 @@ Further admins: `POST /api/admin/users` with role `ADMIN`.
 **Not implemented in B5, on purpose.** The merged frontend stores the access token in `localStorage` plus a JS-readable
 cookie and sends it as a Bearer header; a backend-only switch to HttpOnly cookies would break it. The access-token protocol is
 unchanged apart from the token contents. Proposed contract for a coordinated change (needs the frontend and a migration number,
-`V16` is the B6 technician-profile migration, so refresh tokens start at `V17`):
+`V16` is the technician-profile migration, so refresh tokens start at `V17`):
 
 1. `POST /api/auth/login|register` -> JSON `{accessToken (15 min), user}` + `Set-Cookie: refresh=...; HttpOnly; Secure;
    SameSite=Strict; Path=/api/auth`. Access token kept in memory only.

@@ -17,11 +17,22 @@ data class UserSummary(
     val active: Boolean
 )
 
+/**
+ * A USABLE technician as stored by P1 (active profile, active user account, role TECHNICIAN). Values are administrator
+ * configuration, not live state.
+ *
+ * Contract status: PENDING P3 CONFIRMATION (P3's consumer does not exist yet).
+ */
 data class TechnicianSummary(
     val userId: Long,
     val name: String,
     val email: String,
+    /**
+     * An administrator-set eligibility flag (on leave, off shift...). It is NOT live workload and does NOT guarantee the
+     * technician can take another incident: P3 combines it with its own workload calculation and [maxWorkload].
+     */
     val available: Boolean,
+    /** Configured ceiling of concurrent incidents (1..100). Configuration only, never the current count (P3 owns that). */
     val maxWorkload: Int,
     val experienceYears: Int,
     val isTeamLead: Boolean,

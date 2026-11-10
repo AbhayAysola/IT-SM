@@ -93,7 +93,7 @@ numbers). Differences from those drafts:
   checks them against P3's `AssignmentStrategyCatalog`. The seed `LOAD_BASED`/5 is the default from the earlier draft and
   the integration guide; it is **not verified** against P3 (see "Assignment settings" in the integration guide).
 
-**`V10`-`V15` are merged; the one remaining draft already carries its final number (`V16`).** The planned P1
+**`V10`-`V16` are merged; there are no drafts left.** The planned P1
 sequence is the order the branches merge, so that version order equals merge order (Flyway `out-of-order` stays off):
 
 | Version | Migration | Status |
@@ -104,21 +104,34 @@ sequence is the order the branches merge, so that version order equals merge ord
 | `V13` | SLA policies | merged |
 | `V14` | assignment settings | merged |
 | `V15` | user extensions (`active`, `token_version`, `version`, `updated_at`, canonical roles, unique lower-case email) | merged on `feat/p1-admin-backend` (B5) |
-| `V16` | technician profiles (B6) | draft, file already renamed `V16__...`; moves into `src/main/resources` with B6 |
+| `V16` | technician profiles and skills (B6) | merged on `feat/p1-admin-backend` |
 | `V17`+ | refresh tokens (future, needs frontend coordination) | not started; must not reuse `V16` |
 
-Drafts live outside `src/main/resources` and are applied only when their branch moves them across. Within P1's block `V10-V19`, `V18` and `V19` stay free.
+Within P1's block `V10-V19`, `V18` and `V19` stay free.
 
-### Remaining drafts
+### V16 (technician profiles)
 
-Located in [`docs/migrations/drafts/`](migrations/drafts/) and **not** in `src/main/resources`, so nothing
-is applied until the matching P1 branch moves its file across. They are the *validated* versions of the
-earlier proposal: the first draft had invalid syntax (`CREATE INDEX ON t (a), (b);` is a PostgreSQL syntax
-error: one `CREATE INDEX` per statement) and a foreign key to a table created later.
+`V16__p1_technician_profiles.sql` replaces the old draft (which had no role guard, no lead check and no history rules).
 
-| File | Creates |
-|---|---|
-| `V16__p1_technician_profiles.sql` | `technician_profiles`, `technician_skills` (B6; renamed from `V13`) |
+* `technician_profiles`: PK = `user_id` (FK to `users`), so a user has at most one profile and no second identity table or JPA
+  inheritance exists. Name, email, password, role and account state stay in `users`. Columns: `max_workload` (1..100),
+  `experience_years` (0..60), `available` (administrator flag), `is_team_lead`, `reports_to_user_id`, `active`, `version`,
+  timestamps. Every column but `is_team_lead`/`active`/`reports_to_user_id` is required and has NO default: no value is invented.
+* `technician_skills(user_id, category_id, proficiency 1..5)`: PK `(user_id, category_id)` (no duplicates), FKs to the profile and
+  to `incident_categories(id)`. Skill rows survive a category being deactivated (history); the directory stops reporting them.
+* Team lead: `reports_to_user_id` plus a stored generated column `reports_to_lead` and a composite FK onto
+  `UNIQUE (user_id, is_team_lead)`: the manager must have a profile AND be flagged a team lead, and a lead cannot be un-flagged
+  while anyone (any state) still reports to it. `CHECK (reports_to_user_id <> user_id)` forbids self-reporting.
+* **Triggers (why, since CHECK/FK cannot do this):** `technician_profiles_guard` (BEFORE INSERT/UPDATE) requires role
+  `TECHNICIAN` on insert and reactivation (user row locked `FOR SHARE`), makes `user_id` immutable, requires an ACTIVE manager (profile AND user account; the account row is locked `FOR SHARE`),
+  rejects reporting cycles by walking the chain, and refuses to deactivate a profile with ACTIVE reports. It takes advisory lock
+  `7310004` (same key as `AdvisoryLocks.TECHNICIAN_GRAPH`) so concurrent writers cannot jointly create a cycle.
+  `users_role_keeps_technician_profile` (BEFORE UPDATE OF role ON users) refuses to change the role of a user with an ACTIVE
+  profile. They raise deliberate application SQLSTATEs: `IT001` (role change blocked by an active profile) and `IT002` (every other profile invariant). `DatabaseErrorClassifier` maps exactly these two to HTTP 409 `CONFLICT` with fixed wording (the database message is never sent); any other unknown state is a 500, other 23xxx states keep their own mapping. A deactivated profile is history and stays when the role changes later.
+* Safe for existing data: it inserts nothing and updates nothing. Existing EMPLOYEE/ADMIN/TECHNICIAN rows are unchanged and
+  nobody gets a profile automatically. Tested (`TechnicianProfilesMigrationIntegrationTest`) including a bit-for-bit users
+  comparison, a no-op second run and `validate`.
+* No `V17` is used: refresh tokens, when they happen, start at `V17`.
 
 ### V15 (users) — what it does and what it deliberately leaves out
 
@@ -130,8 +143,7 @@ error: one `CREATE INDEX` per statement) and a foreign key to a table created la
 * Default role is now `EMPLOYEE`. Existing accounts stay active. JWTs issued before this release (subject = email, no
   version claim) are rejected, so every user signs in once more after the deploy.
 * Dropped from the old draft: `failed_logins`, `locked_until`, `department`, `phone` (no lockout feature or consumer yet).
-* The old `docs/migrations/drafts/V10__p1_extend_users.sql` was removed; The B6 draft was renamed `V13__...` -> `V16__...`
-  during the B5 review.
+* The old `docs/migrations/drafts/V10__p1_extend_users.sql` was removed in B5.
 
 Design notes
 * Audit rows carry no foreign keys on purpose (they must outlive users and incident rows). Append-only
@@ -146,25 +158,18 @@ This is what was run to validate the original drafts (all eight migrations appli
 CI now runs the main-location part of it on every PR (`Backend / Flyway on a clean PostgreSQL 16`, twice, plus `validate`),
 and the Spring startup test boots on a clean PostgreSQL 16 with `ddl-auto: validate`.
 
-> **The `/m/drafts` mount below no longer works as written:** the remaining drafts still carry the pre-renumbering
-> numbers (`V10`, `V13`): `V10` collides with the merged audit migration and neither matches the planned
-> sequence. Validate a draft only after
-> renumbering it as described in section 3.
-
 ```bash
 docker network create itsm-val
 docker run -d --name itsm-pg16 --network itsm-val -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=itsm postgres:16
 
 docker run --rm --network itsm-val \
   -v "$PWD/backend/src/main/resources/db/migration":/m/main:ro \
-  -v "$PWD/docs/migrations/drafts":/m/drafts:ro \
   flyway/flyway:10.10.0 -url=jdbc:postgresql://itsm-pg16:5432/itsm -user=postgres -password=pw \
-  -locations=filesystem:/m/main,filesystem:/m/drafts -validateMigrationNaming=true migrate
+  -locations=filesystem:/m/main -validateMigrationNaming=true migrate
 
 docker rm -f itsm-pg16 && docker network rm itsm-val
 ```
 
-Once drafts are moved into `src/main/resources/db/migration`, drop the `/m/drafts` mount and location.
 Behaviour was also probed on that database: `UPDATE`/`DELETE`/`TRUNCATE` on `audit_events` are rejected
 while `INSERT` works; a second global `P1` SLA row, `resolution < response`, a service depending on
 itself, an invalid role, a second `assignment_settings` row and a technician reporting to themselves are

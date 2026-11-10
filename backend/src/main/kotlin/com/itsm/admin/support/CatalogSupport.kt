@@ -80,5 +80,8 @@ class AdvisoryLocks(private val entityManager: EntityManager) {
 
         /** Set of active ADMIN accounts: admin bootstrap, role change, deactivation ("never zero active admins"). */
         const val ADMIN_ACCOUNTS = 7310003L
+
+        /** Technician reporting lines and profile activation. MUST match the key in V16's technician_profiles_guard trigger. */
+        const val TECHNICIAN_GRAPH = 7310004L
     }
 }
