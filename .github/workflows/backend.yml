@@ -119,6 +119,7 @@ jobs:
               'com.itsm.integration.RouteAuthorizationMatrixIntegrationTest': 1,
               'com.itsm.integration.ListQueryCountIntegrationTest': 1,
               'com.itsm.integration.SlaProviderCallerTransactionIntegrationTest': 1,
+              'com.itsm.integration.PaginationOffsetIntegrationTest': 1,
           }
           total = skipped = 0
           executed = {}

@@ -81,7 +81,7 @@ internal id in the same direction; other sorts fall back to `occurredAt desc, id
 repeatable, and newest-first uses `idx_audit_events_occurred_at (occurred_at DESC, id DESC)`.
 
 **Paging.** Standard `PageResponse`: `items`, `page` (0-based), `size`, `totalItems`, `totalPages`. A page past the end
-is an empty page, not an error. A `page`/`size` whose offset exceeds 2^31−1 is a 400. One list call = one `COUNT` plus
+is an empty page, not an error. A `page`/`size` whose offset exceeds 2^31−1 is a 400 (enforced by `PageQuery`, like every list). One list call = one `COUNT` plus
 one `LIMIT/OFFSET` select (asserted by a test); the table is never loaded into memory. Deep offsets and the exact count
 cost more on a very large table; keyset paging is a possible later optimisation (deferred).
 

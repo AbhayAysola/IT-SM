@@ -55,7 +55,6 @@ class AuditQueryService(
         requireAuditView()
         val filter = parseFilter(params)
         val pageable = page.toPageable(sorting(params.sort, params.dir, Sort.Direction.DESC))
-        requireReachableOffset(page)
         return PageResponse.from(reader.search(filter, pageable)) { AuditEventResponse.from(it) }
     }
 
@@ -90,19 +89,12 @@ class AuditQueryService(
             throw InvalidInput("Unsupported sort", listOf(FieldError("sort", "must be one of ${VIEWER_SORTS.sorted()}")))
         }
         val pageable = page.toPageable(sorting(sort, dir, Sort.Direction.ASC))
-        requireReachableOffset(page)
         return PageResponse.from(reader.search(AuditEventFilter(incidentId = incidentId), pageable)) {
             if (full) AuditEventResponse.from(it) else IncidentHistoryEntry.from(it)
         }
     }
 
     private fun requireAuditView(): CurrentUser = currentUser.current().also { it.requirePermission(Permission.AUDIT_VIEW) }
-
-    private fun requireReachableOffset(page: PageQuery) {
-        if (page.page.toLong() * page.size > Int.MAX_VALUE) {
-            throw InvalidInput("Invalid paging parameters", listOf(FieldError("page", "is out of range")))
-        }
-    }
 
     private fun parseFilter(p: AuditSearchParams): AuditEventFilter {
         val errors = mutableListOf<FieldError>()
