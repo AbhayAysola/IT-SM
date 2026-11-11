@@ -7,6 +7,7 @@ import com.itsm.user.UserEntity
 import com.itsm.user.UserRepository
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
@@ -52,8 +53,12 @@ class ApplicationStartupIntegrationTest {
             .content("""{"email":"$email","password":"Passw0rd!","name":"Test"}""")
     )
 
-    @Test fun `application starts on PostgreSQL 16 with the baseline migration applied`() {
-        assertEquals("1", flyway.info().current().version.version)
+    @Test fun `application starts on PostgreSQL 16 with every migration applied`() {
+        // Not "version == 1": that broke every time any teammate added a migration.
+        val info = flyway.info()
+        assertTrue(info.applied().any { it.version.version == "1" }, "the baseline migration must be applied")
+        assertTrue(info.pending().isEmpty(), "pending migrations: ${info.pending().map { it.version }}")
+        assertTrue(info.all().none { it.state.isFailed }, "failed migrations")
     }
 
     @Test fun `register, duplicate register, login and me work end to end`() {
