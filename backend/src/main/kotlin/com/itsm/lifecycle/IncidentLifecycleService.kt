@@ -53,9 +53,12 @@ class IncidentLifecycleService(
     /** What [user] can do right now: the state machine's moves narrowed by ownership. Drives which buttons a UI shows. */
     @Transactional(readOnly = true)
     fun availableTransitions(incidentId: String, user: CurrentUser): List<IncidentTransition> {
-        val record = get(incidentId, user)
-        return IncidentStateMachine.availableTo(record.state, user).filter { it in handled && ownedBy(it, record, user) }
+        return availableTransitions(get(incidentId, user), user)
     }
+
+    /** Same, for a record the caller already holds (e.g. the one a move just returned). */
+    fun availableTransitions(record: IncidentRecord, user: CurrentUser): List<IncidentTransition> =
+        IncidentStateMachine.availableTo(record.state, user).filter { it in handled && ownedBy(it, record, user) }
 
     @Transactional
     fun transition(incidentId: String, transition: IncidentTransition, reason: String?, user: CurrentUser): IncidentRecord {
