@@ -63,7 +63,11 @@ export const liveIncidentService = {
 
   async get(actor: Actor, id: string): Promise<IncidentDetail> {
     const who = me(actor);
-    const dto = await call<ApiIncident>('GET', `/${enc(id)}`);
+    // The page recognises "not found" by the mock's wording, so say it the same way whatever the backend's text is.
+    const dto = await call<ApiIncident>('GET', `/${enc(id)}`).catch((e: unknown) => {
+      if (e instanceof IncidentError && e.code === 'NOT_FOUND') throw new IncidentError('NOT_FOUND', 'We couldn’t find that incident.');
+      throw e;
+    });
     const incident = toIncident(dto, who);
     const staff = hasPermission(actor.role, 'INCIDENT_WORK');
     const wantsSimilar = staff && ACTIVE.includes(dto.state);

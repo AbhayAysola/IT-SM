@@ -79,6 +79,20 @@ rm -rf ../backend/build ../backend/.gradle   # build output; both are untracked 
 If you must reuse a long-lived local database instead, remove the test accounts afterwards (and only these):
 `DELETE FROM users WHERE email LIKE 'e2e-%@example.test';`
 
+## Live incidents (`incidents-live.spec.ts`)
+
+Drives the P3 workspace in a real browser against the real backend: a technician works an incident, the reporter answers and rates it,
+an admin closes it, a stranger gets "not found", and the list is paged by the server. **Opt-in**: it is skipped unless
+`E2E_INCIDENTS_LIVE=1`. The backend cannot yet create incidents or promote accounts, so the spec does both with SQL in the
+throwaway database container (`E2E_PG_CONTAINER`, default `e2e-pg`): use the stack above, and note:
+
+* build the frontend with `NEXT_PUBLIC_INCIDENTS_API=live npm run build` (the default build uses the mock service);
+* the backend jar must be built from a checkout that has the incidents table (V20) and the endpoints;
+* run `E2E_INCIDENTS_LIVE=1 E2E_LIVE_API=1 npx playwright test e2e/incidents-live.spec.ts --workers=1`;
+* a normal `npm run test:e2e` rebuilds in mock mode afterwards.
+
+Assigning needs P1's providers, which are not on `main`, so the spec asserts the graceful "not available yet" instead.
+
 ## CI recipe (Node 20, reproducible)
 
 Everything, including the build and both servers, runs on Node 20 inside one throwaway container. The source is
