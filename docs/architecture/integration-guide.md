@@ -72,7 +72,7 @@ Use `entityType = "INCIDENT"`.
 
 ## P3: lifecycle, assignment, investigation, resolution
 
-Design docs: [p3-lifecycle.md](p3-lifecycle.md) (state machine), [p3-assignment.md](p3-assignment.md) (strategies, recommendations), [p3-investigation.md](p3-investigation.md) (timeline) and [p3-feedback.md](p3-feedback.md) (post-resolution rating).
+Design, decisions and open questions: [p3.md](p3.md).
 
 **Consume:** `AssignmentSettingsProvider.current()` (`strategyFor(categoryId)`, `defaultMaxWorkload`);
 `UserDirectory.listAvailableTechnicians(categoryId)` and `findTechnician(id)` for candidates

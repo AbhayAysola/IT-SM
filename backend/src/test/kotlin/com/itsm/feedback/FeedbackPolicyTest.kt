@@ -46,7 +46,7 @@ class FeedbackPolicyTest {
     /**
      * KNOWN GAP in common/RolePermissions (P1): TECHNICIAN can create incidents but lacks INCIDENT_VERIFY_OWN,
      * so a technician who reports their own incident can neither verify nor rate it. This test pins today's
-     * behaviour; when P1 grants the permission, flip it to expect success (see docs/architecture/p3-feedback.md).
+     * behaviour; when P1 grants the permission, flip it to expect success (see docs/architecture/p3.md).
      */
     @Test fun `known gap - a technician who reported the incident cannot rate it yet`() {
         assertThrows<UnauthorizedOperation> { submit(who = tech, reporterId = tech.id) }
