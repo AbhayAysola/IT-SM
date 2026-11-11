@@ -1,5 +1,5 @@
 import { ApiErrorResponse, request } from '@/lib/api';
-import { clearToken } from '@/lib/auth';
+import { clearSession } from '@/lib/auth';
 import { ServiceError } from '../types';
 import { toSearchParams, type AuditEvent, type AuditPage, type AuditQuery } from '../audit/audit-types';
 
@@ -16,8 +16,8 @@ function toServiceError(e: unknown): ServiceError {
   if (e instanceof ServiceError) return e;
   if (e instanceof ApiErrorResponse) {
     if (e.status === 401) {
-      // Same handling as the route guard: drop the dead token, or sign-in would bounce straight back.
-      clearToken();
+      // Same handling as the route guard: forget the dead session, or sign-in would bounce straight back.
+      clearSession();
       if (typeof window !== 'undefined') window.location.assign(`/?redirect=${encodeURIComponent('/admin/audit-logs')}`);
       return new ServiceError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
     }

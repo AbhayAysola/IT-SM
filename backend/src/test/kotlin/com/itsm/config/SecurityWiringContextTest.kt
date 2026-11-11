@@ -30,7 +30,7 @@ class SecurityWiringContextTest {
 
     @Configuration
     @EnableWebMvc   // HttpSecurity.requestMatchers needs the MVC HandlerMappingIntrospector
-    @Import(SecurityConfig::class, AuthRateLimitConfig::class, JwtAuthFilter::class, JwtService::class,
+    @Import(SecurityConfig::class, AuthRateLimitConfig::class, WebSessionConfig::class, JwtAuthFilter::class, JwtService::class,
         JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
     class Config {
         @Bean fun objectMapper() = ObjectMapper()

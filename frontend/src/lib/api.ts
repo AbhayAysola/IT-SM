@@ -1,5 +1,5 @@
-import { AuthResponse, LoginRequest, RegisterRequest, RegistrationResponse, User } from '@/types';
-import { getToken } from './auth';
+import { LoginRequest, RegisterRequest, RegistrationResponse, User, WebLoginResponse } from '@/types';
+import { clearSession } from './auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -23,22 +23,25 @@ export class ApiErrorResponse extends Error {
   }
 }
 
+/**
+ * The one HTTP client. Authentication is the HttpOnly session cookie: `credentials: 'include'` makes the browser send it (also to the
+ * API origin in development), and `X-ITSM-Client: web` is sent on every call: on login it selects cookie mode, and on every unsafe request
+ * it is the CSRF header the backend requires together with an allowed `Origin` (which the browser adds itself). There is no token here.
+ */
 export async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const token = getToken();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-ITSM-Client': 'web',
     ...(options.headers as Record<string, string>),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers, credentials: 'include' });
 
   if (!response.ok) {
+    // A 401 from anything but the login form means the session is gone: forget the cached user so it can never pose as one.
+    if (response.status === 401 && !endpoint.startsWith('/api/auth/login')) clearSession();
     let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
     let code: string | undefined;
     let fieldErrors: ApiFieldError[] = [];
@@ -73,9 +76,9 @@ export async function register(data: RegisterRequest): Promise<RegistrationRespo
   });
 }
 
-/** POST /api/auth/login */
-export async function login(data: LoginRequest): Promise<AuthResponse> {
-  return request<AuthResponse>('/api/auth/login', {
+/** POST /api/auth/login in browser mode: the session arrives as an HttpOnly cookie, the body is only `{user}` (never a token). */
+export async function login(data: LoginRequest): Promise<WebLoginResponse> {
+  return request<WebLoginResponse>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -86,5 +89,10 @@ export async function getMe(): Promise<User> {
   return request<User>('/api/users/me');
 }
 
-export const api = { register, login, getMe };
+/** POST /api/auth/logout: revokes the user's sessions and clears the cookie. Prefer `endSession()` from `lib/session`. */
+export async function logout(): Promise<{ status: string }> {
+  return request<{ status: string }>('/api/auth/logout', { method: 'POST' });
+}
+
+export const api = { register, login, getMe, logout };
 export default api;

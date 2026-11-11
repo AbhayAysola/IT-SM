@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { clearToken, getToken, setCachedUser } from '@/lib/auth';
+import { clearSession, setCachedUser } from '@/lib/auth';
+import { endSession } from '@/lib/session';
 import { api, ApiErrorResponse } from '@/lib/api';
 import type { Role } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -12,8 +13,9 @@ import { AlertTriangle, Loader2, ShieldX } from 'lucide-react';
 interface AuthGuardProps {
   children: React.ReactNode;
   /**
-   * Role the signed-in user must have. It is read from the backend (`GET /api/users/me`) on every mount, never
-   * from localStorage or the JWT, and nothing is rendered until the backend answers.
+   * Role the signed-in user must have, when the screen needs one. Whether the visitor is signed in at all, and their role, are
+   * read from the backend (`GET /api/users/me`, authenticated by the HttpOnly session cookie) on every mount. Nothing is rendered
+   * until the backend answers, and no client-side value (cached user, storage) can stand in for that answer.
    *
    * This is a UX gate only: the backend must enforce authorization on every protected API.
    */
@@ -34,29 +36,20 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
   }, []);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace(`/?redirect=${encodeURIComponent(pathname)}`);
-      return;
-    }
-    if (!requiredRole) {
-      setState('allowed');
-      return;
-    }
-
     let active = true;
     api
       .getMe()
       .then((user) => {
         if (!active) return;
         setCachedUser(user);
-        setState(user?.role === requiredRole ? 'allowed' : 'denied');
+        setState(!requiredRole || user?.role === requiredRole ? 'allowed' : 'denied');
       })
       .catch((err: unknown) => {
         if (!active) return;
         const status = err instanceof ApiErrorResponse ? err.status : undefined;
         if (status === 401) {
-          // Expired or invalid token: drop it, or the sign-in page would bounce straight back to /dashboard.
-          clearToken();
+          // Not signed in, or the session ended (expired, logged out elsewhere, revoked): forget the cached user and sign in again.
+          clearSession();
           router.replace(`/?redirect=${encodeURIComponent(pathname)}`);
         } else if (status === 403) {
           setState('denied');
@@ -99,8 +92,8 @@ function Notice({ icon, title, children }: { icon: React.ReactNode; title: strin
 
 function AccessDenied() {
   const router = useRouter();
-  const signOut = () => {
-    clearToken();
+  const signOut = async () => {
+    await endSession();
     router.replace('/');
   };
   return (

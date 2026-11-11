@@ -24,6 +24,9 @@ backend:
   jwt:
     secret: ""   # REQUIRED: >= 32 bytes of random secret (set via --set / a secret manager); the chart fails without it
     expiration: 86400000
+  # Public origin(s) of the web app (comma separated, exact). REQUIRED for the browser session: cookie-authenticated writes and the web login
+  # are refused from any other Origin. The session cookie is Secure, so serve the app over HTTPS (the dev profile is never active here).
+  allowedOrigins: "https://it-sm.local"
   registration:
     enabled: false   # public self-registration; keep OFF until email verification exists (see docs/architecture/security.md)
   trustedProxy:

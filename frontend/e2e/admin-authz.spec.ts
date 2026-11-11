@@ -4,7 +4,7 @@
  * provisioning that does not exist yet, so in live mode (E2E_LIVE_API=1) those tests are skipped by `api.seed`.
  */
 import type { Page } from '@playwright/test';
-import { test, expect, newUser, newAdmin, API_URL, type TestRole } from './fixtures';
+import { test, expect, newUser, newAdmin, API_URL, corsFor, type TestRole } from './fixtures';
 import { signIn, trackErrors } from './helpers';
 
 const ADMIN_ROUTES: Array<[path: string, heading: string]> = [
@@ -26,6 +26,9 @@ const ME = `${API_URL}/api/users/me`;
 /** Waits for the navbar's own /api/users/me answer so "the link is hidden" is not checked before the role arrives. */
 async function signInAndWaitForRole(page: Page, api: Parameters<typeof signIn>[1], role: TestRole) {
   const me = page.waitForResponse((r) => r.url() === ME && r.request().method() === 'GET');
+  // In live mode `signIn` skips personas the real backend cannot provision; the pending wait then ends with "Test ended", which
+  // must not turn that skip into a failure.
+  me.catch(() => {});
   await signIn(page, api, newUser(`authz-${role.toLowerCase()}`, role));
   await me;
 }
@@ -106,11 +109,10 @@ test.describe('admin authorization: Administration link', () => {
     await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Administration' })).toBeVisible();
   });
 
-  test('a forged ADMIN role in the cached user does not reveal the link', async ({ page, api }) => {
+  test('a forged ADMIN user left in localStorage does not reveal the link (the client keeps no user there any more)', async ({ page, api }) => {
     await signInAndWaitForRole(page, api, 'EMPLOYEE');
     await page.evaluate(() => {
-      const u = JSON.parse(localStorage.getItem('it_sm_user') ?? '{}');
-      localStorage.setItem('it_sm_user', JSON.stringify({ ...u, role: 'ADMIN' }));
+      localStorage.setItem('it_sm_user', JSON.stringify({ id: 1, email: 'x@example.test', name: 'X', role: 'ADMIN', createdAt: '' }));
     });
     const me = page.waitForResponse((r) => r.url() === ME);
     await page.reload();
@@ -120,11 +122,10 @@ test.describe('admin authorization: Administration link', () => {
 });
 
 test.describe('admin authorization: tampering and failures never grant access', () => {
-  test('a forged ADMIN role in localStorage is rejected', async ({ page, api }) => {
+  test('a forged ADMIN user in localStorage is ignored: the backend says EMPLOYEE', async ({ page, api }) => {
     await signIn(page, api, newUser('forged-role', 'EMPLOYEE'));
     await page.evaluate(() => {
-      const u = JSON.parse(localStorage.getItem('it_sm_user') ?? '{}');
-      localStorage.setItem('it_sm_user', JSON.stringify({ ...u, role: 'ADMIN' }));
+      localStorage.setItem('it_sm_user', JSON.stringify({ id: 1, email: 'x@example.test', name: 'X', role: 'ADMIN', createdAt: '' }));
     });
     await page.goto('/admin');
     await expect(denied(page)).toBeVisible();
@@ -145,12 +146,12 @@ test.describe('admin authorization: tampering and failures never grant access', 
     expect(await page.evaluate(() => localStorage.getItem('it_sm_token'))).toBeNull();
   });
 
-  test('a 401 from /api/users/me clears the token and redirects to sign-in', async ({ page, api }) => {
+  test('a 401 from /api/users/me ends the client session and redirects to sign-in', async ({ page, api }) => {
     await signIn(page, api, newAdmin('authz-401'));
     await page.route(ME, (route) =>
       route.fulfill({
         status: 401,
-        headers: { 'access-control-allow-origin': '*', 'content-type': 'application/problem+json' },
+        headers: { ...corsFor(route.request().headers()['origin']), 'content-type': 'application/problem+json' },
         body: JSON.stringify({ status: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required' }),
       }),
     );
@@ -163,7 +164,7 @@ test.describe('admin authorization: tampering and failures never grant access', 
   test('a 403 from /api/users/me shows access denied', async ({ page, api }) => {
     await signIn(page, api, newAdmin('authz-403'));
     await page.route(ME, (route) =>
-      route.fulfill({ status: 403, headers: { 'access-control-allow-origin': '*' }, body: '{"message":"Forbidden"}' }),
+      route.fulfill({ status: 403, headers: corsFor(route.request().headers()['origin']), body: '{"message":"Forbidden"}' }),
     );
     await page.goto('/admin');
     await expect(denied(page)).toBeVisible();
@@ -173,12 +174,11 @@ test.describe('admin authorization: tampering and failures never grant access', 
   test('a backend 500 does not grant access, and retry recovers once it is back', async ({ page, api }) => {
     await signIn(page, api, newAdmin('authz-500'));
     await page.route(ME, (route) =>
-      route.fulfill({ status: 500, headers: { 'access-control-allow-origin': '*' }, body: '{"message":"boom"}' }),
+      route.fulfill({ status: 500, headers: corsFor(route.request().headers()['origin']), body: '{"message":"boom"}' }),
     );
     await page.goto('/admin/users');
     await expect(verifyFailed(page)).toBeVisible();
     await expect(adminNav(page)).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.getItem('it_sm_token'))).toBeTruthy();
     await page.unroute(ME);
     await page.getByRole('button', { name: 'Try again' }).click();
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
@@ -198,7 +198,7 @@ test.describe('admin authorization: tampering and failures never grant access', 
     await page.route(ME, (route) =>
       route.fulfill({
         status: 200,
-        headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' },
+        headers: { ...corsFor(route.request().headers()['origin']), 'content-type': 'application/json' },
         body: JSON.stringify({ id: 1, email: 'a@example.test', name: 'A', createdAt: '' }),
       }),
     );
@@ -214,7 +214,8 @@ test.describe('admin authorization: unauthenticated', () => {
       await page.waitForURL((u) => u.pathname === '/' && u.searchParams.get('redirect') === path);
       await expect(adminNav(page)).toHaveCount(0);
     }
-    expect(api.calls).toEqual([]);
+    // The only thing a signed-out visitor triggers is the guard's session check, which answers 401. No admin API is called.
+    expect(new Set(api.calls)).toEqual(new Set(['/api/users/me']));
   });
 
   test('public registration sends no role and creates an account that cannot open /admin', async ({ page }) => {

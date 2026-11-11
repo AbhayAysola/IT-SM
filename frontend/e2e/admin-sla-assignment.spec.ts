@@ -1,4 +1,4 @@
-import { test, expect, newAdmin } from './fixtures';
+import { test, expect, newAdmin, corsFor } from './fixtures';
 import { dialog, openAdmin, pick, rowMenu, rows, toast } from './admin-helpers';
 
 test.describe('admin: SLA policies', () => {
@@ -303,7 +303,7 @@ test.describe('admin: assignment settings', () => {
 
   test('an inconsistent catalog answer is refused instead of guessed at', async ({ page, api }) => {
     await page.route('**/api/admin/assignment-settings', (route) => route.fulfill({
-      status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
+      status: 200, contentType: 'application/json', headers: corsFor(route.request().headers()['origin']),
       body: JSON.stringify({
         activeStrategy: 'ROUND_ROBIN', defaultMaxWorkload: 5, categoryOverrides: [], version: 0, updatedAt: '2026-11-10T00:00:00Z', updatedByUserId: null,
         strategyCatalogStatus: 'AVAILABLE', availableStrategies: null, // claims AVAILABLE but carries no list

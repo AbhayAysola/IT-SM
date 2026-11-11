@@ -2,6 +2,7 @@ package com.itsm.config
 
 import com.itsm.auth.JwtAuthFilter
 import com.itsm.auth.ratelimit.RegisterRateLimitFilter
+import com.itsm.auth.web.WebSessionPolicy
 import com.itsm.common.model.Role
 import com.itsm.common.security.ItsmUserDetails
 import com.itsm.common.security.JsonAccessDeniedHandler
@@ -73,10 +74,9 @@ class SecurityConfig(
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val config = CorsConfiguration()
-        config.allowedOrigins = allowedOrigins.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-            .also { origins -> require("*" !in origins) { "app.cors.allowed-origins must list explicit origins, not '*'" } }
+        config.allowedOrigins = WebSessionPolicy.parseOrigins(allowedOrigins)
         config.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-        config.allowedHeaders = listOf("Authorization", "Content-Type", "Accept")
+        config.allowedHeaders = listOf("Authorization", "Content-Type", "Accept", WebSessionPolicy.CLIENT_HEADER)
         config.maxAge = 3600
         config.allowCredentials = true
         val source = UrlBasedCorsConfigurationSource()
@@ -88,8 +88,9 @@ class SecurityConfig(
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
             .cors { it.configurationSource(corsConfigurationSource()) }
-            // CSRF is off because auth is a Bearer header (not a cookie) and there is no server session. This MUST be
-            // revisited together with cookie-based refresh tokens (docs/architecture/security.md).
+            // Spring's built-in CSRF is off: there is no server session, and cookie authentication is protected by JwtAuthFilter
+            // itself (X-ITSM-Client header + exact Origin allow-list on every unsafe cookie-authenticated request, and on the web
+            // login). Bearer-only clients are not subject to it. See docs/architecture/security.md.
             .csrf { it.disable() }
             .authorizeHttpRequests {
                 // Only liveness/readiness and build info are public (health details are ADMIN-only, see application.yml).

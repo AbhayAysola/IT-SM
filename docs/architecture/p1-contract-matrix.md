@@ -71,7 +71,7 @@ invents strategies, technicians, workload or policy values. There is no fake pro
 
 Base conventions, all verified by tests:
 
-* **Auth:** `Authorization: Bearer <jwt>`. Public: `POST /api/auth/login`, `POST /api/auth/register`, `GET /actuator/health/**`,
+* **Auth:** `Authorization: Bearer <jwt>` for non-browser clients, or the HttpOnly `itsm_session` cookie for the web app (login with `X-ITSM-Client: web`; unsafe cookie requests also need that header and an allow-listed `Origin`). `POST /api/auth/logout` revokes all of a user's sessions. Details: `security.md` "Browser sessions". Public: `POST /api/auth/login`, `POST /api/auth/register`, `GET /actuator/health/**`,
   `GET /actuator/info`. Everything else needs a valid token.
 * **Pagination:** `page` (0-based, default 0) and `size` (default 20, **max 100**). Out of range -> 400 `INVALID_INPUT` with an
   `errors[]` entry. Response: `{ items, page, size, totalItems, totalPages }`.

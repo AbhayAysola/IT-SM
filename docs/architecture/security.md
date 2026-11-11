@@ -1,4 +1,4 @@
-# Authentication, roles and user administration (P1, Batch 5)
+# Authentication, roles and user administration (P1, Batch 5; hardened in B14)
 
 ## Roles and permissions
 
@@ -146,12 +146,72 @@ neither password nor hash is logged or audited. The runner bean does not exist u
 startup never runs it (do not put that flag in a Deployment's args or env). Remove the password variable afterwards.
 Further admins: `POST /api/admin/users` with role `ADMIN`.
 
+## Browser sessions: HttpOnly cookie, CSRF and logout (B14b)
+
+Two kinds of client, one JWT, two ways to carry it:
+
+| | Browser (the web app) | Non-browser client (script, service, test) |
+|---|---|---|
+| Login | `POST /api/auth/login` with **`X-ITSM-Client: web`** | `POST /api/auth/login` with **no** such header |
+| Response | `200 {"user": {...}}` + `Set-Cookie`. **No token in the body.** | `200 {"token": "...", "user": {...}}`, **no cookie** (unchanged) |
+| Authenticates with | the `itsm_session` cookie, sent by the browser | `Authorization: Bearer <token>` |
+| CSRF rules | yes (below) | none: a browser never attaches a Bearer header by itself |
+
+There is no separate token endpoint. A header value other than exactly `web` is `400 INVALID_INPUT` (field `X-ITSM-Client`, "must be 'web'
+when present"); nothing is authenticated and nothing is counted against the login throttle. **`X-ITSM-Client` only selects the response
+mode and doubles as the CSRF header. It is not a credential and not proof of a trusted origin**: any client can send it. Origin and
+CORS are what restrict browsers, the credentials are what authenticate.
+
+**The cookie** (`app.auth.cookie.name`, default `itsm_session`): the same JWT, `HttpOnly` (scripts cannot read it), `SameSite=Strict`,
+`Path=/api` (never sent for pages), `Max-Age` equal to the JWT lifetime (`JWT_EXPIRATION`, default 24 h; unchanged, no refresh), `Secure`,
+no `Domain` (host-only). The frontend therefore holds no token anywhere: not in `localStorage`, `sessionStorage`, `document.cookie`, or a
+login response body. After a reload it calls `GET /api/users/me`; the user object it caches in memory is display-only and never proves
+anything (the old `it_sm_token` / `it_sm_user` storage and the old JS-readable `it_sm_token` cookie are purged on load).
+
+**Secure in production.** `app.auth.cookie.secure` (env `AUTH_COOKIE_SECURE`) is `true` by default. `false` is accepted **only** when the
+`dev` or `local` Spring profile is active; with any other configuration (production has neither) **the application refuses to start**. So a
+stray environment variable cannot weaken a real deployment. Browsers drop `Secure` cookies from plain-HTTP origins (except `localhost`), so a
+deployment needs HTTPS (TLS terminated at the ingress or load balancer). Local HTTP development: `SPRING_PROFILES_ACTIVE=dev` plus
+`AUTH_COOKIE_SECURE=false` (the docker-compose stack does this).
+
+**Precedence (deterministic).** If an `Authorization` header is present only it is considered: a `Bearer` credential is validated, anything
+else (Basic, malformed) leaves the request unauthenticated. An invalid Bearer credential **never falls back to a valid cookie**. Only with no
+`Authorization` header is the cookie tried. Tampered, expired, unsigned or stale-version cookies are `401`, exactly like Bearer tokens.
+
+**CSRF.** A request authenticated *by the cookie* with an unsafe method (everything but `GET`, `HEAD`, `OPTIONS`: so `POST`, `PUT`, `PATCH`,
+`DELETE`) must carry **both**: `X-ITSM-Client: web` (a custom header: a cross-site page cannot send it without a CORS preflight, which is
+answered only for allowed origins) **and** an `Origin` header that **exactly** equals an entry of the allow-list `app.cors.allowed-origins`
+(`CORS_ALLOWED_ORIGINS`; no wildcard, prefix or subdomain matching; a missing, empty or `null` Origin is refused). Failure is a generic
+`403 FORBIDDEN "Request rejected"` that never says which check failed (the reason is logged). SameSite is an extra layer, not the defence.
+The web login is protected against **login CSRF** too: web mode needs the allowed `Origin` (checked before any credential or throttle work)
+and a JSON body (`415` otherwise), so another site cannot sign a victim into an attacker's account. Browsers send `Origin` on every
+cross-origin request and on same-origin `POST/PUT/PATCH/DELETE`, so legitimate use is unaffected. Because the CORS layer already refuses
+foreign origins, the application-level Origin check is a second, independent layer (it also catches same-origin-looking requests whose origin
+is not listed, and requests with no Origin at all). **`CORS_ALLOWED_ORIGINS` must therefore list the public origin of the web app in every
+deployment**, including a same-origin one behind an ingress (e.g. `https://it-sm.example.com`).
+
+**CORS.** `allowCredentials` is on, origins are the explicit list only (`*` is rejected at startup), allowed headers are
+`Authorization, Content-Type, Accept, X-ITSM-Client`. A browser on any other origin gets no `Access-Control-Allow-*` header and cannot make
+a credentialed call.
+
+**Logout.** `POST /api/auth/logout` (authenticated; CSRF-protected when the caller used the cookie) increments the user's `token_version`
+and answers `200 {"status":"LOGGED_OUT"}` with a `Set-Cookie` that clears the cookie (same name, `Path=/api`, `Max-Age=0`, same
+`HttpOnly`/`Secure`/`SameSite`). **This revokes every token and session of that user, not only the browser that logged out**: all other
+browsers, all Bearer tokens, all devices stop working at once, because validity is "the token's version equals the user's current version".
+The bump is atomic and also advances the row `version`, so an admin editing an older copy of the user gets `409 CONCURRENT_MODIFICATION`
+instead of silently restoring the old token version. A client that cannot reach the server clears its own state but the cookie then stays
+valid until it expires or a later logout succeeds. Logout is not audited (it would let any user flood the audit table).
+
+**What this protects, and what it does not.** HttpOnly stops a script from *reading* the session token, so an XSS bug can no longer steal it
+and replay it elsewhere. It does **not** make XSS harmless: a malicious script running in the app's own origin can still make authenticated
+requests as the user from inside their browser (the cookie is attached automatically, and the CSRF checks accept same-origin calls). Content
+Security Policy, output encoding and dependency hygiene remain necessary; none of them is added by this batch.
+
 ## Refresh tokens: status and plan
 
-**Not implemented in B5, on purpose.** The merged frontend stores the access token in `localStorage` plus a JS-readable
-cookie and sends it as a Bearer header; a backend-only switch to HttpOnly cookies would break it. The access-token protocol is
-unchanged apart from the token contents. Proposed contract for a coordinated change (needs the frontend and a migration number,
-`V16` is the technician-profile migration, so refresh tokens start at `V17`):
+**Not implemented, on purpose** (B14b kept the 24 h JWT and added no refresh rotation). The browser session is now an HttpOnly cookie
+(next section); the plan below remains the proposal for short-lived access tokens with rotating refresh tokens. It would need a
+migration (`V17` or later) and is a separate batch. Proposed contract:
 
 1. `POST /api/auth/login|register` -> JSON `{accessToken (15 min), user}` + `Set-Cookie: refresh=...; HttpOnly; Secure;
    SameSite=Strict; Path=/api/auth`. Access token kept in memory only.

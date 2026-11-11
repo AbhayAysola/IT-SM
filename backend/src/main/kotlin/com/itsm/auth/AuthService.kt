@@ -111,4 +111,9 @@ class AuthService(
             throw e
         }
     }
+
+    /** Revokes every token issued so far for [userId] (see [UserRepository.bumpTokenVersion]). */
+    fun logout(userId: Long) {
+        tx.executeWithoutResult { userRepository.bumpTokenVersion(userId, java.time.Instant.now()) }
+    }
 }

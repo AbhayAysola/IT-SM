@@ -43,6 +43,13 @@ export interface ApiHelper {
   calls: string[];
   /** Fake of the backend audit API (`/api/admin/audit-events`). Hermetic mode only. */
   audit: AuditFake;
+  /**
+   * Ends the user's session on the server without the browser doing anything, as an expiry or a logout from another device would.
+   * Hermetic: forgets the fake's session. Live: signs in with a Bearer token and calls logout (which revokes ALL of that user's sessions).
+   */
+  expireSession(user: TestUser): Promise<void>;
+  /** Hermetic mode only: what the fake saw. `logouts` counts POST /api/auth/logout calls; `loginModes` the X-ITSM-Client of each login. */
+  sessionLog: { logouts: number; loginModes: Array<string | undefined>; csrfRejected: number };
   /** Hermetic mode only: set `authThrottle.on = true` and the fake answers login and register with 429 + Retry-After. */
   authThrottle: { on: boolean };
   /** Stateful fake of the other admin APIs (users, technicians, categories, services, SLA, assignment). Hermetic mode only. */
@@ -99,11 +106,14 @@ interface MockUser extends TestUser {
   createdAt: string;
 }
 
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'authorization, content-type',
+/** The backend allows credentials for exact origins only, never `*`: the fake echoes the caller's origin and sets allow-credentials. */
+export const corsFor = (origin: string | undefined) => ({
+  'access-control-allow-origin': origin ?? 'http://localhost:3000',
+  'access-control-allow-credentials': 'true',
+  'access-control-allow-headers': 'content-type, x-itsm-client',
   'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-};
+  vary: 'Origin',
+});
 
 /** Applies the documented filter/sort/paging semantics to `events` (the real ones are tested in the backend suite). */
 function auditPage(events: FakeAuditEvent[], q: URLSearchParams) {
@@ -134,6 +144,10 @@ export const test = base.extend<{ api: ApiHelper }>({
       const audit: AuditFake = { events: makeAuditEvents(25), requests: [], detailRequests: [], fail: null };
       const admin = new AdminFake();
       const throttle = { on: false };
+      const sessionLog = { logouts: 0, loginModes: [] as Array<string | undefined>, csrfRejected: 0 };
+      // The fake's stand-in for the HttpOnly session cookie (a browser cookie set by a fulfilled route is not reliable): who is signed in.
+      let sessionEmail: string | null = null;
+      let CORS = corsFor(undefined);
 
       if (LIVE) {
         await use({
@@ -142,6 +156,15 @@ export const test = base.extend<{ api: ApiHelper }>({
           audit,
           admin,
           authThrottle: { on: false },
+          sessionLog: { logouts: 0, loginModes: [], csrfRejected: 0 },
+          expireSession: async (u) => {
+            // A Bearer login (no X-ITSM-Client header) returns a token; logout with it revokes every session of that user.
+            const login = await request.post(`${API_URL}/api/auth/login`, { data: { email: u.email, password: u.password } });
+            expect(login.ok(), `bearer login failed: ${login.status()}`).toBeTruthy();
+            const { token } = await login.json();
+            const out = await request.post(`${API_URL}/api/auth/logout`, { headers: { Authorization: `Bearer ${token}` } });
+            expect(out.ok(), `logout failed: ${out.status()}`).toBeTruthy();
+          },
           seed: async (u) => {
             testInfo.skip(
               !!u.role && u.role !== 'USER',
@@ -174,7 +197,17 @@ export const test = base.extend<{ api: ApiHelper }>({
       await page.route(`${API_URL}/api/**`, async (route) => {
         const req = route.request();
         const path = new URL(req.url()).pathname;
+        CORS = corsFor(req.headers()['origin']);
         if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+        // Like the backend: an unsafe request made with the session cookie needs the web-client header (and the browser's own Origin).
+        const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method());
+        const isLoginOrRegister = path === '/api/auth/login' || path === '/api/auth/register';
+        if (unsafe && !isLoginOrRegister && sessionEmail && (req.headers()['x-itsm-client'] !== 'web' || !req.headers()['origin'])) {
+          sessionLog.csrfRejected++;
+          return route.fulfill(problem(403, 'FORBIDDEN', 'Request rejected'));
+        }
+        const caller = () => (sessionEmail ? users.get(sessionEmail) : undefined);
+
 
         if ((path === '/api/auth/register' || path === '/api/auth/login') && req.method() === 'POST' && throttle.on) {
           const r = problem(429, 'RATE_LIMITED', 'Too many attempts. Please try again later.');
@@ -188,22 +221,31 @@ export const test = base.extend<{ api: ApiHelper }>({
           return route.fulfill({ status: 202, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'ACCEPTED' }) });
         }
         if (path === '/api/auth/login' && req.method() === 'POST') {
+          // Browser mode only (`X-ITSM-Client: web`): the session is a cookie and the body is `{user}`, never a token.
+          const mode = req.headers()['x-itsm-client'];
+          sessionLog.loginModes.push(mode);
+          if (mode !== 'web') return route.fulfill(problem(400, 'INVALID_INPUT', 'Invalid client mode'));
           const b = req.postDataJSON() as TestUser;
           const u = users.get(b.email);
           if (!u || u.password !== b.password) return route.fulfill(problem(401, 'INVALID_CREDENTIALS', 'Invalid email or password'));
-          return route.fulfill(ok({ token: `mock.${u.email}`, user: publicUser(u) }));
+          sessionEmail = u.email;
+          return route.fulfill(ok({ user: publicUser(u) }));
+        }
+        if (path === '/api/auth/logout' && req.method() === 'POST') {
+          if (!caller()) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
+          sessionLog.logouts++;
+          sessionEmail = null;
+          return route.fulfill(ok({ status: 'LOGGED_OUT' }));
         }
         if (path === '/api/users/me' && req.method() === 'GET') {
-          const token = (req.headers()['authorization'] ?? '').replace('Bearer ', '');
-          const u = token.startsWith('mock.') ? users.get(token.slice(5)) : undefined;
+          const u = caller();
           return u ? route.fulfill(ok(publicUser(u))) : route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
         }
         if (path === '/api/admin/audit-events' || path.startsWith('/api/admin/audit-events/')) {
           // Like the real endpoint: 401 without a valid token, 403 unless the caller is an ADMIN, GET only.
-          const token = (req.headers()['authorization'] ?? '').replace('Bearer ', '');
-          const caller = token.startsWith('mock.') ? users.get(token.slice(5)) : undefined;
-          if (!caller) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
-          if (caller.role !== 'ADMIN') return route.fulfill(problem(403, 'FORBIDDEN', 'Operation not permitted'));
+          const who = caller();
+          if (!who) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
+          if (who.role !== 'ADMIN') return route.fulfill(problem(403, 'FORBIDDEN', 'Operation not permitted'));
           if (req.method() !== 'GET') return route.fulfill(problem(405, 'METHOD_NOT_ALLOWED', 'Method not allowed'));
           if (audit.fail && audit.fail.times > 0) {
             audit.fail.times -= 1;
@@ -220,11 +262,10 @@ export const test = base.extend<{ api: ApiHelper }>({
         }
         if (path.startsWith('/api/admin/')) {
           // Every admin API: 401 without a valid token, 403 unless the caller is an ADMIN, then the stateful fake.
-          const token = (req.headers()['authorization'] ?? '').replace('Bearer ', '');
-          const caller = token.startsWith('mock.') ? users.get(token.slice(5)) : undefined;
-          if (!caller) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
-          if (caller.role !== 'ADMIN') return route.fulfill(problem(403, 'FORBIDDEN', 'Operation not permitted'));
-          admin.selfEmail = caller.email;
+          const who = caller();
+          if (!who) return route.fulfill(problem(401, 'UNAUTHENTICATED', 'Authentication is required'));
+          if (who.role !== 'ADMIN') return route.fulfill(problem(403, 'FORBIDDEN', 'Operation not permitted'));
+          admin.selfEmail = who.email;
           const url = new URL(req.url());
           const out = admin.handle({ method: req.method(), path, query: url.searchParams, body: req.postData() ? req.postDataJSON() : undefined });
           return route.fulfill({ status: out.status, headers: { ...CORS, 'content-type': out.status >= 400 ? 'application/problem+json' : 'application/json' }, body: out.body === undefined ? undefined : JSON.stringify(out.body) });
@@ -238,6 +279,10 @@ export const test = base.extend<{ api: ApiHelper }>({
         audit,
         admin,
         authThrottle: throttle,
+        sessionLog,
+        expireSession: async () => {
+          sessionEmail = null;
+        },
         seed: async (u) => {
           users.set(u.email, { ...u, id: nextId++, createdAt: new Date().toISOString() });
         },

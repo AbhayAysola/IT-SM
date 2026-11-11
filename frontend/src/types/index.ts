@@ -28,8 +28,8 @@ export interface RegistrationResponse {
   status: 'ACCEPTED';
 }
 
-export interface AuthResponse {
-  token: string;
+/** Browser login answer: the session is an HttpOnly cookie, so there is no token in the body. */
+export interface WebLoginResponse {
   user: User;
 }
 

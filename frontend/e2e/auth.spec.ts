@@ -121,12 +121,92 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.waitForURL('**/dashboard');
   });
 
-  test('over plain-http localhost the auth cookie is still set, without Secure (Secure is HTTPS-only)', async ({ page, api, context }) => {
-    await signIn(page, api, newUser('cookie'));
-    const cookie = (await context.cookies()).find((c) => c.name === 'it_sm_token');
-    expect(cookie, 'auth cookie missing over http').toBeTruthy();
-    expect(cookie!.secure).toBe(false);
-    expect(cookie!.sameSite).toBe('Lax');
+  test('the session is invisible to scripts: no token in localStorage, sessionStorage or document.cookie', async ({ page, api, context }) => {
+    await signIn(page, api, newUser('storage'));
+    const visible = await page.evaluate(() => ({
+      local: Object.entries({ ...localStorage }),
+      session: Object.entries({ ...sessionStorage }),
+      cookie: document.cookie,
+    }));
+    const dump = JSON.stringify(visible);
+    expect(visible.local, dump).toEqual([]);                     // no token, no cached user
+    expect(visible.session, dump).toEqual([]);
+    expect(visible.cookie, dump).toBe('');                       // an HttpOnly cookie never shows up here
+    expect(dump).not.toMatch(/eyJ|mock\.|token/i);              // nor anything that looks like a JWT
+    expect(await page.evaluate(() => localStorage.getItem('it_sm_token'))).toBeNull();
+    if (api.live) {
+      // Against the real backend the session cookie exists, and exactly with the attributes the backend promises.
+      const cookie = (await context.cookies()).find((c) => c.name === 'itsm_session');
+      expect(cookie, 'session cookie missing').toBeTruthy();
+      expect(cookie!.httpOnly).toBe(true);
+      expect(cookie!.sameSite).toBe('Strict');
+      expect(cookie!.path).toBe('/api');
+      expect(cookie!.secure).toBe(false);                        // plain-http local development only (dev profile)
+    }
+  });
+
+  test('sign-in goes out in browser mode and the answer carries no token', async ({ page, api }) => {
+    const user = newUser('mode');
+    await api.seed(user);
+    await page.goto('/');
+    await page.getByLabel('Email address').fill(user.email);
+    await page.getByLabel('Password').fill(user.password);
+    const loginReq = page.waitForRequest((r) => r.url().endsWith('/api/auth/login') && r.method() === 'POST');
+    const loginRes = page.waitForResponse((r) => r.url().endsWith('/api/auth/login') && r.request().method() === 'POST');
+    await submit(page).click();
+    expect((await loginReq).headers()['x-itsm-client']).toBe('web');
+    const body = await (await loginRes).json();
+    expect(Object.keys(body)).toEqual(['user']);
+    await page.waitForURL('**/dashboard');
+  });
+
+  test('a reload keeps the session: the page asks /api/users/me and shows the profile', async ({ page, api }) => {
+    const user = newUser('reload');
+    await signIn(page, api, user);
+    const me = page.waitForResponse((r) => r.url().endsWith('/api/users/me') && r.request().method() === 'GET');
+    await page.reload();
+    expect((await me).status()).toBe(200);
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('dd', { hasText: user.email })).toBeVisible();
+  });
+
+  test('signing out ends the session on the server: the dashboard is guarded and the old session no longer works', async ({ page, api }) => {
+    const user = newUser('revoke');
+    await signIn(page, api, user);
+    const logout = page.waitForResponse((r) => r.url().endsWith('/api/auth/logout') && r.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    expect((await logout).status()).toBe(200);
+    await page.waitForURL(/\/$/);
+    await page.goto('/dashboard');
+    await page.waitForURL(/\/\?redirect=%2Fdashboard/);          // /api/users/me now answers 401
+    if (!api.live) expect(api.sessionLog.logouts).toBe(1);
+  });
+
+  test('a session that ends on the server sends the next visit to sign-in, and no cached user pretends otherwise', async ({ page, api }) => {
+    const user = newUser('expired');
+    await signIn(page, api, user);
+    await page.getByRole('button', { name: /Account menu/ }).waitFor();
+    await api.expireSession(user);
+    await page.goto('/dashboard');
+    await page.waitForURL(/\/\?redirect=%2Fdashboard/);
+    await expect(page.getByLabel('Email address')).toBeVisible();
+    await expect(page.locator('dd', { hasText: user.email })).toHaveCount(0);
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage }))).toBe('{}');
+  });
+
+  test('a leftover token or user from an older version is removed and never trusted', async ({ page, context }) => {
+    await context.addInitScript(() => {
+      if (!sessionStorage.getItem('seeded')) {
+        sessionStorage.setItem('seeded', '1');
+        localStorage.setItem('it_sm_token', 'old.token.value');
+        localStorage.setItem('it_sm_user', JSON.stringify({ id: 1, email: 'old@example.test', name: 'Old', role: 'ADMIN', createdAt: '' }));
+        document.cookie = 'it_sm_token=old.token.value; path=/';
+      }
+    });
+    await page.goto('/dashboard');
+    await page.waitForURL(/\/\?redirect=%2Fdashboard/);               // storage did not authenticate anything
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage }))).toBe('{}');
+    expect(await page.evaluate(() => document.cookie)).not.toContain('it_sm_token');
   });
 
   test('keyboard-only sign-in (type, Tab, type, Enter)', async ({ page, api }) => {
@@ -141,7 +221,7 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.waitForURL('**/dashboard');
   });
 
-  test('Sign out from the account menu clears the token and returns to /', async ({ page, api }) => {
+  test('Sign out from the account menu ends the session and returns to /', async ({ page, api }) => {
     await signIn(page, api, newUser('out-menu'));
     await page.getByRole('button', { name: /Account menu/ }).click();
     await page.getByRole('menuitem', { name: 'Sign out' }).click();

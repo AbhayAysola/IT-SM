@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiErrorResponse } from '@/lib/api';
-import { setToken, setCachedUser, isAuthenticated } from '@/lib/auth';
+import { setCachedUser, purgeLegacyCredentials } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ const REGISTRATION_NOTICE =
 /** 429 gets a calm, specific message; everything else keeps the backend's own message. */
 function authErrorMessage(err: unknown): string {
   if (err instanceof ApiErrorResponse && err.status === 429) return 'Too many attempts. Please wait a few minutes and try again.';
+  if (err instanceof ApiErrorResponse && err.status === 403) return 'This request was blocked. Reload the page and try again.';
   return err instanceof Error ? err.message : 'An error occurred during authentication';
 }
 
@@ -33,11 +34,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
-  // Auto redirect if already authenticated
+  // Already signed in? Ask the backend (the cookie is HttpOnly, so the client cannot tell by itself). Skipped when a guard just sent
+  // us here (`?redirect=`): that only happens because the session was missing or rejected.
   useEffect(() => {
-    if (isAuthenticated()) {
-      router.replace('/dashboard');
-    }
+    purgeLegacyCredentials();
+    if (new URLSearchParams(window.location.search).has('redirect')) return;
+    let active = true;
+    api
+      .getMe()
+      .then((user) => {
+        if (!active) return;
+        setCachedUser(user);
+        router.replace('/dashboard');
+      })
+      .catch(() => {
+        // 401 is the normal answer for a visitor who is not signed in; the form stays.
+      });
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,17 +63,10 @@ export default function LoginPage() {
 
     try {
       if (isLogin) {
-        // Handle Login
+        // Handle Login. The backend answers with an HttpOnly session cookie and `{user}`; there is no token for us to keep.
         const res = await api.login({ email, password });
-        if (res.token) {
-          setToken(res.token);
-          if (res.user) {
-            setCachedUser(res.user);
-          }
-          router.replace('/dashboard');
-        } else {
-          throw new Error('No authentication token received');
-        }
+        if (res.user) setCachedUser(res.user);
+        router.replace('/dashboard');
       } else {
         // Handle Register. The backend answers the same 202 for a new and an already registered address, and never returns a
         // token, so this must NOT assume an account was created or sign the user in: say the same neutral thing every time.

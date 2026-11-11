@@ -3,9 +3,11 @@ package com.itsm.user
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.Instant
 
 @Repository
 interface UserRepository : JpaRepository<UserEntity, Long> {
@@ -13,6 +15,15 @@ interface UserRepository : JpaRepository<UserEntity, Long> {
     fun findByEmail(email: String): UserEntity?
 
     fun existsByEmail(email: String): Boolean
+
+    /**
+     * Atomically invalidates every token issued so far for [id] (logout). `version` is bumped as well: otherwise a concurrent admin
+     * save of a copy loaded earlier would still pass the optimistic-lock check and write the OLD token_version back, silently
+     * reviving the revoked sessions. Returns the number of rows changed (0 = unknown user).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update UserEntity u set u.tokenVersion = u.tokenVersion + 1, u.version = u.version + 1, u.updatedAt = :now where u.id = :id")
+    fun bumpTokenVersion(@Param("id") id: Long, @Param("now") now: Instant): Int
 
     fun countByRoleAndActiveTrue(role: String): Long
 

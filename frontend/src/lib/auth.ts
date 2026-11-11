@@ -1,109 +1,44 @@
 import { User } from '@/types';
 
-export const TOKEN_KEY = 'it_sm_token';
-export const USER_KEY = 'it_sm_user';
-
 /**
- * Retrieve the authentication token.
- * Checks localStorage first, then falls back to cookies for SSR/browser compatibility.
+ * Session state on the client.
+ *
+ * The session itself is an HttpOnly cookie that the browser holds and attaches to API calls; JavaScript can neither read nor write it,
+ * so there is NO token in this module, in localStorage, in sessionStorage or in `document.cookie`. What the client can know is only what
+ * `GET /api/users/me` last said, kept in memory for display. That cached user NEVER establishes authentication: every protected screen
+ * asks `/api/users/me` (see AuthGuard) before it renders, and the backend is the only authority.
  */
-export function getToken(): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
+let cachedUser: User | null = null;
 
-  // 1. Try localStorage
-  try {
-    const local = localStorage.getItem(TOKEN_KEY);
-    if (local) return local;
-  } catch {
-    // LocalStorage might be disabled or restricted in private browsing
-  }
-
-  // 2. Try cookie
-  try {
-    const cookies = document.cookie ? document.cookie.split('; ') : [];
-    for (const cookie of cookies) {
-      const [name, ...rest] = cookie.split('=');
-      if (name === TOKEN_KEY) {
-        return decodeURIComponent(rest.join('='));
-      }
-    }
-  } catch {
-    // Ignore cookie read failure
-  }
-
-  return null;
-}
-
-/**
- * Persist authentication token in both localStorage and browser cookies.
- */
-export function setToken(token: string): void {
-  if (typeof window === 'undefined') return;
-
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch (e) {
-    console.error('Failed to save token to localStorage:', e);
-  }
-
-  try {
-    const maxAge = 7 * 24 * 60 * 60; // 7 days
-    // `Secure` is only set on HTTPS pages: browsers drop Secure cookies set from plain-http origins,
-    // which would break local development and the http://localhost e2e runs.
-    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${TOKEN_KEY}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
-  } catch (e) {
-    console.error('Failed to save token to cookie:', e);
-  }
-}
-
-/**
- * Clear authentication token from both localStorage and cookies.
- */
-export function clearToken(): void {
-  if (typeof window === 'undefined') return;
-
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-  } catch (e) {
-    console.error('Failed to clear localStorage auth:', e);
-  }
-
-  try {
-    document.cookie = `${TOKEN_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-  } catch (e) {
-    console.error('Failed to clear cookie:', e);
-  }
-}
-
-/**
- * Quick check if user has active token
- */
-export function isAuthenticated(): boolean {
-  return !!getToken();
-}
-
-/**
- * Optional cached user helpers for rapid UI rendering
- */
 export function getCachedUser(): User | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  return cachedUser;
 }
 
 export function setCachedUser(user: User): void {
+  cachedUser = user;
+}
+
+/** Keys that earlier versions of the app used to keep the JWT (and the user) where scripts can read them. */
+const LEGACY_STORAGE_KEYS = ['it_sm_token', 'it_sm_user'];
+const LEGACY_COOKIE = 'it_sm_token';
+
+/** Removes any credential an older version left in JS-readable storage, so an upgrade does not keep a token lying around. */
+export function purgeLegacyCredentials(): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
   } catch {
-    // Ignore storage errors
+    // storage may be unavailable (private mode); nothing to purge then
   }
+  try {
+    document.cookie = `${LEGACY_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+  } catch {
+    // ignore
+  }
+}
+
+/** Forgets everything the client knows about the signed-in user (logout, and any 401). The server cookie is ended by `endSession`. */
+export function clearSession(): void {
+  cachedUser = null;
+  purgeLegacyCredentials();
 }

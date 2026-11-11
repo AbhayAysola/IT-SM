@@ -1,5 +1,5 @@
 import { ApiErrorResponse, request } from '@/lib/api';
-import { clearToken } from '@/lib/auth';
+import { clearSession } from '@/lib/auth';
 import { ServiceError } from '../types';
 
 export type QueryValue = string | number | boolean | null | undefined;
@@ -28,8 +28,8 @@ export function toServiceError(e: unknown): ServiceError {
   const opts = { status: e.status, fieldErrors };
   switch (e.status) {
     case 401:
-      // Same handling as the route guard: drop the dead token, or sign-in would bounce straight back.
-      clearToken();
+      // Same handling as the route guard: forget the dead session, or sign-in would bounce straight back.
+      clearSession();
       if (typeof window !== 'undefined') {
         window.location.assign(`/?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       }

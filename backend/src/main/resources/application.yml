@@ -36,6 +36,11 @@ app:
     expiration: ${JWT_EXPIRATION:86400000}  # 24 hours in ms
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  auth:
+    cookie:
+      name: ${AUTH_COOKIE_NAME:itsm_session}
+      # Secure by default. `false` is only accepted with the dev/local Spring profile (startup fails otherwise): plain-HTTP local use.
+      secure: ${AUTH_COOKIE_SECURE:true}
   registration:
     # Public self-registration. OFF by default: without email verification it cannot be made enumeration-proof.
     # Enable it explicitly (REGISTRATION_ENABLED=true) for development or a closed network.
