@@ -1,6 +1,6 @@
 # Browser regression tests (Playwright)
 
-Covers sign-in/registration/sign-out, the route guard, navigation and menus, keyboard focus, WCAG 2.2 AA
+Covers sign-in/registration/sign-out, the route guard, the P3 incident workspace (`incidents.spec.ts`, `incident-model.spec.ts`), navigation and menus, keyboard focus, WCAG 2.2 AA
 (axe) scans, phone-width layout, and the dev-only `/design-system` preview (dialog, sheet, select, dropdown,
 tooltip, tabs).
 
@@ -19,6 +19,11 @@ npm run test:e2e                    # next build + start two production servers 
 The suite starts two servers from one build: `:3000` (a normal production server, where `/design-system`
 must 404) and `:3002` (`ENABLE_DESIGN_SYSTEM=true`). Existing servers on those ports are reused locally
 (never in CI). Override ports with `E2E_WEB_PORT` / `E2E_DS_PORT`.
+
+> **Pitfall: a stale server makes tests fail in confusing ways.** Because existing servers are reused, anything already
+> on `:3000` (the Docker Compose frontend, an old `next start`) is tested instead of your fresh build. Symptom: nearly
+> every test that touches a new route fails with "element(s) not found" and `curl localhost:3000/<new route>` returns 404.
+> Stop it first (`docker compose down` in `infra/`) or set `E2E_WEB_PORT` / `E2E_DS_PORT` to free ports.
 
 ## Personas and admin authorization
 
