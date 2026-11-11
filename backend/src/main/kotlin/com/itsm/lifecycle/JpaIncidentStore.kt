@@ -17,13 +17,16 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 /**
- * P3's mapping of `incidents` (V20). It maps only the columns the lifecycle touches; P2's intake columns are not
- * mapped, and P2 will own the creating side. Hibernate's schema validation checks just the mapped columns.
+ * P3's mapping of `incidents` (V20): the columns the lifecycle changes, plus title, description and created_at read-only
+ * for display. P2's other intake columns are not mapped, and P2 owns the creating side. Hibernate's schema validation checks just the mapped columns.
  */
 @Entity
 @Table(name = "incidents")
 class IncidentRow(
     @Id val id: String = "",
+    @Column(nullable = false, updatable = false, insertable = false) val title: String = "",
+    @Column(nullable = false, updatable = false, insertable = false) val description: String = "",
+    @Column(name = "created_at", nullable = false, updatable = false, insertable = false) val createdAt: Instant = Instant.EPOCH,
     @Column(nullable = false) var state: String = "",
     @Column(name = "reporter_id", nullable = false) val reporterId: Long = 0,
     @Column(name = "assignee_id") var assigneeId: Long? = null,
@@ -63,7 +66,7 @@ class JpaIncidentStore(
         row.firstResponseAt = record.firstResponseAt
         row.resolvedAt = record.resolvedAt
         row.closedAt = record.closedAt
-        row.updatedAt = Instant.now()
+        row.updatedAt = record.updatedAt
         em.flush() // a CHECK violation (V20) surfaces here, inside the caller's transaction
     }
 
@@ -129,7 +132,8 @@ class JpaIncidentStore(
     private fun IncidentRow.toRecord() = IncidentRecord(
         id = id, state = IncidentState.fromName(state), reporterId = reporterId, assigneeId = assigneeId,
         categoryId = categoryId, serviceId = serviceId, priority = priority?.let(Priority::fromCode),
-        assignedAt = assignedAt, firstResponseAt = firstResponseAt, resolvedAt = resolvedAt, closedAt = closedAt
+        assignedAt = assignedAt, firstResponseAt = firstResponseAt, resolvedAt = resolvedAt, closedAt = closedAt,
+        title = title, description = description, createdAt = createdAt, updatedAt = updatedAt
     )
 
     private companion object {

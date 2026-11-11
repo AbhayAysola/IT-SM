@@ -119,7 +119,7 @@ class IncidentAssignmentService(
         record: IncidentRecord, result: IncidentStateMachine.Result, technicianId: Long, user: CurrentUser, metadata: Map<String, Any>
     ): IncidentRecord {
         val now = IncidentAccess.now(clock)
-        val updated = record.copy(state = result.newState, assigneeId = technicianId, assignedAt = now)
+        val updated = record.copy(state = result.newState, assigneeId = technicianId, assignedAt = now, updatedAt = now)
         incidents.save(updated)
         InvestigationPolicy.entryFor(record.id, result, user, now)?.let(timeline::append)
         val audited = metadata + mapOf("technicianId" to technicianId) +

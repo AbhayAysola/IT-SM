@@ -5,7 +5,7 @@ import java.time.Instant
 
 /**
  * P3's view of one row of `incidents` (V20): the fields the lifecycle reads and changes. Intake data (title,
- * description) is P2's and is not here. Plain values, so the services are testable without a database.
+ * description, created) is P2's: it is carried for display only and never written back. Plain values, so the services are testable without a database.
  */
 data class IncidentRecord(
     val id: String,
@@ -18,7 +18,12 @@ data class IncidentRecord(
     val assignedAt: Instant?,
     val firstResponseAt: Instant?,
     val resolvedAt: Instant?,
-    val closedAt: Instant?
+    val closedAt: Instant?,
+    /** Intake fields, read-only here (P2 writes them); defaults keep tests and callers that do not care short. */
+    val title: String = "",
+    val description: String = "",
+    val createdAt: Instant = Instant.EPOCH,
+    val updatedAt: Instant = Instant.EPOCH
 )
 
 /** A resolved incident offered as precedent for a similar one. */

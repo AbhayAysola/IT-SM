@@ -90,7 +90,7 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-medium">{r.name}</span>
-                  <span className="text-xs text-muted-foreground">{r.team}</span>
+                  {r.team && <span className="text-xs text-muted-foreground">{r.team}</span>}
                   {idx === 0 && <span className="text-xs font-semibold text-primary">Best match</span>}
                   <span className="ml-auto text-sm font-semibold">Score {r.score}</span>
                 </span>

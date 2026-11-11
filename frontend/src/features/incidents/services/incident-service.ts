@@ -14,6 +14,7 @@ import {
   type SimilarResolution, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { loadWorld, saveWorld, simulate } from './store';
+import { liveIncidentService } from './live-incident-service';
 
 // ---- Tabs ---------------------------------------------------------------------------------------------------------
 
@@ -131,7 +132,7 @@ export const COMMENT_MAX = 1000;
 
 // ---- The service --------------------------------------------------------------------------------------------------
 
-export const incidentService = {
+export const mockIncidentService = {
   async list(actor: Actor, tab: TabId, search = ''): Promise<{ items: IncidentRow[]; counts: Partial<Record<TabId, number>> }> {
     return simulate(() => {
       const w = world(actor);
@@ -277,3 +278,10 @@ export const incidentService = {
     });
   },
 };
+
+/**
+ * Which implementation the pages use, fixed at build time. Default is the mock (the demo and the e2e suite).
+ * `NEXT_PUBLIC_INCIDENTS_API=live` talks to the backend: see `docs/architecture/p3.md` ("Frontend") for what it cannot do yet.
+ */
+export const incidentService: typeof mockIncidentService =
+  process.env.NEXT_PUBLIC_INCIDENTS_API === 'live' ? liveIncidentService : mockIncidentService;

@@ -24,14 +24,16 @@ export function SimilarPanel({ items }: { items: SimilarResolution[] }) {
               <li key={s.incidentId} className="rounded-lg border bg-muted/50 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs">{s.incidentId}</span>
-                  <Badge variant="outline">{s.priority}</Badge>
+                  {s.priority && <Badge variant="outline">{s.priority}</Badge>}
                   {s.sameService && <Badge variant="secondary">Same service</Badge>}
                 </div>
                 <p className="mt-1 font-medium">{s.title}</p>
                 <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{s.resolution}</p>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Fixed by {s.resolvedBy} in {s.daysToResolve === 0 ? 'under a day' : s.daysToResolve === 1 ? '1 day' : `${s.daysToResolve} days`}
-                </p>
+                {s.resolvedBy && s.daysToResolve !== null && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Fixed by {s.resolvedBy} in {s.daysToResolve === 0 ? 'under a day' : s.daysToResolve === 1 ? '1 day' : `${s.daysToResolve} days`}
+                  </p>
+                )}
               </li>
             ))}
           </ul>

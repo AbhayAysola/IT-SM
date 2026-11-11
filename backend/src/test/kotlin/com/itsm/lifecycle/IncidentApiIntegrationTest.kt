@@ -81,6 +81,8 @@ class IncidentApiIntegrationTest {
 
         val shown = call(tech, "GET", "/api/incidents/$id").andExpect(status().isOk).body()
         assertEquals(listOf("ACKNOWLEDGE"), shown["availableTransitions"].map { it.asText() })
+        assertEquals("VPN down", shown["title"].asText()); assertEquals("Cannot connect", shown["description"].asText())
+        assertEquals(false, shown["createdAt"].isNull)
 
         move(tech, id, "ACKNOWLEDGE").andExpect(status().isOk).andExpect(jsonPath("$.state").value("ACKNOWLEDGED"))
         move(tech, id, "START_WORK").andExpect(status().isOk)

@@ -71,7 +71,7 @@ class IncidentLifecycleService(
             else -> Unit
         }
         val now = IncidentAccess.now(clock)
-        val updated = record.copy(state = result.newState).withTimestamps(transition, now)
+        val updated = record.copy(state = result.newState, updatedAt = now).withTimestamps(transition, now)
         incidents.save(updated)
         InvestigationPolicy.entryFor(incidentId, result, user, now)?.let(timeline::append)
         audit.publish(

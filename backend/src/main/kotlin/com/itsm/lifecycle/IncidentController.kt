@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.time.Instant
 
 data class IncidentDto(
-    val id: String, val state: String, val reporterId: Long, val assigneeId: Long?, val categoryId: Long?, val serviceId: Long?,
+    val id: String, val title: String, val description: String, val createdAt: Instant, val updatedAt: Instant, val state: String, val reporterId: Long, val assigneeId: Long?, val categoryId: Long?, val serviceId: Long?,
     val priority: Priority?, val assignedAt: Instant?, val firstResponseAt: Instant?, val resolvedAt: Instant?, val closedAt: Instant?,
     /** What the caller can do right now (drives which buttons to show). Moves are `POST .../transitions`. */
     val availableTransitions: List<String>
@@ -109,7 +109,7 @@ class IncidentController(
         lifecycle.similarResolved(id, currentUser.current(), limit).map { ResolvedIncidentDto(it.incidentId, it.title, it.resolution, it.resolvedAt, it.sameService) }
 
     private fun dto(r: IncidentRecord) = IncidentDto(
-        r.id, r.state.name, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.priority, r.assignedAt, r.firstResponseAt,
+        r.id, r.title, r.description, r.createdAt, r.updatedAt, r.state.name, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.priority, r.assignedAt, r.firstResponseAt,
         r.resolvedAt, r.closedAt, lifecycle.availableTransitions(r, currentUser.current()).map { it.name }
     )
 
