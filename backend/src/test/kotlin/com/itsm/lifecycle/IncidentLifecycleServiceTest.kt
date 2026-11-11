@@ -193,4 +193,23 @@ class IncidentLifecycleServiceTest {
         assertThrows<UnauthorizedOperation> { svc.similarResolved("INC1", reporter) }
         assertThrows<ResourceNotFound> { svc.similarResolved("INC1", techB) }
     }
+
+    // ---- list
+    @Test fun `a list holds only what the caller reported or is assigned, and an admin sees everything`() {
+        val (svc, _) = service(
+            record(id = "A", state = S.IN_PROGRESS), record(id = "B", state = S.CLASSIFIED),
+            record(id = "C", state = S.IN_PROGRESS, assignee = TECH_B).copy(reporterId = 777)
+        )
+        assertEquals(setOf("A", "B"), svc.list(reporter, emptySet(), null, 0, 20).rows.map { it.record.id }.toSet())
+        assertEquals(listOf("A"), svc.list(techA, emptySet(), null, 0, 20).rows.map { it.record.id })
+        assertEquals(emptyList<String>(), svc.list(stranger, emptySet(), null, 0, 20).rows.map { it.record.id })
+        assertEquals(3, svc.list(admin, emptySet(), null, 0, 20).total)
+    }
+
+    @Test fun `filters narrow the page but the counts cover the whole scope`() {
+        val (svc, _) = service(record(id = "A", state = S.IN_PROGRESS), record(id = "B", state = S.CLASSIFIED))
+        val result = svc.list(reporter, setOf(S.CLASSIFIED), null, 0, 20)
+        assertEquals(listOf("B"), result.rows.map { it.record.id })
+        assertEquals(mapOf(S.IN_PROGRESS to 1, S.CLASSIFIED to 1), result.stateCounts)
+    }
 }

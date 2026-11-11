@@ -192,6 +192,38 @@ class IncidentFlowIntegrationTest {
         assertTrue(store.similarResolved(category + 1, null, current, 5).isEmpty())
     }
 
+    @Test fun `the list is scoped, filtered, searched, paged and ordered by urgency against the real table`() {
+        val r = user(Role.EMPLOYEE); val other = user(Role.EMPLOYEE); val t = user(Role.TECHNICIAN)
+        fun titled(reporter: Long, title: String, priority: String, state: S = S.CLASSIFIED, assignee: Long? = null): String {
+            val id = incident(reporter, state, assignee = assignee, priority = priority)
+            jdbc.update("UPDATE incidents SET title = ? WHERE id = ?", title, id); return id
+        }
+        val low = titled(r.id, "Printer 100% broken", "P4"); val high = titled(r.id, "VPN down", "P1")
+        val assigned = titled(other.id, "Monitor flickers", "P2", S.ASSIGNED, t.id); titled(other.id, "Not mine", "P3")
+        val scope = IncidentScope(r.id, false)
+        fun ids(q: IncidentListQuery) = store.list(q).rows.map { it.record.id }
+
+        assertEquals(listOf(high, low), ids(IncidentListQuery(scope, emptySet(), null, 0, 20)), "mine only, most urgent first")
+        assertEquals(listOf(low), ids(IncidentListQuery(scope, emptySet(), "100%", 0, 20)), "a % in the search is literal")
+        assertEquals(emptyList<String>(), ids(IncidentListQuery(scope, emptySet(), "%", 0, 20).copy(search = "zzz")))
+        assertEquals(listOf(high), ids(IncidentListQuery(scope, emptySet(), "vpn", 0, 20)), "case-insensitive")
+        assertEquals(listOf(low), ids(IncidentListQuery(scope, emptySet(), null, 1, 1)), "second page")
+        assertEquals(2L, store.list(IncidentListQuery(scope, emptySet(), null, 0, 1)).total)
+        assertEquals(listOf(assigned), ids(IncidentListQuery(IncidentScope(t.id, false), emptySet(), null, 0, 20)), "an assignee sees theirs")
+        assertEquals(mapOf(S.CLASSIFIED to 2), store.stateCounts(scope))
+        assertEquals(listOf(assigned), ids(IncidentListQuery(scope.copy(all = true), setOf(S.ASSIGNED), "flicker", 0, 20)).filter { it == assigned })
+        // a search containing SQL is just text
+        assertEquals(emptyList<String>(), ids(IncidentListQuery(scope, emptySet(), "'; DROP TABLE incidents; --", 0, 20)))
+    }
+
+    @Test fun `the list says whether feedback was given`() {
+        val r = user(Role.EMPLOYEE); val t = user(Role.TECHNICIAN)
+        val rated = incident(r.id, S.VERIFIED, assignee = t.id, resolvedAt = Instant.now()); val unrated = incident(r.id, S.VERIFIED, assignee = t.id, resolvedAt = Instant.now())
+        jdbc.update("INSERT INTO incident_feedback (incident_id, reporter_id, rating) VALUES (?, ?, 4)", rated, r.id)
+        val rows = store.list(IncidentListQuery(IncidentScope(r.id, false), emptySet(), null, 0, 20)).rows.associate { it.record.id to it.hasFeedback }
+        assertEquals(mapOf(rated to true, unrated to false), rows)
+    }
+
     // ---- the whole flow, through the real services
     @Test fun `an incident goes from classified to closed with a consistent row, timeline, workload and audit trail`() {
         val reporter = user(Role.EMPLOYEE); val tech = user(Role.TECHNICIAN); val admin = user(Role.ADMIN)

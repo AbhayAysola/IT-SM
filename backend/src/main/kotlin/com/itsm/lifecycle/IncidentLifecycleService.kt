@@ -19,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 
+data class IncidentListResult(val rows: List<IncidentListRow>, val total: Long, val stateCounts: Map<IncidentState, Int>)
+
 /**
  * Applies the lifecycle after the technician starts work: acknowledge, investigate, ask, resolve, verify, reopen,
  * close, plus notes and feedback. Assigning is [IncidentAssignmentService].
@@ -49,6 +51,17 @@ class IncidentLifecycleService(
     @Transactional(readOnly = true)
     fun get(incidentId: String, user: CurrentUser): IncidentRecord =
         IncidentAccess.requireVisible(incidents.find(incidentId), incidentId, user)
+
+    /**
+     * One page of the caller's incidents (an admin's: all), filtered by [states] and [search], most urgent first, with
+     * the count per state for the whole scope. Nothing here reveals an incident the caller could not open.
+     */
+    @Transactional(readOnly = true)
+    fun list(user: CurrentUser, states: Set<IncidentState>, search: String?, page: Int, size: Int): IncidentListResult {
+        val scope = IncidentScope(user.id, user.isAdmin)
+        val result = incidents.list(IncidentListQuery(scope, states, search?.take(MAX_SEARCH), page.toLong() * size, size))
+        return IncidentListResult(result.rows, result.total, incidents.stateCounts(scope))
+    }
 
     /** What [user] can do right now: the state machine's moves narrowed by ownership. Drives which buttons a UI shows. */
     @Transactional(readOnly = true)
@@ -157,5 +170,6 @@ class IncidentLifecycleService(
 
     private companion object {
         const val ENTITY_TYPE = "INCIDENT"
+        const val MAX_SEARCH = 100
     }
 }

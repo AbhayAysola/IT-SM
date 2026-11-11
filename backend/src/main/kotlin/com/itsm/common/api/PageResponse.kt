@@ -29,9 +29,10 @@ data class PageResponse<T>(
 /** Validated paging input. Bind `page` and `size` query params to this. */
 data class PageQuery(val page: Int = 0, val size: Int = DEFAULT_SIZE) {
     init {
+        // `this@PageQuery`: inside buildList a bare `size` is the list's own size (always 0 here), which rejected every request.
         val errors = buildList {
-            if (page < 0) add(FieldError("page", "must be >= 0"))
-            if (size !in 1..MAX_SIZE) add(FieldError("size", "must be between 1 and $MAX_SIZE"))
+            if (this@PageQuery.page < 0) add(FieldError("page", "must be >= 0"))
+            if (this@PageQuery.size !in 1..MAX_SIZE) add(FieldError("size", "must be between 1 and $MAX_SIZE"))
         }
         if (errors.isNotEmpty()) throw InvalidInput("Invalid paging parameters", errors)
     }

@@ -115,4 +115,25 @@ class IncidentApiIntegrationTest {
         call(reporter, "POST", "/api/incidents/$id/feedback", """{"rating":9}""").andExpect(status().isConflict) // not verified yet: state first
         call(tech, "GET", "/api/incidents/$id").andExpect(status().isNotFound) // a technician who is not the assignee
     }
+
+    @Test fun `the list is the caller's own, paged, filterable, and tells them how many sit in each state`() {
+        val reporter = account("USER"); val other = account("USER"); val admin = account("ADMIN")
+        val a = incident(reporter.id); val b = incident(reporter.id); incident(other.id)
+        jdbc.update("UPDATE incidents SET title = 'Wifi dead in room 4' WHERE id = ?", b)
+
+        call(reporter, "GET", "/api/incidents?page=0&size=20").andExpect(status().isOk)
+        val all = call(reporter, "GET", "/api/incidents").andExpect(status().isOk).body()
+        assertEquals(setOf(a, b), all["items"].map { it["id"].asText() }.toSet())
+        assertEquals(2, all["totalItems"].asInt()); assertEquals(2, all["stateCounts"]["CLASSIFIED"].asInt())
+        assertEquals(false, all["items"][0]["hasFeedback"].asBoolean())
+
+        call(reporter, "GET", "/api/incidents?q=wifi").andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].id").value(b))
+        call(reporter, "GET", "/api/incidents?states=ASSIGNED,CLOSED").andExpect(status().isOk).andExpect(jsonPath("$.totalItems").value(0)).andExpect(jsonPath("$.stateCounts.CLASSIFIED").value(2))
+        call(reporter, "GET", "/api/incidents?size=1&page=1").andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.totalPages").value(2))
+        call(admin, "GET", "/api/incidents?size=100").andExpect(status().isOk)
+        call(reporter, "GET", "/api/incidents?states=TELEPORTED").andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+        call(reporter, "GET", "/api/incidents?size=1000").andExpect(status().isBadRequest)
+        call(reporter, "GET", "/api/incidents?page=-1").andExpect(status().isBadRequest)
+        mvc.perform(get("/api/incidents")).andExpect(status().isUnauthorized)
+    }
 }

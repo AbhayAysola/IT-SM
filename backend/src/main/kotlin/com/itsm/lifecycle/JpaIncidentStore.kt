@@ -127,6 +127,54 @@ class JpaIncidentStore(
             serviceId, categoryId, excludeIncidentId, limit
         )
 
+    @Transactional(readOnly = true)
+    override fun list(query: IncidentListQuery): IncidentPage {
+        val (where, args) = filter(query)
+        val total = jdbc.queryForObject("SELECT count(*) FROM incidents i WHERE $where", Long::class.java, *args.toTypedArray()) ?: 0L
+        val rows = jdbc.query(
+            "SELECT i.*, EXISTS (SELECT 1 FROM incident_feedback f WHERE f.incident_id = i.id) AS has_feedback FROM incidents i " +
+                "WHERE $where ORDER BY i.priority NULLS LAST, i.updated_at DESC, i.id LIMIT ? OFFSET ?",
+            { rs, _ -> IncidentListRow(rs.toRecord(), rs.getBoolean("has_feedback")) },
+            *(args + query.limit + query.offset).toTypedArray()
+        )
+        return IncidentPage(rows, total)
+    }
+
+    @Transactional(readOnly = true)
+    override fun stateCounts(scope: IncidentScope): Map<IncidentState, Int> {
+        val (where, args) = filter(IncidentListQuery(scope, emptySet(), null, 0, 1))
+        val counts = HashMap<IncidentState, Int>()
+        jdbc.query(
+            "SELECT state, count(*) FROM incidents i WHERE $where GROUP BY state",
+            RowCallbackHandler { rs -> counts[IncidentState.fromName(rs.getString(1))] = rs.getInt(2) },
+            *args.toTypedArray()
+        )
+        return counts
+    }
+
+    /** The WHERE clause and its arguments. Only enum names and `?` markers are interpolated, never user text. */
+    private fun filter(q: IncidentListQuery): Pair<String, List<Any>> {
+        val clauses = mutableListOf<String>()
+        val args = mutableListOf<Any>()
+        if (!q.scope.all) { clauses += "(i.reporter_id = ? OR i.assignee_id = ?)"; args += q.scope.userId; args += q.scope.userId }
+        if (q.states.isNotEmpty()) clauses += "i.state IN (${q.states.joinToString(",") { "'${it.name}'" }})"
+        q.search?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            val pattern = "%" + it.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            clauses += "(i.id ILIKE ? OR i.title ILIKE ?)"; args += pattern; args += pattern
+        }
+        return (clauses.joinToString(" AND ").ifEmpty { "TRUE" }) to args
+    }
+
+    private fun java.sql.ResultSet.toRecord() = IncidentRecord(
+        id = getString("id"), state = IncidentState.fromName(getString("state")), reporterId = getLong("reporter_id"),
+        assigneeId = getObject("assignee_id") as Long?, categoryId = getObject("category_id") as Long?, serviceId = getObject("service_id") as Long?,
+        priority = getString("priority")?.let(Priority::fromCode),
+        assignedAt = instant("assigned_at"), firstResponseAt = instant("first_response_at"), resolvedAt = instant("resolved_at"), closedAt = instant("closed_at"),
+        title = getString("title"), description = getString("description"), createdAt = instant("created_at")!!, updatedAt = instant("updated_at")!!
+    )
+
+    private fun java.sql.ResultSet.instant(column: String): Instant? = getObject(column, java.time.OffsetDateTime::class.java)?.toInstant()
+
     private fun placeholders(n: Int) = List(n) { "?" }.joinToString(",")
 
     private fun IncidentRow.toRecord() = IncidentRecord(

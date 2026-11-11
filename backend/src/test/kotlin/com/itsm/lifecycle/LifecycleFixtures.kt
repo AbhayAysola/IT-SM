@@ -61,6 +61,15 @@ internal class FakeIncidentStore(vararg initial: IncidentRecord) : IncidentStore
     override fun lastAssignedAt(technicianIds: Collection<Long>): Map<Long, Instant> =
         rows.values.filter { it.assigneeId in technicianIds && it.assignedAt != null }
             .groupBy { it.assigneeId!! }.mapValues { (_, v) -> v.maxOf { it.assignedAt!! } }
+    override fun list(query: IncidentListQuery): IncidentPage {
+        val search = query.search
+        val mine = rows.values.filter { query.scope.all || it.reporterId == query.scope.userId || it.assigneeId == query.scope.userId }
+            .filter { query.states.isEmpty() || it.state in query.states }
+            .filter { search.isNullOrBlank() || it.id.contains(search, true) || it.title.contains(search, true) }
+        return IncidentPage(mine.drop(query.offset.toInt()).take(query.limit).map { IncidentListRow(it, false) }, mine.size.toLong())
+    }
+    override fun stateCounts(scope: IncidentScope) =
+        rows.values.filter { scope.all || it.reporterId == scope.userId || it.assigneeId == scope.userId }.groupingBy { it.state }.eachCount()
     override fun lockTechnician(technicianId: Long) { lockedTechnicians += technicianId }
     override fun similarResolved(categoryId: Long, serviceId: Long?, excludeIncidentId: String, limit: Int) = similar
 }

@@ -37,6 +37,22 @@ data class ResolvedIncident(
     val sameService: Boolean
 )
 
+/** Whose incidents a list covers: everyone's for an admin, otherwise those the user reported or is assigned. */
+data class IncidentScope(val userId: Long, val all: Boolean)
+
+data class IncidentListQuery(
+    val scope: IncidentScope,
+    /** Empty = every state. */
+    val states: Set<IncidentState>,
+    /** Matches the id or the title, case-insensitively. Null or blank = no filter. */
+    val search: String?,
+    val offset: Long,
+    val limit: Int
+)
+
+data class IncidentListRow(val record: IncidentRecord, val hasFeedback: Boolean)
+data class IncidentPage(val rows: List<IncidentListRow>, val total: Long)
+
 /**
  * Storage for the incident fields P3 owns the lifecycle of. Creating an incident is P2's job, so there is no
  * `create` here (tests insert rows directly).
@@ -61,6 +77,12 @@ interface IncidentStore {
      * pass the capacity check for their last free slot (`MANDATORY` transaction).
      */
     fun lockTechnician(technicianId: Long)
+
+    /** One page, most urgent first (priority, then most recently updated), and the total matching. */
+    fun list(query: IncidentListQuery): IncidentPage
+
+    /** How many incidents the scope holds per state, ignoring any state filter or search (drives tab counts). */
+    fun stateCounts(scope: IncidentScope): Map<IncidentState, Int>
 
     /** Incidents in [categoryId] that have a recorded fix, same service first, then newest. */
     fun similarResolved(categoryId: Long, serviceId: Long?, excludeIncidentId: String, limit: Int): List<ResolvedIncident>

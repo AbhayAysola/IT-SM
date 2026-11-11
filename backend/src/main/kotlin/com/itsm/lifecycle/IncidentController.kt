@@ -2,6 +2,8 @@ package com.itsm.lifecycle
 
 import com.itsm.assignment.AssignmentDecision
 import com.itsm.common.api.ApiPaths
+import com.itsm.common.api.PageQuery
+import com.itsm.common.error.InvalidInput
 import com.itsm.common.error.ResourceNotFound
 import com.itsm.common.model.Priority
 import com.itsm.common.security.CurrentUserProvider
@@ -28,6 +30,20 @@ data class IncidentDto(
     val priority: Priority?, val assignedAt: Instant?, val firstResponseAt: Instant?, val resolvedAt: Instant?, val closedAt: Instant?,
     /** What the caller can do right now (drives which buttons to show). Moves are `POST .../transitions`. */
     val availableTransitions: List<String>
+)
+
+/** A row of the list: no transitions or description, so a page stays small. */
+data class IncidentSummaryDto(
+    val id: String, val title: String, val state: String, val priority: Priority?, val reporterId: Long, val assigneeId: Long?,
+    val categoryId: Long?, val serviceId: Long?, val createdAt: Instant, val updatedAt: Instant, val resolvedAt: Instant?,
+    /** True once the reporter has rated it; lets a UI decide whether feedback is still due. */
+    val hasFeedback: Boolean
+)
+
+data class IncidentListDto(
+    val items: List<IncidentSummaryDto>, val page: Int, val size: Int, val totalItems: Long, val totalPages: Int,
+    /** Incidents per state across everything the caller may see, ignoring the filters. */
+    val stateCounts: Map<String, Int>
 )
 
 data class TimelineEntryDto(
@@ -62,6 +78,26 @@ class IncidentController(
     private val assignment: IncidentAssignmentService,
     private val currentUser: CurrentUserProvider
 ) {
+    /** The caller's incidents (an admin's: all). `states` is a comma-separated list of states; `q` matches id or title. */
+    @GetMapping
+    fun list(
+        @RequestParam(required = false) states: List<String>?,
+        @RequestParam(required = false) q: String?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int
+    ): IncidentListDto {
+        val paging = PageQuery(page, size)
+        val wanted = states.orEmpty().filter { it.isNotBlank() }.map {
+            IncidentState.entries.firstOrNull { s -> s.name == it.trim().uppercase() } ?: throw InvalidInput("Unknown state '${it.take(30)}'")
+        }.toSet()
+        val result = lifecycle.list(currentUser.current(), wanted, q, paging.page, paging.size)
+        return IncidentListDto(
+            result.rows.map { (r, fb) -> IncidentSummaryDto(r.id, r.title, r.state.name, r.priority, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.createdAt, r.updatedAt, r.resolvedAt, fb) },
+            paging.page, paging.size, result.total, ((result.total + paging.size - 1) / paging.size).toInt(),
+            result.stateCounts.mapKeys { it.key.name }
+        )
+    }
+
     @GetMapping("/{id}")
     fun get(@PathVariable id: String): IncidentDto = lifecycle.get(id, currentUser.current()).let(::dto)
 
