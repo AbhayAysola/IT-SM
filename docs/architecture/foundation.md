@@ -146,7 +146,7 @@ fun assign(incidentId: String, techId: Long) {
 > Why BEFORE_COMMIT: the audit row is written in the same transaction as the business change, so
 > they commit or roll back together. If the audit insert fails, the business action fails too.
 
-## 7. Planned auth hardening (not in this branch)
+## 7. Planned auth hardening (not implemented yet)
 
 Documented here so teammates can rely on the direction:
 
@@ -159,7 +159,7 @@ Documented here so teammates can rely on the direction:
 
 ## 8. Startup cycle fix in `SecurityConfig` (`@Lazy`)
 
-The boilerplate on `main` never started: `JwtAuthFilter` needs the `userDetailsService` bean, which is
+The original boilerplate never started: `JwtAuthFilter` needs the `userDetailsService` bean, which is
 declared *inside* `SecurityConfig`, and `SecurityConfig`'s constructor needs `JwtAuthFilter`. That is a
 constructor cycle, which Spring cannot resolve (`APPLICATION FAILED TO START ... form a cycle`).
 `@Lazy` on the `jwtAuthFilter` constructor parameter injects a proxy, so `SecurityConfig` can be built
@@ -169,7 +169,7 @@ Guarded by `SecurityWiringContextTest` (no Docker needed) and `ApplicationStartu
 (full Spring Boot startup on PostgreSQL 16 via Testcontainers). The clean fix (moving
 `userDetailsService`/`passwordEncoder` into their own configuration class) belongs to auth hardening.
 
-## 9. Known pre-existing issues this branch did not fix
+## 9. Known issues not yet fixed
 
 * `POST /api/auth/register` is open and assigns `role = 'USER'`. (Duplicate emails now return
   409 `DUPLICATE_RESOURCE`; a concurrent duplicate that slips past the check is caught by the unique

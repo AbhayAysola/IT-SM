@@ -31,7 +31,7 @@ Do not write a second implementation of someone else's SPI "for testing" in `src
 
 ### Status and how to work before P1's implementations land
 
-Only `AuditPublisher` has an implementation in this branch, and it does **not** persist events yet
+Only `AuditPublisher` has an implementation today, and it does **not** persist events yet
 (a WARN is logged at startup). Your audit calls are correct now and will be stored, with no code change,
 once P1's audit branch adds the database listener. Do not rely on reading audit rows back until then. P1's implementations arrive in this order:
 audit persistence, then categories/services, then SLA + assignment settings, then users/technician profiles.
