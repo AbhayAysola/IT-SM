@@ -45,7 +45,7 @@ as skipped, not passed.
 - The backend must be reachable at `E2E_API_URL` (default `http://localhost:8080`).
 - That URL is compiled into the frontend, so it must equal `NEXT_PUBLIC_API_URL` at build time (`src/lib/api.ts`, same default). If you change one, change both: `NEXT_PUBLIC_API_URL=http://host:port E2E_API_URL=http://host:port E2E_LIVE_API=1 npm run test:e2e`.
 - The backend only allows the origin `http://localhost:3000` (CORS in `SecurityConfig`), so leave `E2E_WEB_PORT` at 3000 in live mode.
-- The backend must include the shared foundation (`feat/p1-shared-foundation` or later). The specs expect a 409 `Email is already registered` and RFC 7807 errors that carry a `message`; `main` does not start at all yet (a bean cycle fixed in that branch).
+- The backend must include the shared foundation (merged to `main`). The specs expect a 409 `Email is already registered` and RFC 7807 errors that carry a `message`.
 
 **Test database: use a disposable PostgreSQL 16, never a shared, staging or production one.**
 - The tests create real accounts and never delete them. Each run adds about 16, named `e2e-<label>-<timestamp>-<random>@example.test` with the password `Passw0rd!`. Those are weak, publicly documented credentials: they must not exist anywhere that matters.
