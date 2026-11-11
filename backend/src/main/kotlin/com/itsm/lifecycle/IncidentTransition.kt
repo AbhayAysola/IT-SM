@@ -37,8 +37,9 @@ enum class IncidentTransition(
     REQUEST_INFO(setOf(IN_PROGRESS), PENDING_INFO, Permission.INCIDENT_WORK, "INCIDENT_STATUS_CHANGED",
         requiresReason = true),
 
-    /** The reporter answered; work resumes. */
-    PROVIDE_INFO(setOf(PENDING_INFO), IN_PROGRESS, Permission.INCIDENT_VIEW_OWN, "INCIDENT_STATUS_CHANGED"),
+    /** The reporter answered; work resumes. The answer is the reason: an empty answer would help nobody. */
+    PROVIDE_INFO(setOf(PENDING_INFO), IN_PROGRESS, Permission.INCIDENT_VIEW_OWN, "INCIDENT_STATUS_CHANGED",
+        requiresReason = true),
 
     RESOLVE(setOf(IN_PROGRESS), RESOLVED, Permission.INCIDENT_WORK, "INCIDENT_RESOLVED", requiresReason = true),
 

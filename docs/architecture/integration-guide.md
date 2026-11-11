@@ -72,7 +72,7 @@ Use `entityType = "INCIDENT"`.
 
 ## P3: lifecycle, assignment, investigation, resolution
 
-Design docs: [p3-lifecycle.md](p3-lifecycle.md) (state machine) and [p3-assignment.md](p3-assignment.md) (strategies, recommendations).
+Design docs: [p3-lifecycle.md](p3-lifecycle.md) (state machine), [p3-assignment.md](p3-assignment.md) (strategies, recommendations), [p3-investigation.md](p3-investigation.md) (timeline) and [p3-feedback.md](p3-feedback.md) (post-resolution rating).
 
 **Consume:** `AssignmentSettingsProvider.current()` (`strategyFor(categoryId)`, `defaultMaxWorkload`);
 `UserDirectory.listAvailableTechnicians(categoryId)` and `findTechnician(id)` for candidates
@@ -91,7 +91,8 @@ Use `UnauthorizedOperation` if a technician acts on an incident that is not thei
 
 **Audit actions:** one per transition with `previousState` and `newState` set, e.g. `INCIDENT_ASSIGNED`
 (CLASSIFIED -> ASSIGNED), `INCIDENT_ACKNOWLEDGED`, `INCIDENT_STATUS_CHANGED`, `INCIDENT_RESOLVED`,
-`INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`. Publish **in the same
+`INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`, `INCIDENT_REASSIGNED`,
+`INCIDENT_INVESTIGATION_ENTRY_ADDED` (metadata: entry type and visibility, never the text). Publish **in the same
 `@Transactional` method as the state change**, so that once audit persistence lands the two commit together.
 
 **Migrations:** block `V30-V39`.

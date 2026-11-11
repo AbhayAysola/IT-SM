@@ -22,7 +22,7 @@ The rules are one table, `IncidentTransition`. Each entry has the allowed source
 | `ACKNOWLEDGE` | ASSIGNED | ACKNOWLEDGED | `INCIDENT_WORK` | `INCIDENT_ACKNOWLEDGED` | |
 | `START_WORK` | ACKNOWLEDGED | IN_PROGRESS | `INCIDENT_WORK` | `INCIDENT_STATUS_CHANGED` | |
 | `REQUEST_INFO` | IN_PROGRESS | PENDING_INFO | `INCIDENT_WORK` | `INCIDENT_STATUS_CHANGED` | required |
-| `PROVIDE_INFO` | PENDING_INFO | IN_PROGRESS | `INCIDENT_VIEW_OWN` | `INCIDENT_STATUS_CHANGED` | |
+| `PROVIDE_INFO` | PENDING_INFO | IN_PROGRESS | `INCIDENT_VIEW_OWN` | `INCIDENT_STATUS_CHANGED` required |
 | `RESOLVE` | IN_PROGRESS | RESOLVED | `INCIDENT_WORK` | `INCIDENT_RESOLVED` | required |
 | `VERIFY` | RESOLVED | VERIFIED | `INCIDENT_VERIFY_OWN` | `INCIDENT_VERIFIED` | |
 | `REOPEN` | RESOLVED | IN_PROGRESS | `INCIDENT_VERIFY_OWN` | `INCIDENT_STATUS_CHANGED` | required |
@@ -86,5 +86,5 @@ using `IncidentAccessPolicy` from P2. Admins hold every permission, so they are 
 * **Stateless.** The machine holds no incident. Concurrency (two people acting at once) is the service's job:
   lock or version the incident row, then apply. A lost race surfaces as 409 `CONCURRENT_MODIFICATION` or
   `INVALID_STATE_TRANSITION`, both already mapped by the global handler.
-* **Not covered yet:** feedback (a post-`VERIFIED` rating), investigation notes, and the historical-resolution
-  lookup from the P3 brief.
+* **Related:** the readable story of an incident is the [investigation timeline](p3-investigation.md); the reporter's rating
+  after verification is [feedback](p3-feedback.md). Not covered yet: the historical-resolution lookup from the P3 brief.
