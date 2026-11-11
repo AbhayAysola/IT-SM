@@ -25,7 +25,7 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `AuditPublisher` | P1 (`SpringAuditPublisher` exists, **publishes only; events are not persisted yet**) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
 | `TechnicianWorkloadProvider` | **P3 only** | P1 (admin technician views), P4 (SLA risk) |
-| `AssignmentStrategyCatalog` | **P3 only** | P1 (validates the configured strategy key) |
+| `AssignmentStrategyCatalog` | **P3 only** (implemented: `RegisteredAssignmentStrategyCatalog`) | P1 (validates the configured strategy key) |
 
 Do not write a second implementation of someone else's SPI "for testing" in `src/main`; mock it in tests.
 
@@ -72,6 +72,8 @@ Use `entityType = "INCIDENT"`.
 
 ## P3: lifecycle, assignment, investigation, resolution
 
+Design docs: [p3-lifecycle.md](p3-lifecycle.md) (state machine), [p3-assignment.md](p3-assignment.md) (strategies, recommendations), [p3-investigation.md](p3-investigation.md) (timeline) and [p3-feedback.md](p3-feedback.md) (post-resolution rating).
+
 **Consume:** `AssignmentSettingsProvider.current()` (`strategyFor(categoryId)`, `defaultMaxWorkload`);
 `UserDirectory.listAvailableTechnicians(categoryId)` and `findTechnician(id)` for candidates
 (`skills`, `maxWorkload`, `experienceYears`, `available`).
@@ -89,7 +91,8 @@ Use `UnauthorizedOperation` if a technician acts on an incident that is not thei
 
 **Audit actions:** one per transition with `previousState` and `newState` set, e.g. `INCIDENT_ASSIGNED`
 (CLASSIFIED -> ASSIGNED), `INCIDENT_ACKNOWLEDGED`, `INCIDENT_STATUS_CHANGED`, `INCIDENT_RESOLVED`,
-`INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`. Publish **in the same
+`INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`, `INCIDENT_REASSIGNED`,
+`INCIDENT_INVESTIGATION_ENTRY_ADDED` (metadata: entry type and visibility, never the text). Publish **in the same
 `@Transactional` method as the state change**, so that once audit persistence lands the two commit together.
 
 **Migrations:** block `V30-V39`.
