@@ -1,7 +1,7 @@
 import { IncidentError, type Priority, type Recommendation } from './types';
 
 /**
- * Frontend copy of the backend `EligibilityPolicy` and `TechnicianRecommender` (see docs/architecture/p3-assignment.md).
+ * Frontend copy of the backend `EligibilityPolicy` and `TechnicianRecommender` (see docs/architecture/p3.md).
  * The admin technician profile only has skill names and one level, not the backend's per-category proficiency 1..5,
  * so `candidatesFrom` derives them (placeholder mapping below). Remove with the mock layer.
  */
