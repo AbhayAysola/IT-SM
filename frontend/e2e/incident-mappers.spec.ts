@@ -1,7 +1,10 @@
 /** Pure checks of the live-API mappers (no browser, no backend): what the pages get from the backend's JSON. */
 import { test, expect } from '@playwright/test';
+import { needsAttention } from '../src/features/incidents/services/attention';
+import { TABS } from '../src/features/incidents/services/tabs';
+import type { Actor } from '../src/features/incidents/model/types';
 import {
-  liveEmail, liveId, toIncident, toIncidentError, toRecommendation, toSimilar, toTimelineEntry, who, type ApiIncident, type Me,
+  liveEmail, liveId, toIncident, toIncidentFromSummary, toIncidentError, toRecommendation, toSimilar, toTimelineEntry, who, type ApiIncident, type Me,
 } from '../src/features/incidents/services/incident-mappers';
 
 const me: Me = { id: 12, email: 'rita@campus.example', name: 'Rita' };
@@ -57,5 +60,31 @@ test.describe('live API mappers', () => {
     expect(toIncidentError(404, null).code).toBe('NOT_FOUND');
     expect(toIncidentError(500, 'oops').code).toBe('UNAVAILABLE');
     expect(toIncidentError(418, {}).message).toBe('Something went wrong. Please try again.');
+  });
+
+  test('a list row maps like the detail, with no description', () => {
+    const { description: _d, availableTransitions: _a, assignedAt: _as, firstResponseAt: _f, closedAt: _c, createdAt, updatedAt, ...rest } = dto;
+    const row = toIncidentFromSummary({ ...rest, createdAt, updatedAt, hasFeedback: false }, me);
+    expect(row).toMatchObject({ id: 'INC1001', description: '', reporterEmail: me.email, assigneeEmail: 'user-13@live.invalid', state: 'ASSIGNED' });
+  });
+
+  test('the tabs partition every state exactly once, per role (the list counts rely on it)', () => {
+    for (const role of ['EMPLOYEE', 'TECHNICIAN', 'ADMIN'] as const) {
+      const states = TABS[role].flatMap((t) => t.states);
+      expect(new Set(states).size, role).toBe(states.length);
+    }
+    expect(TABS.EMPLOYEE.flatMap((t) => t.states)).toHaveLength(9);
+  });
+
+  test('who has to act next', () => {
+    const emp: Actor = { id: 12, email: me.email, name: 'Rita', role: 'EMPLOYEE' };
+    const tech: Actor = { id: 13, email: 'user-13@live.invalid', name: 'T', role: 'TECHNICIAN' };
+    const row = (state: string) => ({ state, reporterEmail: me.email, assigneeEmail: tech.email }) as Parameters<typeof needsAttention>[1];
+    expect(needsAttention(tech, row('ASSIGNED'), false)).toBe(true);
+    expect(needsAttention(tech, row('IN_PROGRESS'), false)).toBe(false);
+    expect(needsAttention(emp, row('PENDING_INFO'), false)).toBe(true);
+    expect(needsAttention(emp, row('VERIFIED'), false)).toBe(true);
+    expect(needsAttention(emp, row('VERIFIED'), true)).toBe(false);
+    expect(needsAttention({ ...emp, role: 'ADMIN' }, row('CLASSIFIED'), false)).toBe(true);
   });
 });

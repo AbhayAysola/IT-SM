@@ -15,33 +15,13 @@ import {
 } from '../model/types';
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
+import { needsAttention, same } from './attention';
+import { TABS, type TabId } from './tabs';
 
-// ---- Tabs ---------------------------------------------------------------------------------------------------------
-
-export type TabId = 'ACTIVE' | 'WAITING' | 'DONE' | 'UNASSIGNED' | 'OPEN';
-
-export const TABS: Record<ActorRole, { id: TabId; label: string; states: IncidentState[] }[]> = {
-  TECHNICIAN: [
-    { id: 'ACTIVE', label: 'Active', states: ['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS'] },
-    { id: 'WAITING', label: 'Waiting on reporter', states: ['PENDING_INFO', 'RESOLVED'] },
-    { id: 'DONE', label: 'Done', states: ['VERIFIED', 'CLOSED'] },
-  ],
-  ADMIN: [
-    { id: 'UNASSIGNED', label: 'Awaiting assignment', states: ['NEW', 'CLASSIFIED'] },
-    { id: 'ACTIVE', label: 'In progress', states: ['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO', 'RESOLVED'] },
-    { id: 'DONE', label: 'Done', states: ['VERIFIED', 'CLOSED'] },
-  ],
-  EMPLOYEE: [
-    { id: 'OPEN', label: 'Open', states: ['NEW', 'CLASSIFIED', 'ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO', 'RESOLVED'] },
-    { id: 'DONE', label: 'Done', states: ['VERIFIED', 'CLOSED'] },
-  ],
-};
-
-export const defaultTab = (role: ActorRole): TabId => TABS[role][0].id;
+export { TABS, defaultTab, type TabId } from './tabs';
 
 // ---- Visibility and access ----------------------------------------------------------------------------------------
 
-const same = (a: string | null | undefined, b: string) => !!a && a.toLowerCase() === b.toLowerCase();
 
 /** Admins see everything; others only what they are assigned or reported. Anything else behaves as "not found". */
 const canOpen = (actor: Actor, i: Incident) =>
@@ -92,13 +72,6 @@ export interface IncidentDetail {
   canAddNote: boolean;
   canGiveFeedback: boolean;
   similar: SimilarResolution[];
-}
-
-function needsAttention(actor: Actor, i: Incident, hasFeedback: boolean): boolean {
-  if (actor.role === 'ADMIN') return i.state === 'CLASSIFIED' || i.state === 'NEW';
-  if (hasPermission(actor.role, 'INCIDENT_WORK') && same(i.assigneeEmail, actor.email)) return i.state === 'ASSIGNED' || i.state === 'ACKNOWLEDGED';
-  if (same(i.reporterEmail, actor.email)) return needsReporter(i.state) || (FEEDBACK_STATES.includes(i.state) && !hasFeedback && hasPermission(actor.role, 'INCIDENT_VERIFY_OWN'));
-  return false;
 }
 
 const PRIORITY_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;

@@ -2,10 +2,12 @@ import { API_URL } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
 import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
-import type { IncidentDetail, IncidentRow, TabId } from './incident-service';
+import type { IncidentDetail, IncidentRow } from './incident-service';
+import { needsAttention } from './attention';
+import { TABS, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toRecommendation, toSimilar, toTimelineEntry,
-  type ApiFeedback, type ApiIncident, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
+  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toSimilar, toTimelineEntry,
+  type ApiFeedback, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
 /**
@@ -13,6 +15,8 @@ import {
  * not change. Everything the backend has an endpoint for works; the rest is listed in docs/architecture/p3.md.
  * The backend decides what the caller may do, so `actions` come from it, not from the copy of the rules in `lifecycle.ts`.
  */
+/** The most one list request asks for (the API allows 100). */
+const LIST_LIMIT = 100;
 const ACTIVE: IncidentState[] = ['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO'];
 const me = (a: Actor): Me => {
   if (a.id === undefined) throw new IncidentError('UNAVAILABLE', 'Your account could not be identified. Please sign in again.');
@@ -38,9 +42,25 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 const enc = (id: string) => encodeURIComponent(id);
 
 export const liveIncidentService = {
-  /** There is no list endpoint yet (TODO in p3.md). Open an incident directly: /incidents/INC1001. */
-  async list(_actor: Actor, _tab: TabId, _search = ''): Promise<{ items: IncidentRow[]; counts: Partial<Record<TabId, number>> }> {
-    throw new IncidentError('UNAVAILABLE', 'Listing incidents needs GET /api/incidents, which the backend does not have yet. Open an incident by its address, for example /incidents/INC1001.');
+  /**
+   * One request for the whole tab (up to 100 incidents; the UI has no pager yet, see the TODO). The backend scopes the list to
+   * what the caller may open, so nothing is filtered here. `needsAttention` floats the incidents waiting on this person first.
+   */
+  async list(actor: Actor, tab: TabId, search = ''): Promise<{ items: IncidentRow[]; counts: Partial<Record<TabId, number>> }> {
+    const who = me(actor);
+    const tabs = TABS[actor.role];
+    const states = (tabs.find((t) => t.id === tab) ?? tabs[0]).states;
+    const query = new URLSearchParams({ states: states.join(','), size: String(LIST_LIMIT) });
+    if (search.trim()) query.set('q', search.trim());
+    const page = await call<ApiIncidentList>('GET', `?${query}`);
+    const counts = Object.fromEntries(tabs.map((t) => [t.id, t.states.reduce((n, s) => n + (page.stateCounts[s] ?? 0), 0)])) as Partial<Record<TabId, number>>;
+    const items = page.items
+      .map((d) => {
+        const incident = toIncidentFromSummary(d, who);
+        return { ...incident, needsAttention: needsAttention(actor, incident, d.hasFeedback) };
+      })
+      .sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention)); // stable: the server order (urgency, newest) is kept within each group
+    return { items, counts };
   },
 
   async get(actor: Actor, id: string): Promise<IncidentDetail> {

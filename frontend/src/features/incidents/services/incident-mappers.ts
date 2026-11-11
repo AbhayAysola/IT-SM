@@ -12,6 +12,13 @@ export interface ApiIncident {
   assignedAt: string | null; firstResponseAt: string | null; resolvedAt: string | null; closedAt: string | null;
   availableTransitions: string[];
 }
+export interface ApiIncidentSummary {
+  id: string; title: string; state: IncidentState; priority: Priority | null; reporterId: number; assigneeId: number | null;
+  categoryId: number | null; serviceId: number | null; createdAt: string; updatedAt: string; resolvedAt: string | null; hasFeedback: boolean;
+}
+export interface ApiIncidentList {
+  items: ApiIncidentSummary[]; page: number; size: number; totalItems: number; totalPages: number; stateCounts: Partial<Record<IncidentState, number>>;
+}
 export interface ApiTimelineEntry { type: TimelineEntry['type']; authorId: number; visibility: TimelineEntry['visibility']; body: string; incidentState: IncidentState; createdAt: string }
 export interface ApiFeedback { rating: number; comment: string | null; submittedAt: string }
 export interface ApiRecommendation { technicianId: number; name: string; score: number; reasons: string[] }
@@ -46,6 +53,10 @@ export function toIncident(d: ApiIncident, me: Me): Incident {
     createdAt: d.createdAt, updatedAt: d.updatedAt, resolvedAt: d.resolvedAt,
   };
 }
+
+/** A list row carries no description (the detail does), so it is empty here. */
+export const toIncidentFromSummary = (d: ApiIncidentSummary, me: Me): Incident =>
+  toIncident({ ...d, description: '', assignedAt: null, firstResponseAt: null, closedAt: null, availableTransitions: [] }, me);
 
 export function toTimelineEntry(d: ApiTimelineEntry, me: Me, incidentId: string, index: number): TimelineEntry {
   const author = who(me, d.authorId)!;
