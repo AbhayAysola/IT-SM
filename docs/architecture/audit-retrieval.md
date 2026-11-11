@@ -93,7 +93,9 @@ cost more on a very large table; keyset paging is a possible later optimisation 
 default, same paging/sort params (`page`, `size`, `sort`, `dir`; no filters). Order of checks:
 
 1. Authentication (`401`).
-2. `incidentId` format (`400`).
+2. Request shape, which reads nothing about any incident: `incidentId` format and `page`/`size` (including an unreachable
+   offset) → `400`. Because this precedes step 3, an invalid page is the same `400` whether the incident exists, is
+   forbidden or is unknown, and the policy is not consulted.
 3. **P2's `IncidentAccessPolicy.requireView(user, incidentId)`**, injected as `ObjectProvider<IncidentAccessPolicy>`:
    unknown incident → `404 RESOURCE_NOT_FOUND` (P2's exception), not allowed → `403 FORBIDDEN`. P1 contains **no**
    ownership/visibility rule of its own.
