@@ -2,6 +2,9 @@ import type { ActorRole, IncidentState } from '../model/types';
 
 // ---- Tabs ---------------------------------------------------------------------------------------------------------
 
+/** Rows per page on the incident list (the API allows up to 100). */
+export const INCIDENT_PAGE_SIZE = 20;
+
 export type TabId = 'ACTIVE' | 'WAITING' | 'DONE' | 'UNASSIGNED' | 'OPEN';
 
 export const TABS: Record<ActorRole, { id: TabId; label: string; states: IncidentState[] }[]> = {

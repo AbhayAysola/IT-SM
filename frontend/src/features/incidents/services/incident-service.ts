@@ -16,9 +16,9 @@ import {
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
 import { needsAttention, same } from './attention';
-import { TABS, type TabId } from './tabs';
+import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 
-export { TABS, defaultTab, type TabId } from './tabs';
+export { TABS, defaultTab, INCIDENT_PAGE_SIZE, type TabId } from './tabs';
 
 // ---- Visibility and access ----------------------------------------------------------------------------------------
 
@@ -61,6 +61,15 @@ function candidates(w: World): Candidate[] {
 export interface IncidentRow extends Incident {
   /** True when this person is the one who has to act next. */
   needsAttention: boolean;
+}
+
+/** One page of a tab. `page` is 1-based; `total` counts the whole tab (after the search), not just this page. */
+export interface IncidentListResult {
+  items: IncidentRow[];
+  counts: Partial<Record<TabId, number>>;
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface IncidentDetail {
@@ -106,7 +115,7 @@ export const COMMENT_MAX = 1000;
 // ---- The service --------------------------------------------------------------------------------------------------
 
 export const mockIncidentService = {
-  async list(actor: Actor, tab: TabId, search = ''): Promise<{ items: IncidentRow[]; counts: Partial<Record<TabId, number>> }> {
+  async list(actor: Actor, tab: TabId, search = '', page = 1): Promise<IncidentListResult> {
     return simulate(() => {
       const w = world(actor);
       const mine = w.incidents.filter((i) => canOpen(actor, i));
@@ -120,7 +129,9 @@ export const mockIncidentService = {
         .filter((i) => !q || [i.id, i.title, i.category, i.service, i.reporterName, i.assigneeName ?? ''].some((s) => s.toLowerCase().includes(q)))
         .map((i) => ({ ...i, needsAttention: needsAttention(actor, i, hasFb(i.id)) }))
         .sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention) || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-      return { items, counts };
+      const pages = Math.max(1, Math.ceil(items.length / INCIDENT_PAGE_SIZE));
+      const current = Math.min(Math.max(1, page), pages);
+      return { items: items.slice((current - 1) * INCIDENT_PAGE_SIZE, current * INCIDENT_PAGE_SIZE), counts, total: items.length, page: current, pageSize: INCIDENT_PAGE_SIZE };
     });
   },
 
