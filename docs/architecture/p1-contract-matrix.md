@@ -156,6 +156,9 @@ The area-to-permission table lives in the test itself, independent of the code i
 * **`SlaPolicyProvider.resolve(serviceId, priority)`:** active service-specific policy, else active global, else 422
   `MISSING_SLA_CONFIG`; unknown service 404; an **inactive service still resolves**; durations are never invented. A global
   policy is not guaranteed for every priority (an admin may deactivate it), so handle the 422.
+  **Transactions:** `resolve` joins the caller's transaction. `MissingSlaConfiguration` and `ServiceNotFound` are expected
+  domain outcomes and do **not** mark it rollback-only, so P4 may catch either and continue. Any other exception, including
+  database/infrastructure failures, keeps normal rollback behaviour and must not be caught and ignored.
 * **Boundary:** P1 stores and serves configuration (`responseMinutes`, `resolutionMinutes`, `warningThresholdPct`). Timers,
   breach detection, escalation, priority calculation and notifications are P4's.
 * **`listAdmins()`** is the final escalation tier (active administrators only).

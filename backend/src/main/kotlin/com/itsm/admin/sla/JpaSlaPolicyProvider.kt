@@ -23,9 +23,18 @@ import org.springframework.transaction.annotation.Transactional
  *
  * Cost: two small queries (service existence, then at most two candidate rows). Read-only; it joins the caller's
  * transaction when there is one.
+ *
+ * Transactions. Spring marks the transaction rollback-only for any RuntimeException that leaves a `@Transactional` bean,
+ * and when this bean has joined the caller's transaction that mark is on the CALLER's transaction: the caller may catch
+ * the exception and carry on, yet its own commit then fails with `UnexpectedRollbackException`. [MissingSlaConfiguration]
+ * and [ServiceNotFound] are answers, not failures (the contract tells P4 it may catch them and degrade), and by the time
+ * they are thrown every query has already returned normally, so nothing is wrong with the transaction. They are therefore
+ * excluded from the rollback rule below. Every other exception, above all a data-access failure from the queries, keeps
+ * the default behaviour: it propagates unchanged and still dooms the transaction, so a swallowed database error can never
+ * commit as success.
  */
 @Component
-@Transactional(readOnly = true)
+@Transactional(readOnly = true, noRollbackFor = [MissingSlaConfiguration::class, ServiceNotFound::class])
 class JpaSlaPolicyProvider(
     private val policies: SlaPolicyRepository,
     private val services: ItServiceRepository
