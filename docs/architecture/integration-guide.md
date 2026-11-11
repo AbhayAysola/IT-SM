@@ -25,7 +25,7 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `AuditPublisher` | P1 (`SpringAuditPublisher` exists, **publishes only; events are not persisted yet**) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
 | `TechnicianWorkloadProvider` | **P3 only** | P1 (admin technician views), P4 (SLA risk) |
-| `AssignmentStrategyCatalog` | **P3 only** | P1 (validates the configured strategy key) |
+| `AssignmentStrategyCatalog` | **P3 only** (implemented: `RegisteredAssignmentStrategyCatalog`) | P1 (validates the configured strategy key) |
 
 Do not write a second implementation of someone else's SPI "for testing" in `src/main`; mock it in tests.
 
@@ -71,6 +71,8 @@ Use `entityType = "INCIDENT"`.
 **Migrations:** block `V20-V29`. You may reference tables from V10-V19 (categories, services, users).
 
 ## P3: lifecycle, assignment, investigation, resolution
+
+Design docs: [p3-lifecycle.md](p3-lifecycle.md) (state machine) and [p3-assignment.md](p3-assignment.md) (strategies, recommendations).
 
 **Consume:** `AssignmentSettingsProvider.current()` (`strategyFor(categoryId)`, `defaultMaxWorkload`);
 `UserDirectory.listAvailableTechnicians(categoryId)` and `findTechnician(id)` for candidates
