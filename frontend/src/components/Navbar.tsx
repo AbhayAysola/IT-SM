@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   User as UserIcon,
@@ -68,6 +69,11 @@ export default function Navbar() {
       href: '/dashboard',
       icon: LayoutDashboard,
     },
+    {
+      name: 'Incidents',
+      href: '/incidents',
+      icon: ClipboardList,
+    },
     ...(isAdmin
       ? [
           {
@@ -98,7 +104,7 @@ export default function Navbar() {
             <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
               {navLinks.map((link) => {
                 const Icon = link.icon;
-                const isActive = pathname === link.href;
+                const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
                 return (
                   <Link
                     key={link.href}
