@@ -23,6 +23,11 @@ export interface RegisterRequest {
   name: string;
 }
 
+/** `POST /api/auth/register` answers 202 with exactly this for a new AND an already registered address; there is no token. */
+export interface RegistrationResponse {
+  status: 'ACCEPTED';
+}
+
 export interface AuthResponse {
   token: string;
   user: User;

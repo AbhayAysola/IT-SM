@@ -53,7 +53,7 @@ test.describe('sign-in screen', () => {
 });
 
 test.describe('registration, sign-in and sign-out', () => {
-  test('register through the UI lands on the dashboard with the profile and a stored token', async ({ page }) => {
+  test('registration never signs the user in: it shows a neutral notice, then the new account can sign in', async ({ page }) => {
     const user = newUser('register');
     await page.goto('/');
     await page.getByRole('button', { name: 'Register', exact: true }).click();
@@ -62,14 +62,20 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.getByLabel('Password').fill(user.password);
     await page.getByRole('button', { name: 'Create account' }).click();
 
+    // 202 with no token: still on the sign-in screen, in sign-in mode, with a status message and nothing stored.
+    await expect(page.getByRole('status')).toContainText(/sign in below/i);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Password')).toHaveValue('');
+    expect(await page.evaluate(() => localStorage.getItem('it_sm_token'))).toBeNull();
+
+    await page.getByLabel('Password').fill(user.password);
+    await submit(page).click();
     await page.waitForURL('**/dashboard');
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    await expect(page.locator('dd', { hasText: user.name })).toBeVisible();
     await expect(page.locator('dd', { hasText: user.email })).toBeVisible();
-    expect(await page.evaluate(() => localStorage.getItem('it_sm_token'))).toBeTruthy();
   });
 
-  test('duplicate registration shows the 409 message', async ({ page, api }) => {
+  test('registering an address that already has an account shows the SAME notice and does not touch that account', async ({ page, api }) => {
     const user = newUser('dup');
     await api.seed(user);
     await page.goto('/');
@@ -78,8 +84,35 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.getByLabel('Email address').fill(user.email);
     await page.getByLabel('Password').fill('another-password');
     await page.getByRole('button', { name: 'Create account' }).click();
-    await expect(formAlert(page)).toContainText(/already registered/i);
+    await expect(page.getByRole('status')).toContainText(/sign in below/i);
+    await expect(formAlert(page)).toHaveCount(0);                       // no "already registered" signal
+    await expect(page.getByText(/already registered|already exists|in use/i)).toHaveCount(0);
     await expect(page).toHaveURL(/\/$/);
+
+    // The attacker's password does not work; the owner's still does.
+    await page.getByLabel('Password').fill('another-password');
+    await submit(page).click();
+    await expect(formAlert(page)).toContainText(/invalid email or password/i);
+    await page.getByLabel('Password').fill(user.password);
+    await submit(page).click();
+    await page.waitForURL('**/dashboard');
+  });
+
+  test('a rate-limited sign-in or registration shows a calm message, not a raw error', async ({ page, api }) => {
+    test.skip(api.live, 'Throttling is simulated by the hermetic fake; the real limiter is covered by the backend suite.');
+    api.authThrottle.on = true;
+    await page.goto('/');
+    await page.getByLabel('Email address').fill('someone@example.test');
+    await page.getByLabel('Password').fill('whatever-pw');
+    await submit(page).click();
+    await expect(formAlert(page)).toContainText(/too many attempts/i);
+    await expect(formAlert(page)).not.toContainText(/429|RATE_LIMITED|exception/i);
+    await page.getByRole('button', { name: 'Register', exact: true }).click();
+    await page.getByLabel('Full name').fill('Some One');
+    await page.getByLabel('Email address').fill('someone@example.test');
+    await page.getByLabel('Password').fill('whatever-pw');
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await expect(formAlert(page)).toContainText(/too many attempts/i);
   });
 
   test('sign in with an existing account, then an authenticated visit to / goes to the dashboard', async ({ page, api }) => {

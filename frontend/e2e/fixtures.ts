@@ -43,6 +43,8 @@ export interface ApiHelper {
   calls: string[];
   /** Fake of the backend audit API (`/api/admin/audit-events`). Hermetic mode only. */
   audit: AuditFake;
+  /** Hermetic mode only: set `authThrottle.on = true` and the fake answers login and register with 429 + Retry-After. */
+  authThrottle: { on: boolean };
   /** Stateful fake of the other admin APIs (users, technicians, categories, services, SLA, assignment). Hermetic mode only. */
   admin: AdminFake;
 }
@@ -131,6 +133,7 @@ export const test = base.extend<{ api: ApiHelper }>({
 
       const audit: AuditFake = { events: makeAuditEvents(25), requests: [], detailRequests: [], fail: null };
       const admin = new AdminFake();
+      const throttle = { on: false };
 
       if (LIVE) {
         await use({
@@ -138,6 +141,7 @@ export const test = base.extend<{ api: ApiHelper }>({
           calls,
           audit,
           admin,
+          authThrottle: { on: false },
           seed: async (u) => {
             testInfo.skip(
               !!u.role && u.role !== 'USER',
@@ -172,13 +176,16 @@ export const test = base.extend<{ api: ApiHelper }>({
         const path = new URL(req.url()).pathname;
         if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
 
+        if ((path === '/api/auth/register' || path === '/api/auth/login') && req.method() === 'POST' && throttle.on) {
+          const r = problem(429, 'RATE_LIMITED', 'Too many attempts. Please try again later.');
+          return route.fulfill({ ...r, headers: { ...r.headers, 'retry-after': '900' } });
+        }
         if (path === '/api/auth/register' && req.method() === 'POST') {
-          // Like the real backend, public registration ignores any role in the body.
+          // Like the real backend: public registration ignores any role in the body, and a new and an already registered
+          // address get the SAME 202 {status:'ACCEPTED'} (no token, no duplicate signal). An existing account is left untouched.
           const { role: _ignored, ...b } = req.postDataJSON() as TestUser;
-          if (users.has(b.email)) return route.fulfill(problem(409, 'DUPLICATE_RESOURCE', 'Email is already registered'));
-          const u: MockUser = { ...b, id: nextId++, createdAt: new Date().toISOString() };
-          users.set(u.email, u);
-          return route.fulfill(ok({ token: `mock.${u.email}`, user: publicUser(u) }));
+          if (!users.has(b.email)) users.set(b.email, { ...b, id: nextId++, createdAt: new Date().toISOString() });
+          return route.fulfill({ status: 202, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'ACCEPTED' }) });
         }
         if (path === '/api/auth/login' && req.method() === 'POST') {
           const b = req.postDataJSON() as TestUser;
@@ -230,6 +237,7 @@ export const test = base.extend<{ api: ApiHelper }>({
         calls,
         audit,
         admin,
+        authThrottle: throttle,
         seed: async (u) => {
           users.set(u.email, { ...u, id: nextId++, createdAt: new Date().toISOString() });
         },

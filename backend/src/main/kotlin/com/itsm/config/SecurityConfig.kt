@@ -1,6 +1,7 @@
 package com.itsm.config
 
 import com.itsm.auth.JwtAuthFilter
+import com.itsm.auth.ratelimit.RegisterRateLimitFilter
 import com.itsm.common.model.Role
 import com.itsm.common.security.ItsmUserDetails
 import com.itsm.common.security.JsonAccessDeniedHandler
@@ -36,6 +37,7 @@ class SecurityConfig(
     // No @Lazy: JwtAuthFilter depends on UserRepository, never on beans of this class, so there is no cycle. A @Lazy
     // parameter would inject a CGLIB proxy of the filter (and log "Unable to proxy ... final" warnings).
     private val jwtAuthFilter: JwtAuthFilter,
+    private val registerRateLimitFilter: RegisterRateLimitFilter,
     private val userRepository: UserRepository,
     private val authenticationEntryPoint: JsonAuthenticationEntryPoint,
     private val accessDeniedHandler: JsonAccessDeniedHandler
@@ -114,6 +116,8 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter::class.java)
+            // Charged before authentication and before the body is read.
+            .addFilterBefore(registerRateLimitFilter, JwtAuthFilter::class.java)
         return http.build()
     }
 }

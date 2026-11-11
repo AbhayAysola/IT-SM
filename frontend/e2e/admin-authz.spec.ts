@@ -228,6 +228,9 @@ test.describe('admin authorization: unauthenticated', () => {
     const req = page.waitForRequest((r) => r.url() === `${API_URL}/api/auth/register` && r.method() === 'POST');
     await page.getByRole('button', { name: 'Create account' }).click();
     expect(Object.keys((await req).postDataJSON()).sort()).toEqual(['email', 'name', 'password']);
+    await expect(page.getByRole('status')).toContainText(/sign in below/i);   // registration does not sign in
+    await page.getByLabel('Password').fill(u.password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await page.waitForURL('**/dashboard');
     await page.goto('/admin');
     await expect(denied(page)).toBeVisible();

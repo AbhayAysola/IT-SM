@@ -41,6 +41,7 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         if (ex.fieldErrors.isNotEmpty()) problem.setProperty("errors", ex.fieldErrors)
         if (ex.code.httpStatus >= 500) log.error("traceId={} {}", problem.properties?.get("traceId"), ex.code, ex)
         else log.debug("traceId={} {}: {}", problem.properties?.get("traceId"), ex.code, ex.message)
+        if (ex is RateLimited) return respondRateLimited(ex, problem)
         return respond(problem)
     }
 
@@ -142,6 +143,10 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         if (code == ErrorCode.SERVICE_UNAVAILABLE) builder.header(HttpHeaders.RETRY_AFTER, "5")
         return builder.body(problem)
     }
+
+    private fun respondRateLimited(ex: RateLimited, problem: ProblemDetail): ResponseEntity<ProblemDetail> =
+        ResponseEntity.status(problem.status).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .header(HttpHeaders.RETRY_AFTER, ex.retryAfterSeconds.toString()).body(problem)
 
     private fun respond(problem: ProblemDetail): ResponseEntity<ProblemDetail> =
         ResponseEntity.status(problem.status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem)

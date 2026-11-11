@@ -1,4 +1,4 @@
-import { AuthResponse, LoginRequest, RegisterRequest, User } from '@/types';
+import { AuthResponse, LoginRequest, RegisterRequest, RegistrationResponse, User } from '@/types';
 import { getToken } from './auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -62,9 +62,12 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
   return response.json();
 }
 
-/** POST /api/auth/register */
-export async function register(data: RegisterRequest): Promise<AuthResponse> {
-  return request<AuthResponse>('/api/auth/register', {
+/**
+ * POST /api/auth/register. 202 {status:'ACCEPTED'} whether or not the address was already registered (no account-existence
+ * signal, no token): the caller must sign in afterwards. 404 when the deployment has self-registration switched off.
+ */
+export async function register(data: RegisterRequest): Promise<RegistrationResponse> {
+  return request<RegistrationResponse>('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify(data),
   });

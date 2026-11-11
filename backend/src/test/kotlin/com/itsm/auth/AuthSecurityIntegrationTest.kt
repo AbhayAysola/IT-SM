@@ -71,22 +71,23 @@ class AuthSecurityIntegrationTest {
         for (forged in listOf("ADMIN", "TECHNICIAN", "USER", "admin", "ROLE_ADMIN", "WIZARD")) {
             val e = email()
             register("""{"email":"$e","password":"Passw0rd!","name":"Mallory","role":"$forged","roles":["ADMIN"],"active":true,"tokenVersion":99}""")
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.user.role").value("EMPLOYEE"))
+                .andExpect(status().isAccepted)
             assertEquals("EMPLOYEE", storedRole(e), "forged role $forged")
         }
     }
 
-    @Test fun `registration normalises email, rejects case-insensitive duplicates and never returns secrets`() {
+    @Test fun `registration normalises email, treats case-insensitive duplicates like new addresses and never returns secrets`() {
         val base = email()
         val result = register("""{"email":"${base.uppercase()}","password":"Passw0rd!","name":" Pat "}""")
-            .andExpect(status().isOk).andExpect(jsonPath("$.user.email").value(base)).andExpect(jsonPath("$.user.name").value("Pat"))
+            .andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("ACCEPTED")).andExpect(jsonPath("$.token").doesNotExist())
             .andReturn().response.contentAsString
         assertFalse(result.contains("password", ignoreCase = true) || result.contains("\$2a\$") || result.contains("tokenVersion"))
         assertEquals(base, jdbc.queryForObject("select email from users where lower(email) = ?", String::class.java, base))
+        assertEquals("Pat", jdbc.queryForObject("select name from users where email = ?", String::class.java, base), "name is trimmed")
 
         register("""{"email":"${base.replaceFirstChar { it.uppercase() }}","password":"Passw0rd!","name":"Dup"}""")
-            .andExpect(status().isConflict).andExpect(jsonPath("$.code").value("DUPLICATE_RESOURCE"))
+            .andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("ACCEPTED"))   // same answer: no duplicate signal
+        assertEquals(1L, jdbc.queryForObject("select count(*) from users where lower(email) = ?", Long::class.java, base))
         login(base.uppercase(), "Passw0rd!").andExpect(status().isOk)
     }
 
@@ -105,7 +106,7 @@ class AuthSecurityIntegrationTest {
 
     @Test fun `login works, and wrong password, unknown email and disabled account are indistinguishable`() {
         val e = email()
-        register("""{"email":"$e","password":"Passw0rd!","name":"Pat"}""").andExpect(status().isOk)
+        register("""{"email":"$e","password":"Passw0rd!","name":"Pat"}""").andExpect(status().isAccepted)
         login(e, "Passw0rd!").andExpect(status().isOk).andExpect(jsonPath("$.token").isNotEmpty).andExpect(jsonPath("$.user.role").value("EMPLOYEE"))
 
         val wrong = login(e, "nope-nope").andExpect(status().isUnauthorized).andReturn().response.contentAsString

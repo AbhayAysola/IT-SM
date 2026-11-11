@@ -24,6 +24,13 @@ backend:
   jwt:
     secret: ""   # REQUIRED: >= 32 bytes of random secret (set via --set / a secret manager); the chart fails without it
     expiration: 86400000
+  registration:
+    enabled: false   # public self-registration; keep OFF until email verification exists (see docs/architecture/security.md)
+  trustedProxy:
+    # Proxies in front of the backend that YOU operate (the ingress = 1). Needed so the login/registration rate limits are charged
+    # to the real client address instead of the ingress pod. Narrow `cidrs` to the ingress controller's pod CIDR.
+    hops: 1
+    cidrs: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 postgres:
   image:

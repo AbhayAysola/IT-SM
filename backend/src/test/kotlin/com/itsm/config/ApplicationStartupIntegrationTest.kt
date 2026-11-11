@@ -80,13 +80,10 @@ class ApplicationStartupIntegrationTest {
     }
 
     @Test fun `register, duplicate register, login and me work end to end`() {
-        register("flow@x.com").andExpect(status().isOk)
+        register("flow@x.com").andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("ACCEPTED"))
 
-        register("flow@x.com")
-            .andExpect(status().isConflict)
-            .andExpect(jsonPath("$.code").value("DUPLICATE_RESOURCE"))
-            .andExpect(jsonPath("$.detail").value("Email is already registered"))
-            .andExpect(jsonPath("$.traceId").isNotEmpty)
+        // A duplicate gets exactly the same answer, so registration does not reveal that the account exists.
+        register("flow@x.com").andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("ACCEPTED"))
 
         val token = json.readTree(
             mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)

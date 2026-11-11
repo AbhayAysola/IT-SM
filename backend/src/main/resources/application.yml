@@ -36,6 +36,17 @@ app:
     expiration: ${JWT_EXPIRATION:86400000}  # 24 hours in ms
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  registration:
+    # Public self-registration. OFF by default: without email verification it cannot be made enumeration-proof.
+    # Enable it explicitly (REGISTRATION_ENABLED=true) for development or a closed network.
+    enabled: ${REGISTRATION_ENABLED:false}
+  security:
+    # Proxies you operate in front of this service. 0 = use the TCP peer and ignore X-Forwarded-For.
+    trusted-proxy-hops: ${TRUSTED_PROXY_HOPS:0}
+    # Exact IPs or CIDR blocks of those proxies (required when hops > 0). See docs/architecture/security.md.
+    trusted-proxies: ${TRUSTED_PROXIES:}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
 
 management:
   endpoints:

@@ -211,7 +211,7 @@ All endpoints (except auth) require `Authorization: Bearer <token>` header.
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/register` | Self-register (disabled unless `REGISTRATION_ENABLED=true`); always `202 {"status":"ACCEPTED"}`, no token, then sign in |
 | POST | `/api/auth/login` | Login, returns JWT |
 | GET | `/api/users/me` | Get current user profile |
 | GET | `/api/products` | List all products (Redis cached) |
