@@ -5,7 +5,7 @@ import {
 
 /**
  * Frontend copy of the backend lifecycle rules (`IncidentTransition`, `IncidentStateMachine`, `RolePermissions`,
- * `InvestigationPolicy`). Keep in sync with docs/architecture/p3-lifecycle.md. e2e/incident-model.spec.ts checks
+ * `InvestigationPolicy`). Keep in sync with docs/architecture/p3.md. e2e/incident-model.spec.ts checks
  * the invariants that matter, but only the backend is authoritative: this exists so the mock services and the UI
  * agree with it, and goes away when the real API does.
  */
@@ -45,7 +45,7 @@ export const ALL_PERMISSIONS: Permission[] = [
 
 /**
  * Mirror of backend `RolePermissions`. Note TECHNICIAN has no INCIDENT_VERIFY_OWN: a technician who reports their own
- * incident cannot verify, reopen or rate it. That is a known gap in the backend (docs/architecture/p3-feedback.md),
+ * incident cannot verify, reopen or rate it. That is a known gap in the backend (docs/architecture/p3.md),
  * reproduced here on purpose so the UI does not promise what the API will refuse.
  */
 export const ROLE_PERMISSIONS: Record<ActorRole, Permission[]> = {

@@ -20,10 +20,7 @@ The suite starts two servers from one build: `:3000` (a normal production server
 must 404) and `:3002` (`ENABLE_DESIGN_SYSTEM=true`). Existing servers on those ports are reused locally
 (never in CI). Override ports with `E2E_WEB_PORT` / `E2E_DS_PORT`.
 
-> **Pitfall: a stale server makes tests fail in confusing ways.** Because existing servers are reused, anything already
-> on `:3000` (the Docker Compose frontend, an old `next start`) is tested instead of your fresh build. Symptom: nearly
-> every test that touches a new route fails with "element(s) not found" and `curl localhost:3000/<new route>` returns 404.
-> Stop it first (`docker compose down` in `infra/`) or set `E2E_WEB_PORT` / `E2E_DS_PORT` to free ports.
+> **Pitfall:** whatever already listens on `:3000` (the Compose frontend, an old `next start`) is tested instead of your build, and new routes fail with 404. Stop it (`docker compose down` in `infra/`) or set `E2E_WEB_PORT` / `E2E_DS_PORT`.
 
 ## Personas and admin authorization
 
