@@ -1,6 +1,9 @@
 package com.itsm.assignment
 
 import com.itsm.common.spi.AssignmentStrategyCatalog
+import com.itsm.common.spi.TechnicianWorkloadProvider
+import com.itsm.lifecycle.FakeIncidentStore
+import com.itsm.lifecycle.IncidentStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -106,7 +109,14 @@ class AssignmentEngineTest {
 
     // ---- Spring wiring + SPI
     @Test fun `component scanning wires the engine and exposes the SPI`() {
-        AnnotationConfigApplicationContext("com.itsm.assignment").use { ctx ->
+        // The workload provider in this package reads incidents through the store, which another package provides.
+        val ctx = AnnotationConfigApplicationContext().apply {
+            registerBean(IncidentStore::class.java, java.util.function.Supplier<IncidentStore> { FakeIncidentStore() })
+            scan("com.itsm.assignment")
+            refresh()
+        }
+        ctx.use {
+            assertTrue(ctx.getBean(TechnicianWorkloadProvider::class.java) is StoreTechnicianWorkloadProvider)
             val catalog = ctx.getBean(AssignmentStrategyCatalog::class.java)
             assertEquals(setOf("LOAD_BASED", "SKILL_BASED", "ROUND_ROBIN", "MANUAL"), catalog.registeredKeys())
             assertTrue(catalog.isRegistered("LOAD_BASED"))

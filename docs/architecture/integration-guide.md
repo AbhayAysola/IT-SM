@@ -69,6 +69,8 @@ technician, or admin). Nobody else re-implements these rules. P1's `GET /api/inc
 Use `entityType = "INCIDENT"`.
 
 **Migrations:** block `V20-V29`. You may reference tables from V10-V19 (categories, services, users).
+`V20__p2_incidents.sql` already exists: P3 wrote the minimal `incidents` table so lifecycle work could proceed (columns and rules in
+[p3.md](p3.md#incidents-table-v20-p2s-block-written-by-p3)). Extend it with `V21+`; add the foreign keys to categories and services there.
 
 ## P3: lifecycle, assignment, investigation, resolution
 
