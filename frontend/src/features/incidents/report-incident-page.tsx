@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2, Sparkles, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PageHeader } from '@/features/admin/components/page-header';
 import { useToast } from '@/features/admin/components/toast';
+import { cn } from '@/lib/utils';
 import { CardHeading } from './components/card-heading';
 import { useActor } from './components/workspace-shell';
-import { incidentService } from './services/incident-service';
+import { type AnalysisResult, incidentService } from './services/incident-service';
 import { IncidentError } from './model/types';
 
 const PRIORITIES = [
@@ -25,8 +26,15 @@ const PRIORITIES = [
 ] as const;
 
 type Priority = 'P1' | 'P2' | 'P3' | 'P4';
+type FormState = 'filling' | 'analyzing' | 'reviewing' | 'creating';
 
 interface CatalogItem { id: number; name: string; code?: string }
+
+const CONFIDENCE_STYLE: Record<string, string> = {
+  HIGH: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
+  MEDIUM: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200',
+  LOW: 'bg-muted text-muted-foreground',
+};
 
 export default function ReportIncidentPage() {
   const actor = useActor();
@@ -38,8 +46,9 @@ export default function ReportIncidentPage() {
   const [categoryId, setCategoryId] = useState('');
   const [serviceId, setServiceId] = useState('');
   const [priority, setPriority] = useState<Priority>('P3');
-  const [submitting, setSubmitting] = useState(false);
+  const [formState, setFormState] = useState<FormState>('filling');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
 
   const [categories, setCategories] = useState<CatalogItem[]>([]);
   const [services, setServices] = useState<CatalogItem[]>([]);
@@ -66,11 +75,8 @@ export default function ReportIncidentPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-    setSubmitting(true);
-    setFieldErrors({});
+  const doCreate = async () => {
+    setFormState('creating');
     try {
       const id = await incidentService.create(actor, {
         title: title.trim(),
@@ -88,10 +94,32 @@ export default function ReportIncidentPage() {
       } else {
         toast.error('Something went wrong. Please try again.');
       }
-    } finally {
-      setSubmitting(false);
+      setFormState(analysis ? 'reviewing' : 'filling');
     }
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setFormState('analyzing');
+
+    let result: AnalysisResult | null = null;
+    try {
+      result = await incidentService.analyze({ title: title.trim(), description: description.trim() });
+    } catch {
+      // AI unavailable — skip the review step and create directly
+    }
+
+    if (result) {
+      setAnalysis(result);
+      setFormState('reviewing');
+    } else {
+      await doCreate();
+    }
+  };
+
+  const busy = formState === 'analyzing' || formState === 'creating';
+  const reviewing = formState === 'reviewing';
 
   return (
     <>
@@ -104,88 +132,170 @@ export default function ReportIncidentPage() {
         <div role="alert" className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">{catalogError}</div>
       )}
 
-      <Card className="max-w-2xl">
-        <CardHeader><CardHeading>Incident details</CardHeading></CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} noValidate className="space-y-5">
-            <div className="space-y-1.5">
-              <Label htmlFor="title">Title <span aria-hidden="true" className="text-destructive">*</span></Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Short summary of the problem"
-                aria-describedby={fieldErrors.title ? 'title-error' : undefined}
-                aria-invalid={!!fieldErrors.title}
-              />
-              {fieldErrors.title && <p id="title-error" className="text-xs text-destructive">{fieldErrors.title}</p>}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="description">Description <span aria-hidden="true" className="text-destructive">*</span></Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What happened? When did it start? What have you tried?"
-                rows={6}
-                aria-describedby={fieldErrors.description ? 'desc-error' : undefined}
-                aria-invalid={!!fieldErrors.description}
-              />
-              {fieldErrors.description && <p id="desc-error" className="text-xs text-destructive">{fieldErrors.description}</p>}
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
+      <div className="max-w-2xl space-y-4">
+        <Card>
+          <CardHeader><CardHeading>Incident details</CardHeading></CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} noValidate className="space-y-5">
               <div className="space-y-1.5">
-                <Label htmlFor="category">Category <span aria-hidden="true" className="text-destructive">*</span></Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger id="category" aria-invalid={!!fieldErrors.categoryId}>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {fieldErrors.categoryId && <p className="text-xs text-destructive">{fieldErrors.categoryId}</p>}
+                <Label htmlFor="title">Title <span aria-hidden="true" className="text-destructive">*</span></Label>
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Short summary of the problem"
+                  aria-describedby={fieldErrors.title ? 'title-error' : undefined}
+                  aria-invalid={!!fieldErrors.title}
+                />
+                {fieldErrors.title && <p id="title-error" className="text-xs text-destructive">{fieldErrors.title}</p>}
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="service">Service <span aria-hidden="true" className="text-destructive">*</span></Label>
-                <Select value={serviceId} onValueChange={setServiceId}>
-                  <SelectTrigger id="service" aria-invalid={!!fieldErrors.serviceId}>
-                    <SelectValue placeholder="Select a service" />
-                  </SelectTrigger>
+                <Label htmlFor="description">Description <span aria-hidden="true" className="text-destructive">*</span></Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What happened? When did it start? What have you tried?"
+                  rows={6}
+                  aria-describedby={fieldErrors.description ? 'desc-error' : undefined}
+                  aria-invalid={!!fieldErrors.description}
+                />
+                {fieldErrors.description && <p id="desc-error" className="text-xs text-destructive">{fieldErrors.description}</p>}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="category">Category <span aria-hidden="true" className="text-destructive">*</span></Label>
+                  <Select value={categoryId} onValueChange={setCategoryId}>
+                    <SelectTrigger id="category" aria-invalid={!!fieldErrors.categoryId}>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {fieldErrors.categoryId && <p className="text-xs text-destructive">{fieldErrors.categoryId}</p>}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="service">Service <span aria-hidden="true" className="text-destructive">*</span></Label>
+                  <Select value={serviceId} onValueChange={setServiceId}>
+                    <SelectTrigger id="service" aria-invalid={!!fieldErrors.serviceId}>
+                      <SelectValue placeholder="Select a service" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {services.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {fieldErrors.serviceId && <p className="text-xs text-destructive">{fieldErrors.serviceId}</p>}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="priority">Priority</Label>
+                <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+                  <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {services.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {fieldErrors.serviceId && <p className="text-xs text-destructive">{fieldErrors.serviceId}</p>}
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="priority">Priority</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-                <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PRIORITIES.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              {!reviewing && (
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" disabled={busy}>
+                    {formState === 'analyzing' ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Analyzing…</>
+                    ) : 'Submit incident'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => router.push('/incidents')}>Cancel</Button>
+                </div>
+              )}
+            </form>
+          </CardContent>
+        </Card>
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={submitting}>{submitting ? 'Submitting…' : 'Submit incident'}</Button>
-              <Button type="button" variant="outline" onClick={() => router.push('/incidents')}>Cancel</Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        {/* AI analysis card — shown after analyze returns */}
+        {reviewing && analysis && (
+          <Card className="border-blue-200 bg-blue-50/40 dark:border-blue-800 dark:bg-blue-950/20">
+            <CardHeader>
+              <CardHeading>
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+                  AI Analysis
+                </span>
+              </CardHeading>
+            </CardHeader>
+            <CardContent className="space-y-4">
+
+              {/* Category suggestion */}
+              {analysis.suggestedCategoryName && (
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">
+                      Suggested category: <span className="text-foreground">{analysis.suggestedCategoryName}</span>
+                    </p>
+                    {analysis.reasoning && (
+                      <p className="text-xs text-muted-foreground">{analysis.reasoning}</p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', CONFIDENCE_STYLE[analysis.confidence] ?? CONFIDENCE_STYLE.LOW)}>
+                      {analysis.confidence}
+                    </span>
+                    {analysis.suggestedCategoryId !== null && String(analysis.suggestedCategoryId) !== categoryId && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCategoryId(String(analysis.suggestedCategoryId!))}
+                      >
+                        Accept
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Duplicate warning */}
+              {analysis.possibleDuplicates.length > 0 && (
+                <div className="space-y-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950/30">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                    <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Similar open incidents found
+                  </p>
+                  <ul className="space-y-1">
+                    {analysis.possibleDuplicates.map((d) => (
+                      <li key={d.id} className="text-sm">
+                        <Link href={`/incidents/${d.id}`} className="font-medium text-primary underline-offset-4 hover:underline">{d.id}</Link>
+                        {' — '}{d.title}
+                        {d.reason && <span className="ml-1 text-xs text-muted-foreground">({d.reason})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3 pt-1">
+                <Button type="button" onClick={doCreate} disabled={formState === 'creating'}>
+                  {formState === 'creating' ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Creating…</>
+                  ) : 'Create incident'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setFormState('filling')}>Back to edit</Button>
+                <Button type="button" variant="ghost" onClick={() => router.push('/incidents')}>Cancel</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </>
   );
 }

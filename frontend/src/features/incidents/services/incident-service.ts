@@ -18,6 +18,14 @@ import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 
 export { TABS, defaultTab, INCIDENT_PAGE_SIZE, type TabId } from './tabs';
 
+export interface AnalysisResult {
+  suggestedCategoryId: number | null;
+  suggestedCategoryName: string | null;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  reasoning: string;
+  possibleDuplicates: { id: string; title: string; reason: string }[];
+}
+
 // ---- Visibility and access ----------------------------------------------------------------------------------------
 
 
@@ -300,6 +308,32 @@ export const mockIncidentService = {
       i.description = input.description;
       i.updatedAt = new Date().toISOString();
       saveWorld(actor.email, w);
+    });
+  },
+
+  async analyze(input: { title: string; description: string }): Promise<AnalysisResult> {
+    return simulate(() => {
+      const text = (input.title + ' ' + input.description).toLowerCase();
+      let suggestedCategoryId = 6;
+      let suggestedCategoryName = 'Other';
+      if (/network|wifi|internet|connect|vpn|bandwidth/.test(text)) {
+        suggestedCategoryId = 1; suggestedCategoryName = 'Network';
+      } else if (/hardware|computer|monitor|keyboard|mouse|printer|device/.test(text)) {
+        suggestedCategoryId = 2; suggestedCategoryName = 'Hardware';
+      } else if (/software|app|crash|install|update|bug|error/.test(text)) {
+        suggestedCategoryId = 3; suggestedCategoryName = 'Software';
+      } else if (/security|breach|hack|virus|malware|phishing/.test(text)) {
+        suggestedCategoryId = 4; suggestedCategoryName = 'Security';
+      } else if (/access|login|password|account|permission|locked/.test(text)) {
+        suggestedCategoryId = 5; suggestedCategoryName = 'Access & Identity';
+      }
+      return {
+        suggestedCategoryId,
+        suggestedCategoryName,
+        confidence: 'MEDIUM' as const,
+        reasoning: `The description contains terms related to ${suggestedCategoryName}.`,
+        possibleDuplicates: [],
+      };
     });
   },
 };

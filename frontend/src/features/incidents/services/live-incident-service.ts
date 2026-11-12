@@ -1,7 +1,7 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
 import { IncidentError, type Actor, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
-import type { IncidentDetail, IncidentListResult } from './incident-service';
+import type { AnalysisResult, IncidentDetail, IncidentListResult } from './incident-service';
 import { needsAttention } from './attention';
 import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 import {
@@ -140,5 +140,9 @@ export const liveIncidentService = {
 
   async update(_actor: Actor, id: string, input: { title: string; description: string }): Promise<void> {
     await call('PATCH', `/${enc(id)}`, input);
+  },
+
+  async analyze(input: { title: string; description: string }): Promise<AnalysisResult> {
+    return call<AnalysisResult>('POST', '/analyze', input);
   },
 };
