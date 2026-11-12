@@ -17,7 +17,7 @@ or integration. It links to the detailed documents instead of repeating them.
 | Shared contracts | SPI matrix, provider availability matrix, per-team handoff | [p1-contract-matrix.md](architecture/p1-contract-matrix.md) |
 | Operations | HTTPS-only Kubernetes/Helm, build-time frontend API origin, separate liveness/readiness with a startup probe | section 4 |
 
-## 2. How it was verified (branch `feat/p1-b16-operational-readiness`, 2026-11-12)
+## 2. How it was verified (B16 branch, 2026-11-12; the merged branch is in section 8)
 
 | Check | Result |
 |---|---|
@@ -86,22 +86,16 @@ there must be re-read against `main`.
 | P4 | Confirm `SlaPolicyProvider.resolve` semantics (422 `MISSING_SLA_CONFIG`, inactive service still resolves), the cross-priority rule, and who owns `unassignedEscalationMinutes` | pending |
 | All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; use by P2/P3/P4 not verified here |
 
-## 8. PR #4 and merging with `main`: integration branch `feat/p1-b18-final-integration`
+## 8. Integration: `feat/p1-b18-final-integration` (P1 + `main` + P3's PR #10)
 
-PR #4 (`feat/p1-admin-backend` into `main`) is `CONFLICTING`. The merge was done on `feat/p1-b18-final-integration` (local only, not pushed):
-the six textual conflicts are resolved by keeping both sides (docs, `frontend/Dockerfile`, P1's stricter `ApplicationStartupIntegrationTest`).
-No migration collision: `main` has V1, V30, V31; P1 has V1, V10 to V16.
+PR #4 (P1) conflicted with `main`. The integration branch merges `main` and P3's PR #10 (`feat/p3-persistence-stores`) into P1, keeping both
+sides in every conflict (docs, `frontend/Dockerfile`, P1's stricter `ApplicationStartupIntegrationTest`, P1's `PageQuery` fix with the B13 overflow
+guard). No migration collision: V1, V10 to V16 (P1), V20 (P3's incidents table), V30 to V32 (P3).
 
-**P1's side is fixed on that branch:** the assignment-settings tests now run against P3's real `RegisteredAssignmentStrategyCatalog`
-(no fake, nothing hidden), the V16 migration test pins Flyway to target 16, the real-stack assignment spec asserts the real catalog and the
-seeded `LOAD_BASED`, and the three workflows also trigger on the integration branch.
+P1's side of the merge: the assignment-settings tests run against P3's real `RegisteredAssignmentStrategyCatalog` (no fake), the V16 migration test pins
+Flyway to target 16, the real-stack assignment spec asserts the real catalog and the seeded `LOAD_BASED`, and the workflows also trigger on this branch.
+P3's side (their fixture role `USER` to `EMPLOYEE`, the incident workspace's own mock people, the live client going through `lib/api.ts`) came in with PR #10.
 
-**Two P3-owned problems remain. P1 has not changed P3's code (needs P3's agreement):**
-
-| Problem | Evidence | Fix (P3) |
-|---|---|---|
-| `P3PersistenceIntegrationTest` (15 tests) inserts users with the legacy role `USER`, which V15's `chk_users_role` rejects | backend suite on the merged branch: 559 tests, 15 failed, all in this class. With the one fixture line changed to `EMPLOYEE` (temporarily, reverted) the class passes | use `EMPLOYEE` in the fixture (`P3PersistenceIntegrationTest.kt` line 53) |
-| **The frontend does not compile after the merge.** P3's incident workspace (`frontend/src/features/incidents/data/seed.ts`, `services/incident-service.ts`) imports `@/features/admin/data/seed`, `@/features/admin/services/store` and the types `ManagedUser`/`TechnicianProfile`. P1's B8 deleted that mock data layer when it connected the admin area to the real API | `tsc` and `next build` fail on the merged branch; lint passes. No textual conflict, so git did not report it | P3 gives the incident workspace its own mock seed/store (or P1 and P3 agree to restore the old mock files, which would undo part of B8) |
-
-Because the production build fails, the fake and real-stack Playwright suites cannot run on the merged branch until P3 fixes the frontend import.
-They were not run there. Last results before the merge: fake 206/206 and real-stack 64/64 on the B16 branch.
+Verified locally on the merged branch (2026-11-12): backend 606 tests, 0 failed, 0 skipped; frontend typecheck, lint and build clean; real-stack suite
+64 of 64 (checker OK, secret scan clean); fake suite passes (the 3 skips are P3's opt-in live incidents spec and an existing live-mode throttle skip;
+one run under heavy machine load timed out in 4 incident tests that pass when run alone).
