@@ -22,12 +22,24 @@ function authErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'An error occurred during authentication';
 }
 
+/** Turns raw Jakarta validation messages into something a user can act on. */
+function friendlyFieldError(field: string, raw: string): string {
+  if (raw.includes('must not be blank')) return 'Required';
+  if (raw.includes('must be a well-formed email address')) return 'Enter a valid email address';
+  if (raw.includes('size must be between')) {
+    if (field === 'password') return 'Must be at least 8 characters';
+    return 'Too long';
+  }
+  return raw;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Form states
   const [email, setEmail] = useState('');
@@ -59,6 +71,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setNotice(null);
+    setFieldErrors({});
     setLoading(true);
 
     try {
@@ -76,7 +89,13 @@ export default function LoginPage() {
         setNotice(REGISTRATION_NOTICE);
       }
     } catch (err: unknown) {
-      setError(authErrorMessage(err));
+      if (err instanceof ApiErrorResponse && err.fieldErrors.length > 0) {
+        const mapped: Record<string, string> = {};
+        for (const f of err.fieldErrors) mapped[f.field] = friendlyFieldError(f.field, f.message);
+        setFieldErrors(mapped);
+      } else {
+        setError(authErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -117,6 +136,7 @@ export default function LoginPage() {
                     setIsLogin(mode);
                     setError(null);
                     setNotice(null);
+                    setFieldErrors({});
                   }}
                   className={cn(
                     'h-8 text-sm',
@@ -164,11 +184,14 @@ export default function LoginPage() {
                       required={!isLogin}
                       autoComplete="name"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => { setName(e.target.value); setFieldErrors((p) => { const n = { ...p }; delete n.name; return n; }); }}
                       placeholder="Jane Doe"
-                      className="pl-9"
+                      aria-invalid={!!fieldErrors.name}
+                      aria-describedby={fieldErrors.name ? 'name-error' : undefined}
+                      className={cn('pl-9', fieldErrors.name && 'border-destructive focus-visible:ring-destructive')}
                     />
                   </div>
+                  {fieldErrors.name && <p id="name-error" className="text-xs text-destructive">{fieldErrors.name}</p>}
                 </div>
               )}
 
@@ -182,11 +205,14 @@ export default function LoginPage() {
                     required
                     autoComplete="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); setFieldErrors((p) => { const n = { ...p }; delete n.email; return n; }); }}
                     placeholder="name@company.com"
-                    className="pl-9"
+                    aria-invalid={!!fieldErrors.email}
+                    aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+                    className={cn('pl-9', fieldErrors.email && 'border-destructive focus-visible:ring-destructive')}
                   />
                 </div>
+                {fieldErrors.email && <p id="email-error" className="text-xs text-destructive">{fieldErrors.email}</p>}
               </div>
 
               <div className="space-y-1.5">
@@ -199,11 +225,14 @@ export default function LoginPage() {
                     required
                     autoComplete={isLogin ? 'current-password' : 'new-password'}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => { setPassword(e.target.value); setFieldErrors((p) => { const n = { ...p }; delete n.password; return n; }); }}
                     placeholder="••••••••••••"
-                    className="pl-9"
+                    aria-invalid={!!fieldErrors.password}
+                    aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+                    className={cn('pl-9', fieldErrors.password && 'border-destructive focus-visible:ring-destructive')}
                   />
                 </div>
+                {fieldErrors.password && <p id="password-error" className="text-xs text-destructive">{fieldErrors.password}</p>}
               </div>
 
               <Button type="submit" size="lg" disabled={loading} className="mt-2 w-full">
