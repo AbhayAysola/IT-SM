@@ -175,7 +175,7 @@ fun assign(incidentId: String, techId: Long) {
   production. The table has no foreign keys so rows outlive the users and incidents they describe.
 * Reading audit data (the admin viewer API and the incident trail) is implemented read-only in `AuditEventReader`/`AuditQueryService`, outside the repository above; contract in [audit-retrieval.md](audit-retrieval.md).
 
-## 7. Planned auth hardening (not in this branch)
+## 7. Planned auth hardening (not implemented yet)
 
 Documented here so teammates can rely on the direction:
 
@@ -227,4 +227,6 @@ unique entity id and only inspects those rows.
 Almost all tests are database-free. `ApplicationStartupIntegrationTest` needs Docker (it starts
 `postgres:16` with Testcontainers) and is **skipped, not failed**, when Docker is unavailable, so check the
 test report if startup coverage matters. When running Gradle itself inside a container, pass the Docker
-socket and `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`.
+socket, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`, and the socket's group
+(`--group-add $(stat -c %g /var/run/docker.sock)`): without it the container user cannot read the socket and the tests are
+silently skipped.

@@ -25,7 +25,7 @@ Rules
 
 ## 2. `spring.flyway.out-of-order`: decision
 
-**Not enabled** (Flyway's default is `false`; this branch does not add the setting). Verified behaviour
+**Not enabled** (Flyway's default is `false`; the setting is not added). Verified behaviour
 (Flyway 10.10.0, PostgreSQL 16), with P2's `V20` already applied and P1's `V10` merged afterwards:
 
 | Setup | Result |

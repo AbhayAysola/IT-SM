@@ -25,7 +25,7 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction; read API: [audit-retrieval.md](audit-retrieval.md)) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
 | `TechnicianWorkloadProvider` | **P3 only** (no bean exists yet) | P4 (SLA risk); P1 admin technician views are an intention only, no P1 code uses it today |
-| `AssignmentStrategyCatalog` | **P3 only** (no bean exists yet) | P1 (validates configured strategy keys; looked up lazily, see "Assignment settings") |
+| `AssignmentStrategyCatalog` | **P3 only** (implemented on `main`: `RegisteredAssignmentStrategyCatalog`) | P1 (validates the configured strategy key; looked up lazily, see "Assignment settings") |
 
 Do not write a second implementation of someone else's SPI "for testing" in `src/main`; mock it in tests.
 
@@ -81,6 +81,8 @@ keys never block P1 (and never cascade).
 
 ## P3: lifecycle, assignment, investigation, resolution
 
+Design, decisions and open questions: [p3.md](p3.md).
+
 **Consume:** `AssignmentSettingsProvider.current()` (`strategyFor(categoryId)`, `defaultMaxWorkload`);
 `UserDirectory.listAvailableTechnicians(categoryId)` and `findTechnician(id)` for candidates
 (`skills`, `maxWorkload`, `experienceYears`, `available`).
@@ -98,7 +100,8 @@ Use `UnauthorizedOperation` if a technician acts on an incident that is not thei
 
 **Audit actions:** one per transition with `previousState` and `newState` set, e.g. `INCIDENT_ASSIGNED`
 (CLASSIFIED -> ASSIGNED), `INCIDENT_ACKNOWLEDGED`, `INCIDENT_STATUS_CHANGED`, `INCIDENT_RESOLVED`,
-`INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`. Publish **in the same
+`INCIDENT_VERIFIED`, `INCIDENT_CLOSED`, `INCIDENT_FEEDBACK_RECORDED`, `INCIDENT_REASSIGNED`,
+`INCIDENT_INVESTIGATION_ENTRY_ADDED` (metadata: entry type and visibility, never the text). Publish **in the same
 `@Transactional` method as the state change**, so that the audit row and the state change commit together.
 
 **Migrations:** block `V30-V39`.

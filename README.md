@@ -1,8 +1,35 @@
-# IT-SM — Full-Stack Boilerplate
+# IT-SM — Intelligent IT Service Management
 
-> **User Management + Order Processing** reference app wiring together Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus.
+> An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
 
-> 📚 Module rules, SPIs and integration guides for each teammate: [docs/architecture/](docs/architecture/foundation.md) · migration plan: [docs/migrations.md](docs/migrations.md)
+> **Status:** early. Today the backend has authentication and user profile only; the admin workspace in the frontend runs on mock data. See [Current status](#-current-status).
+
+## 📚 Documentation
+
+| Doc | What it covers |
+|---|---|
+| [PRODUCT.md](PRODUCT.md) | Users, purpose, principles, accessibility requirements |
+| [DESIGN.md](DESIGN.md) | Design system: tokens, typography, components |
+| [docs/architecture/foundation.md](docs/architecture/foundation.md) | Shared `common` module: security, errors, API conventions, auditing |
+| [docs/architecture/integration-guide.md](docs/architecture/integration-guide.md) | Module ownership (P1–P4), SPI map, per-person recipes |
+| [docs/migrations.md](docs/migrations.md) | Flyway version blocks and P1 draft migrations |
+| [frontend/e2e/README.md](frontend/e2e/README.md) | Playwright suite (hermetic and live modes) |
+| [frontend/src/features/admin/README.md](frontend/src/features/admin/README.md) | Admin workspace, mock persistence, access control |
+
+---
+
+## 🚧 Current status
+
+| Area | State |
+|---|---|
+| Auth (`/api/auth/*`, `/api/users/me`) | Implemented (boilerplate; hardening planned) |
+| Shared `common` module (roles, permissions, errors, SPIs, audit events) | Implemented |
+| Audit persistence (`audit_events`) | **Not yet**: events are published, not stored |
+| P1 SPI providers (users, categories, services, SLA, assignment settings) | **Not yet** (draft migrations in `docs/migrations/drafts/`) |
+| Incident intake, lifecycle/assignment, SLA/notifications (P2–P4) | **Not yet** |
+| Admin workspace (frontend) | Built on `localStorage` mock data, no backend endpoints |
+| Redis / RabbitMQ | Configured in `config/` and the compose stack; no feature uses them yet |
+| Roles | Registration still assigns `USER` (treated as `EMPLOYEE`); no admin bootstrap, so `/admin` shows "Access denied" against the real backend |
 
 ---
 
@@ -22,7 +49,7 @@
 ┌──────▼──┐  ┌────▼────┐  ┌──▼──────────┐
 │PostgreSQL│  │  Redis  │  │  RabbitMQ   │
 │  :5432   │  │  :6379  │  │  :5672      │
-│  (JPA)   │  │ (cache) │  │ (events)    │
+│  (JPA)   │  │(planned)│  │ (planned)   │
 └──────────┘  └─────────┘  └─────────────┘
 ```
 
@@ -53,30 +80,29 @@
 
 ```
 IT-SM/
+├── PRODUCT.md  DESIGN.md        # Product and design-system docs
+├── docs/                        # Architecture, integration guide, migration plan
 ├── frontend/                    # Next.js 14 TypeScript app
 │   ├── src/
-│   │   ├── app/                 # App Router pages
-│   │   │   ├── page.tsx         # Landing / Login / Register
-│   │   │   ├── dashboard/       # Orders dashboard (protected)
-│   │   │   ├── products/        # Product catalog (protected)
-│   │   │   └── orders/new/      # Place order (protected)
-│   │   ├── components/          # Navbar, AuthGuard, ProductCard, OrderTable
+│   │   ├── app/                 # App Router: / (sign in), /dashboard, /admin/*
+│   │   ├── components/          # Navbar, AuthGuard, shadcn/ui primitives (ui/)
+│   │   ├── features/admin/      # P1 admin workspace (mock data, see its README)
 │   │   ├── lib/                 # api.ts (typed client), auth.ts (JWT helpers)
 │   │   └── types/               # Shared TypeScript interfaces
+│   ├── e2e/                     # Playwright tests
 │   └── Dockerfile
 │
 ├── backend/                     # Spring Boot 3 Kotlin app
 │   ├── src/main/kotlin/com/itsm/
+│   │   ├── common/              # Shared foundation: model, security, error, api, event, spi
 │   │   ├── auth/                # JWT auth, filter, service, controller
 │   │   ├── user/                # UserEntity, UserService, UserController
-│   │   ├── product/             # ProductEntity, ProductService (Redis cached)
-│   │   ├── order/               # OrderEntity, OrderService, OrderController
-│   │   ├── messaging/           # OrderEventPublisher + OrderEventConsumer
+│   │   ├── audit/               # SpringAuditPublisher (publishes only)
 │   │   └── config/              # SecurityConfig, RedisConfig, RabbitMQConfig
 │   ├── src/main/resources/
 │   │   ├── application.yml
 │   │   ├── application-docker.yml
-│   │   └── db/migration/        # Flyway SQL migrations
+│   │   └── db/migration/        # Flyway SQL migrations (V1 only so far)
 │   └── Dockerfile
 │
 ├── infra/
@@ -222,21 +248,18 @@ kubectl apply -f infra/k8s/
 
 ## 🔌 API Reference
 
-All endpoints (except login and register) require authentication: `Authorization: Bearer <token>` for scripts and services (token from `POST /api/auth/login` **without** the `X-ITSM-Client` header), or the HttpOnly session cookie for the web app (login with `X-ITSM-Client: web`; see `docs/architecture/security.md`).
+Authenticated endpoints need `Authorization: Bearer <token>` for scripts and services (token from `POST /api/auth/login` **without** the `X-ITSM-Client` header), or the HttpOnly session cookie for the web app (login with `X-ITSM-Client: web`; see `docs/architecture/security.md`). Errors are RFC 7807 `application/problem+json` (see [foundation.md](docs/architecture/foundation.md#4-errors)).
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/auth/logout` | End the session: revokes ALL of the caller's tokens and clears the cookie |
-| POST | `/api/auth/register` | Self-register (disabled unless `REGISTRATION_ENABLED=true`); always `202 {"status":"ACCEPTED"}`, no token, then sign in |
-| POST | `/api/auth/login` | Login, returns JWT |
-| GET | `/api/users/me` | Get current user profile |
-| GET | `/api/products` | List all products (Redis cached) |
-| GET | `/api/products/{id}` | Get single product |
-| POST | `/api/orders` | Create order (publishes RabbitMQ event) |
-| GET | `/api/orders` | List current user's orders |
-| GET | `/api/orders/{id}` | Get order by ID |
-| GET | `/actuator/health` | Health check |
-| GET | `/actuator/prometheus` | Prometheus metrics |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | public | Self-register (disabled unless `REGISTRATION_ENABLED=true`); always `202 {"status":"ACCEPTED"}`, no token, then sign in |
+| POST | `/api/auth/login` | public | Login, returns JWT |
+| POST | `/api/auth/logout` | required | End the session: revokes ALL of the caller's tokens and clears the cookie |
+| GET | `/api/users/me` | required | Current user profile |
+| GET | `/actuator/health` | public | Health check |
+| GET | `/actuator/prometheus` | admin | Prometheus metrics |
+
+The administration endpoints (users, technicians, catalogs, SLA, assignment settings, audit) are listed in the [integration guide](docs/architecture/integration-guide.md); conventions are in [foundation.md](docs/architecture/foundation.md#5-api-conventions).
 
 ### Example: Register + Login
 
@@ -251,11 +274,8 @@ curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"password123"}'
 
-# Create Order
-curl -X POST http://localhost:8080/api/orders \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"items":[{"productId":1,"quantity":2}]}'
+# Current user
+curl http://localhost:8080/api/users/me -H "Authorization: Bearer <token>"
 ```
 
 ---
@@ -292,19 +312,13 @@ helm upgrade --install it-sm ./infra/helm \
 
 ## 🏗️ Key Design Decisions
 
-### Order Flow (RabbitMQ)
-1. `POST /api/orders` → saves order with status `PENDING`
-2. `OrderEventPublisher` → publishes to `itsm.exchange` with routing key `order.created`
-3. `OrderEventConsumer` → listens on `itsm.orders` queue → updates status to `PROCESSING`
-
-### Redis Caching
-- `ProductService.getAll()` is annotated `@Cacheable(value = ["products"])`
-- Cache TTL: 10 minutes
-- Cache is evicted on product updates
+- **Modular monolith with one rule:** a module imports only `com.itsm.common.*`. Cross-module calls use SPIs, cross-module notifications use events. See [foundation.md](docs/architecture/foundation.md).
+- **Append-only audit trail:** state changes publish an `AuditableEvent` inside the business transaction (storage pending).
+- **Flyway version blocks per owner** so parallel work never collides: [docs/migrations.md](docs/migrations.md).
 
 ### JWT Auth
-- Token stored in `localStorage` (key: `it_sm_token`)
-- `JwtAuthFilter` intercepts all requests, validates token, sets `SecurityContext`
+- Token stored in `localStorage` (key: `it_sm_token`) plus a readable `SameSite=Lax` cookie; planned replacement is described in foundation.md section 7.
+- `JwtAuthFilter` validates the token and sets the `SecurityContext` to an `ItsmUserDetails(id, email, role)`.
 - Public routes: `/api/auth/**`, `/actuator/**`
 
 ---
@@ -329,14 +343,19 @@ Import Grafana dashboards:
 ## 🧪 Running Tests
 
 ```bash
-# Backend
+# Backend (JDK 17; see foundation.md section 10 for a container recipe)
 cd backend
 ./gradlew test
 
 # Frontend
 cd frontend
 npm run lint
+npm run typecheck
+npm run check:contrast
+npm run test:e2e        # Playwright, hermetic by default: see frontend/e2e/README.md
 ```
+
+CI (`.github/workflows/frontend.yml`) runs the frontend checks on PRs to `main`.
 
 ---
 
