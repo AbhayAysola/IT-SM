@@ -33,6 +33,10 @@ data class PageQuery(val page: Int = 0, val size: Int = DEFAULT_SIZE) {
         val errors = buildList {
             if (this@PageQuery.page < 0) add(FieldError("page", "must be >= 0"))
             if (this@PageQuery.size !in 1..MAX_SIZE) add(FieldError("size", "must be between 1 and $MAX_SIZE"))
+            // Spring Data JPA converts the offset to an Int and throws InvalidDataAccessApiUsageException (a 500) past
+            // Int.MAX_VALUE. Widen BEFORE multiplying: page * size overflows Int for page >= 21474837 at size 100.
+            // Only checked once both inputs are individually valid, so a bad page or size reports just its own error.
+            if (isEmpty() && !isReachable(this@PageQuery.page, this@PageQuery.size)) add(FieldError("page", "is out of range"))
         }
         if (errors.isNotEmpty()) throw InvalidInput("Invalid paging parameters", errors)
     }
@@ -42,5 +46,10 @@ data class PageQuery(val page: Int = 0, val size: Int = DEFAULT_SIZE) {
     companion object {
         const val DEFAULT_SIZE = 20
         const val MAX_SIZE = 100
+
+        /** Largest row offset the persistence layer accepts (it narrows the offset to an Int). */
+        const val MAX_OFFSET = Int.MAX_VALUE.toLong()
+
+        private fun isReachable(page: Int, size: Int): Boolean = page.toLong() * size.toLong() <= MAX_OFFSET
     }
 }

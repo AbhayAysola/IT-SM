@@ -81,7 +81,7 @@ internal id in the same direction; other sorts fall back to `occurredAt desc, id
 repeatable, and newest-first uses `idx_audit_events_occurred_at (occurred_at DESC, id DESC)`.
 
 **Paging.** Standard `PageResponse`: `items`, `page` (0-based), `size`, `totalItems`, `totalPages`. A page past the end
-is an empty page, not an error. A `page`/`size` whose offset exceeds 2^31−1 is a 400. One list call = one `COUNT` plus
+is an empty page, not an error. A `page`/`size` whose offset exceeds 2^31−1 is a 400 (enforced by `PageQuery`, like every list). One list call = one `COUNT` plus
 one `LIMIT/OFFSET` select (asserted by a test); the table is never loaded into memory. Deep offsets and the exact count
 cost more on a very large table; keyset paging is a possible later optimisation (deferred).
 
@@ -93,7 +93,9 @@ cost more on a very large table; keyset paging is a possible later optimisation 
 default, same paging/sort params (`page`, `size`, `sort`, `dir`; no filters). Order of checks:
 
 1. Authentication (`401`).
-2. `incidentId` format (`400`).
+2. Request shape, which reads nothing about any incident: `incidentId` format and `page`/`size` (including an unreachable
+   offset) → `400`. Because this precedes step 3, an invalid page is the same `400` whether the incident exists, is
+   forbidden or is unknown, and the policy is not consulted.
 3. **P2's `IncidentAccessPolicy.requireView(user, incidentId)`**, injected as `ObjectProvider<IncidentAccessPolicy>`:
    unknown incident → `404 RESOURCE_NOT_FOUND` (P2's exception), not allowed → `403 FORBIDDEN`. P1 contains **no**
    ownership/visibility rule of its own.

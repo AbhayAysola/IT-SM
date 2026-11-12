@@ -101,6 +101,7 @@ jobs:
               'com.itsm.audit.AuditPersistenceIntegrationTest': 1,
               'com.itsm.audit.AuditRetrievalIntegrationTest': 1,
               'com.itsm.audit.IncidentAuditIntegrationTest': 1,
+              'com.itsm.audit.IncidentAuditPageOrderingIntegrationTest': 1,
               'com.itsm.audit.IncidentAuditProviderUnavailableIntegrationTest': 1,
               'com.itsm.admin.category.CategoryAdminIntegrationTest': 1,
               'com.itsm.admin.itservice.ItServiceAdminIntegrationTest': 1,
@@ -120,6 +121,7 @@ jobs:
               'com.itsm.integration.ListQueryCountIntegrationTest': 1,
               'com.itsm.integration.SlaProviderCallerTransactionIntegrationTest': 1,
               'com.itsm.integration.CatalogCallerTransactionIntegrationTest': 1,
+              'com.itsm.integration.PaginationOffsetIntegrationTest': 1,
           }
           total = skipped = 0
           executed = {}
