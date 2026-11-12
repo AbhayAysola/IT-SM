@@ -50,7 +50,7 @@ class P3PersistenceIntegrationTest {
 
     private val t0 = Instant.parse("2026-11-11T10:00:00Z")
     private fun userId(): Long = jdbc.queryForObject(
-        "INSERT INTO users (email, password, name, role) VALUES (?, 'x', 'Tester', 'USER') RETURNING id", Long::class.java, "p3-${UUID.randomUUID()}@campus.example"
+        "INSERT INTO users (email, password, name, role) VALUES (?, 'x', 'Tester', 'EMPLOYEE') RETURNING id", Long::class.java, "p3-${UUID.randomUUID()}@campus.example"
     )!!
     private val reporter: Long by lazy { userId() }
 

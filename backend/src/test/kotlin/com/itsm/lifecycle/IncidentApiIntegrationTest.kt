@@ -24,7 +24,8 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.util.UUID
 
 /** The HTTP surface over the real stack: JWT login, JSON, status codes and RFC 7807 errors. P1's providers are stubbed. */
-@SpringBootTest
+// Self-registration is off by default (and answers 202 with no token); the test needs it to create its accounts.
+@SpringBootTest(properties = ["app.registration.enabled=true"])
 @AutoConfigureMockMvc
 @Import(IncidentFlowIntegrationTest.P1Stubs::class)
 @Testcontainers(disabledWithoutDocker = true)
@@ -46,7 +47,7 @@ class IncidentApiIntegrationTest {
 
     private fun account(role: String): Account {
         val email = "api-${UUID.randomUUID()}@campus.example"
-        mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content("""{"email":"$email","password":"Passw0rd!","name":"Tester"}""")).andExpect(status().isOk)
+        mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content("""{"email":"$email","password":"Passw0rd!","name":"Tester"}""")).andExpect(status().is2xxSuccessful)
         jdbc.update("UPDATE users SET role = ? WHERE email = ?", role, email)
         val token = json.readTree(
             mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("""{"email":"$email","password":"Passw0rd!"}""")).andReturn().response.contentAsString
@@ -71,7 +72,7 @@ class IncidentApiIntegrationTest {
         call(a, "POST", "/api/incidents/$id/transitions", """{"transition":"$t"${reason?.let { ""","reason":"$it"""" } ?: ""}}""")
 
     @Test fun `an incident is worked from assignment to rated feedback over HTTP`() {
-        val reporter = account("USER"); val tech = account("TECHNICIAN"); val admin = account("ADMIN")
+        val reporter = account("EMPLOYEE"); val tech = account("TECHNICIAN"); val admin = account("ADMIN")
         directory.technicians = listOf(TechnicianSummary(tech.id, "Tech", "t@campus.example", true, 5, 3, false, null, mapOf(7L to 3)))
         val id = incident(reporter.id)
 
@@ -101,7 +102,7 @@ class IncidentApiIntegrationTest {
     }
 
     @Test fun `errors are problem json with stable codes`() {
-        val reporter = account("USER"); val tech = account("TECHNICIAN"); val stranger = account("USER"); val admin = account("ADMIN")
+        val reporter = account("EMPLOYEE"); val tech = account("TECHNICIAN"); val stranger = account("EMPLOYEE"); val admin = account("ADMIN")
         val id = incident(reporter.id)
         mvc.perform(get("/api/incidents/$id")).andExpect(status().isUnauthorized)
         call(stranger, "GET", "/api/incidents/$id").andExpect(status().isNotFound).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
@@ -117,7 +118,7 @@ class IncidentApiIntegrationTest {
     }
 
     @Test fun `the list is the caller's own, paged, filterable, and tells them how many sit in each state`() {
-        val reporter = account("USER"); val other = account("USER"); val admin = account("ADMIN")
+        val reporter = account("EMPLOYEE"); val other = account("EMPLOYEE"); val admin = account("ADMIN")
         val a = incident(reporter.id); val b = incident(reporter.id); incident(other.id)
         jdbc.update("UPDATE incidents SET title = 'Wifi dead in room 4' WHERE id = ?", b)
 

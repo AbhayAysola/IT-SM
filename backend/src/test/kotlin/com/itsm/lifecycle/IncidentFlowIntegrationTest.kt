@@ -22,6 +22,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.context.event.EventListener
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
@@ -64,8 +65,9 @@ class IncidentFlowIntegrationTest {
 
     @TestConfiguration
     class P1Stubs {
-        @Bean fun directory() = MutableDirectory()
-        @Bean fun settings(): AssignmentSettingsProvider = FakeSettings()
+        // @Primary: once P1's real UserDirectory and AssignmentSettingsProvider are on the classpath these stubs must still win.
+        @Bean @Primary fun directory() = MutableDirectory()
+        @Bean @Primary fun settings(): AssignmentSettingsProvider = FakeSettings()
         @Bean fun auditCollector() = AuditCollector()
     }
 

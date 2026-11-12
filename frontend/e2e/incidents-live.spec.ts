@@ -51,10 +51,10 @@ test.describe('incidents against the real backend', () => {
   test('an incident is worked from assignment to closed by three different people', async ({ browser, request }, testInfo) => {
     const baseURL = String(testInfo.project.use.baseURL);
     const [reporterU, techU, adminU, strangerU] = ['rep', 'tech', 'admin', 'stranger'].map((l) => newUser(`live-${l}`));
-    const reporterId = await register(request, reporterU, 'USER');
+    const reporterId = await register(request, reporterU, 'EMPLOYEE');
     const techId = await register(request, techU, 'TECHNICIAN');
     await register(request, adminU, 'ADMIN');
-    await register(request, strangerU, 'USER');
+    await register(request, strangerU, 'EMPLOYEE');
     const id = incidentId();
     insertIncident(id, 'VPN drops every hour', reporterId, 'ASSIGNED', techId);
 
@@ -131,7 +131,7 @@ test.describe('incidents against the real backend', () => {
   test('without P1’s providers the admin can see unassigned work but assigning fails gracefully', async ({ browser, request }, testInfo) => {
     const baseURL = String(testInfo.project.use.baseURL);
     const [reporterU, adminU] = ['rep2', 'admin2'].map((l) => newUser(`live-${l}`));
-    const reporterId = await register(request, reporterU, 'USER');
+    const reporterId = await register(request, reporterU, 'EMPLOYEE');
     await register(request, adminU, 'ADMIN');
     const id = incidentId();
     insertIncident(id, 'Printer on floor 2 is offline', reporterId, 'CLASSIFIED');
@@ -147,7 +147,7 @@ test.describe('incidents against the real backend', () => {
   test('a long list is paged by the backend, and search is literal', async ({ browser, request }, testInfo) => {
     const baseURL = String(testInfo.project.use.baseURL);
     const reporterU = newUser('live-pager');
-    const reporterId = await register(request, reporterU, 'USER');
+    const reporterId = await register(request, reporterU, 'EMPLOYEE');
     sql(
       `INSERT INTO incidents (title, description, state, reporter_id, category_id, service_id, priority) ` +
         `SELECT 'Bulk ' || n, 'bulk', 'CLASSIFIED', ${reporterId}, 7, 3, 'P3' FROM generate_series(1, 25) AS n`,

@@ -1,5 +1,4 @@
-import { API_URL } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
 import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
 import type { IncidentDetail, IncidentListResult } from './incident-service';
@@ -21,20 +20,21 @@ const me = (a: Actor): Me => {
   return { id: a.id, email: a.email, name: a.name };
 };
 
+/**
+ * Every call goes through the app's one HTTP client (`lib/api.ts`), so it authenticates however the app does (the session cookie and
+ * the CSRF header today) without this file knowing. Its errors are turned into the ones the incident pages already handle.
+ */
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const token = getToken();
-  let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/incidents${path}`, {
-      method,
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch {
+    return await request<T>(`/api/incidents${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch (e) {
+    if (e instanceof ApiErrorResponse) {
+      // `code` and `fieldErrors` exist on the client that parses problem+json; read them defensively.
+      const rich = e as ApiErrorResponse & { code?: string; fieldErrors?: { field: string; message: string }[] };
+      throw toIncidentError(e.status, { code: rich.code, detail: e.message, errors: rich.fieldErrors });
+    }
     throw new IncidentError('UNAVAILABLE', 'The incident service is unreachable. Please try again.');
   }
-  if (!res.ok) throw toIncidentError(res.status, await res.json().catch(() => null));
-  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
 const enc = (id: string) => encodeURIComponent(id);

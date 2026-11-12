@@ -1,6 +1,4 @@
-import { SEED_TECHNICIANS, SEED_USERS } from '@/features/admin/data/seed';
-import { loadCollection } from '@/features/admin/services/store';
-import type { ManagedUser, TechnicianProfile } from '@/features/admin/types';
+import { DEMO_TECHNICIANS } from '../data/people';
 import { buildWorld, type World } from '../data/seed';
 import {
   applyTransition, availableTransitions, defaultVisibility, entryTypeFor, FEEDBACK_STATES, hasPermission, NOTE_STATES,
@@ -39,20 +37,16 @@ function find(w: World, actor: Actor, id: string): Incident {
 
 const nextEntryId = (w: World) => `e-${w.timeline.length + 1}-${Date.now().toString(36)}`;
 
-// ---- Technician pool (shared with the admin workspace's mock data) ---------------------------------------------
+// ---- Technician pool (this feature's own mock data, see data/people.ts) --------------------------------------------
 
 function candidates(w: World): Candidate[] {
-  const profiles = loadCollection<TechnicianProfile>('technicians', SEED_TECHNICIANS);
-  const users = loadCollection<ManagedUser>('users', SEED_USERS);
-  return profiles.flatMap((p) => {
-    const u = users.find((x) => x.id === p.userId);
-    if (!u) return [];
-    const skills = Object.fromEntries(p.skills.map((s) => [s, LEVEL_PROFICIENCY[p.skillLevel]]));
-    const activeCount = w.incidents.filter((i) => same(i.assigneeEmail, u.email) && WORKLOAD_STATES.includes(i.state)).length;
-    return [{
-      email: u.email, name: u.name, team: p.team, available: p.availability === 'AVAILABLE' && u.status === 'ACTIVE',
-      maxWorkload: p.maxWorkload, activeCount, experienceYears: LEVEL_YEARS[p.skillLevel], skills,
-    }];
+  return DEMO_TECHNICIANS.map((t) => {
+    const skills = Object.fromEntries(t.skills.map((s) => [s, LEVEL_PROFICIENCY[t.skillLevel]]));
+    const activeCount = w.incidents.filter((i) => same(i.assigneeEmail, t.email) && WORKLOAD_STATES.includes(i.state)).length;
+    return {
+      email: t.email, name: t.name, team: t.team, available: t.available,
+      maxWorkload: t.maxWorkload, activeCount, experienceYears: LEVEL_YEARS[t.skillLevel], skills,
+    };
   });
 }
 
