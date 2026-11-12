@@ -8,7 +8,7 @@ import {
   eligible, LEVEL_PROFICIENCY, LEVEL_YEARS, recommend, requireCanTake, type Candidate,
 } from '../model/recommender';
 import {
-  IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Recommendation,
+  IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
   type SimilarResolution, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { loadWorld, saveWorld, simulate } from './store';
@@ -255,7 +255,63 @@ export const mockIncidentService = {
       saveWorld(actor.email, w);
     });
   },
+
+  async loadCatalog(): Promise<{ categories: { id: number; name: string }[]; services: { id: number; name: string }[] }> {
+    return simulate(() => ({
+      categories: MOCK_CATEGORIES,
+      services: MOCK_SERVICES,
+    }));
+  },
+
+  async create(
+    actor: Actor,
+    input: { title: string; description: string; categoryId: number; serviceId: number; priority: Priority }
+  ): Promise<string> {
+    return simulate(() => {
+      const w = world(actor);
+      const category = MOCK_CATEGORIES.find((c) => c.id === input.categoryId);
+      const service = MOCK_SERVICES.find((s) => s.id === input.serviceId);
+      if (!category) throw new IncidentError('VALIDATION', 'Unknown category.', { categoryId: 'Select a valid category.' });
+      if (!service) throw new IncidentError('VALIDATION', 'Unknown service.', { serviceId: 'Select a valid service.' });
+      const now = new Date().toISOString();
+      const seq = w.incidents.length + 1001;
+      const id = `INC${seq}`;
+      w.incidents.push({
+        id, title: input.title, description: input.description, category: category.name, service: service.name,
+        priority: input.priority, state: 'CLASSIFIED', reporterEmail: actor.email, reporterName: actor.name,
+        assigneeEmail: null, assigneeName: null, createdAt: now, updatedAt: now, resolvedAt: null,
+      });
+      saveWorld(actor.email, w);
+      return id;
+    });
+  },
+
+  async update(actor: Actor, id: string, input: { title: string; description: string }): Promise<void> {
+    return simulate(() => {
+      const w = world(actor);
+      const i = find(w, actor, id);
+      if (i.state !== 'NEW' && i.state !== 'CLASSIFIED') {
+        throw new IncidentError('CONFLICT', 'Incident details can only be edited before it has been assigned.');
+      }
+      if (actor.role !== 'ADMIN' && !same(i.reporterEmail, actor.email)) {
+        throw new IncidentError('FORBIDDEN', 'Only the reporter or an admin can edit incident details.');
+      }
+      i.title = input.title;
+      i.description = input.description;
+      i.updatedAt = new Date().toISOString();
+      saveWorld(actor.email, w);
+    });
+  },
 };
+
+const MOCK_CATEGORIES: { id: number; name: string }[] = [
+  { id: 1, name: 'Network' }, { id: 2, name: 'Hardware' }, { id: 3, name: 'Software' },
+  { id: 4, name: 'Security' }, { id: 5, name: 'Access & Identity' }, { id: 6, name: 'Other' },
+];
+const MOCK_SERVICES: { id: number; name: string }[] = [
+  { id: 1, name: 'Email' }, { id: 2, name: 'VPN' }, { id: 3, name: 'Workstations' },
+  { id: 4, name: 'File Storage' }, { id: 5, name: 'Internal Portal' }, { id: 6, name: 'Printers' },
+];
 
 /**
  * Which implementation the pages use, fixed at build time. Default is the mock (the demo and the e2e suite).

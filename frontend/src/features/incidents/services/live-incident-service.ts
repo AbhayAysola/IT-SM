@@ -1,6 +1,6 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
-import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
+import { IncidentError, type Actor, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
 import type { IncidentDetail, IncidentListResult } from './incident-service';
 import { needsAttention } from './attention';
 import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
@@ -24,7 +24,7 @@ const me = (a: Actor): Me => {
  * Every call goes through the app's one HTTP client (`lib/api.ts`), so it authenticates however the app does (the session cookie and
  * the CSRF header today) without this file knowing. Its errors are turned into the ones the incident pages already handle.
  */
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
   try {
     return await request<T>(`/api/incidents${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch (e) {
@@ -120,5 +120,25 @@ export const liveIncidentService = {
 
   async submitFeedback(_actor: Actor, id: string, rating: number, comment: string): Promise<void> {
     await call('POST', `/${enc(id)}/feedback`, { rating, comment: comment.trim() || null });
+  },
+
+  async loadCatalog(): Promise<{ categories: { id: number; name: string }[]; services: { id: number; name: string }[] }> {
+    const [categories, services] = await Promise.all([
+      call<{ id: number; name: string }[]>('GET', '/catalog/categories'),
+      call<{ id: number; name: string }[]>('GET', '/catalog/services'),
+    ]);
+    return { categories, services };
+  },
+
+  async create(
+    _actor: Actor,
+    input: { title: string; description: string; categoryId: number; serviceId: number; priority: Priority }
+  ): Promise<string> {
+    const dto = await call<{ id: string }>('POST', '', input);
+    return dto.id;
+  },
+
+  async update(_actor: Actor, id: string, input: { title: string; description: string }): Promise<void> {
+    await call('PATCH', `/${enc(id)}`, input);
   },
 };

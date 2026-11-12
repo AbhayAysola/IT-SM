@@ -51,7 +51,15 @@ export default function IncidentsPage() {
 
   return (
     <>
-      <PageHeader title={copy.title} description={copy.description} />
+      <PageHeader
+        title={copy.title}
+        description={copy.description}
+        actions={
+          <Link href="/incidents/new">
+            <Button>Report incident</Button>
+          </Link>
+        }
+      />
 
       <Tabs value={tab} onValueChange={(v) => { setTab(v as TabId); setPage(1); }}>
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
