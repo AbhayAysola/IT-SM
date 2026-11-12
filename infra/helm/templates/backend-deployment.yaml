@@ -30,19 +30,32 @@ spec:
                 name: {{ include "it-sm.fullname" . }}-backend-config
             - secretRef:
                 name: {{ include "it-sm.fullname" . }}-backend-secret
+          # Spring Boot probe groups (backend/src/main/resources/application.yml). Actuator is NOT routed through the ingress (it only forwards
+          # /api and /), so these are reachable by the kubelet only.
+          #  * startup:   gives boot + Flyway migrations up to 5s x 36 = 180s (200m CPU request) before liveness takes over, so a slow
+          #               start is never mistaken for a dead process.
+          #  * liveness:  the process itself. Does NOT include PostgreSQL, Redis or RabbitMQ: a dependency outage must not restart pods.
+          #  * readiness: accepting traffic AND PostgreSQL answers. Redis/RabbitMQ are not included (P1 uses neither); /actuator/health
+          #               still reports them.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.backend.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 36
           livenessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness
               port: {{ .Values.backend.service.port }}
-            initialDelaySeconds: 45
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: {{ .Values.backend.service.port }}
-            initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

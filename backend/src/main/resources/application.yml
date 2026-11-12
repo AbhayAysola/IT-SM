@@ -62,6 +62,20 @@ management:
     health:
       show-details: when-authorized
       roles: ADMIN
+      # Kubernetes probes use /actuator/health/liveness and /actuator/health/readiness (explicit, not left to environment detection).
+      # `/actuator/health` itself still aggregates EVERY indicator, including Redis and RabbitMQ.
+      probes:
+        enabled: true
+      group:
+        # Liveness = "is the process itself still able to run": livenessState only. A dependency outage must never restart the pod
+        # (a restart fixes nothing and wipes the in-memory login throttles).
+        liveness:
+          include: livenessState
+        # Readiness = "can this instance serve the P1 business APIs": the application is accepting traffic AND PostgreSQL answers.
+        # Redis and RabbitMQ are deliberately NOT here: nothing in P1 uses them (no cache or message call exists). A module that
+        # starts to depend on one of them must add its indicator (`redis`, `rabbit`) to this list in the same change.
+        readiness:
+          include: readinessState,db
   metrics:
     export:
       prometheus:

@@ -238,6 +238,10 @@ migration (`V17` or later) and is a separate batch. Proposed contract:
 ## Other hardening and known limitations
 
 * **Rate limiting:** see "Authentication rate limiting" below. There is no account lockout and no email-only limit.
+* **Kubernetes probes**: `/actuator/health/liveness` (process only; no dependency) and `/actuator/health/readiness` (accepting traffic and PostgreSQL;
+  not Redis or RabbitMQ, which P1 does not use) are enabled explicitly in `application.yml`; the aggregate `/actuator/health` still reports every
+  indicator and may be DOWN while Redis/RabbitMQ are absent. A module that starts to depend on Redis or RabbitMQ must add that indicator to the
+  readiness group. Actuator is not routed through the ingress.
 * **Actuator**: `/actuator/health/**` and `/actuator/info` are public; health details are `when-authorized` (ADMIN only);
   all other actuator endpoints require ADMIN. **Prometheus now gets 401/403 when scraping `/actuator/prometheus`**
   (`infra/monitoring/prometheus.yml` sends no credentials). Recommended follow-up: serve actuator on a separate management
