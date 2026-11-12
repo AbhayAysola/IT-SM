@@ -273,10 +273,11 @@ Details P4 can rely on:
 (categoryId -> key); `strategyFor(categoryId)` returns the override or the active strategy. Nothing else is stored.
 
 **Dependency on P3.** P1 validates every key (active strategy and each override) against `AssignmentStrategyCatalog`, which
-P3 owns and which has **no bean yet**. P1 injects it as `ObjectProvider` so the application starts without it:
+P3 owns. P3's `RegisteredAssignmentStrategyCatalog` is implemented on `main` (it registers `LOAD_BASED`, `SKILL_BASED`,
+`ROUND_ROBIN` and `MANUAL`). P1 still injects it as `ObjectProvider`, so the application also starts, and degrades as below, in a deployment without it:
 * reads (`GET`, `current()`) always work and return what is persisted;
 * a **write answers 503 `SERVICE_UNAVAILABLE`** while the catalog is unavailable: an unverified key is never accepted;
-* once P3's bean exists no P1 change is needed; keys the catalog does not register are rejected with 400.
+* with P3's bean present (the normal case now) keys the catalog does not register are rejected with 400.
 `GET` reports the catalog in **three states** through `strategyCatalogStatus` (additive field; `availableStrategies` is unchanged):
 
 | `strategyCatalogStatus` | Meaning | `availableStrategies` | A write (`PUT`) |
@@ -298,10 +299,9 @@ through `StrategyCatalogGateway`, a separate bean with `Propagation.NOT_SUPPORTE
 for the call, so a transactional catalog runs and rolls back in a transaction of its own. P3 does not need to do anything.
 Cost: the caller's connection stays checked out while the catalog runs.
 
-**`LOAD_BASED` is seeded but unverified.** `V14` seeds `LOAD_BASED` / workload 5 (taken from the earlier draft and from the
-promise made to P3 above). P3 has not registered it, because P3 has no code on this branch. If P3 registers a different key
-set, either P3 registers `LOAD_BASED` or P1 changes the default through a new migration (migrations are never edited).
-Until then the first admin write must pick a key P3 registers.
+**`LOAD_BASED` is seeded and registered.** `V14` seeds `LOAD_BASED` / workload 5; P3's catalog registers it, which
+`AssignmentSettingsRealCatalogIntegrationTest` and the real-stack `assignment.spec.ts` assert. If P3 ever drops that key,
+P1 must change the default through a new migration (migrations are never edited).
 
 ### Admin API
 

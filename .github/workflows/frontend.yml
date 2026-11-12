@@ -7,7 +7,7 @@ on:
       - 'frontend/**'
       - '.github/workflows/frontend.yml'
   push:
-    branches: [feat/frontend-design-system]
+    branches: [feat/frontend-design-system, feat/p1-b18-final-integration]
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend.yml'

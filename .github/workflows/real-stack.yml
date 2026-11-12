@@ -10,7 +10,7 @@ on:
       - 'frontend/**'
       - '.github/workflows/real-stack.yml'
   push:
-    branches: [main, feat/p1-admin-backend, feat/p1-b15-real-stack-ci]
+    branches: [main, feat/p1-admin-backend, feat/p1-b15-real-stack-ci, feat/p1-b18-final-integration]
   # Manual runs. GitHub only offers manual dispatch for a workflow file that exists on the default branch.
   workflow_dispatch:
 

@@ -32,7 +32,7 @@ alongside it; where they differ on a point of fact, the backend code and its tes
 | `AuditPublisher` | P1 `SpringAuditPublisher` | **Confirmed** | everyone | every P1 write path | `Propagation.MANDATORY`: throws if there is no surrounding transaction; the row is written `BEFORE_COMMIT` in that same transaction | n/a |
 | `IncidentAccessPolicy` | **P2 only** | **Not implemented**; **test-only** fakes exist | P1 incident audit endpoint; P3; P4 | `AuditQueryService.listForIncident` through `ObjectProvider` | Synchronous; runs in the request's read-only transaction | Incident audit trail answers **503 `SERVICE_UNAVAILABLE`** for everyone, admins included |
 | `TechnicianWorkloadProvider` | **P3 only** | **Not implemented** | P3, P4 (SLA risk) | **none**: no P1 code injects it. `integration-guide.md` lists "P1 admin technician views" as a consumer; that is an intention, not code | n/a | n/a: nothing in P1 depends on it, so nothing degrades |
-| `AssignmentStrategyCatalog` | **P3 only** | **Not implemented**; **test-only** fakes exist | P1 settings validation | `AssignmentSettingsAdminService` through `ObjectProvider` | Synchronous, called inside the settings request | Reads work with `strategyCatalogStatus: ABSENT` and `availableStrategies: null`; **writes answer 503** |
+| `AssignmentStrategyCatalog` | **P3 only** | **Implemented on `main`** (`RegisteredAssignmentStrategyCatalog`; the integration branch tests run against it) | P1 settings validation | `AssignmentSettingsAdminService` through `ObjectProvider` | Synchronous, called inside the settings request | Reads work with `strategyCatalogStatus: ABSENT` and `availableStrategies: null`; **writes answer 503** |
 
 A row marked **Not implemented** is *not integrated*, even though the interface compiles. Do not infer integration from the
 interface's existence.
@@ -57,7 +57,7 @@ Unchanged from `ProviderInterfaces.kt` and `SpiModels.kt` (no SPI signature was 
 
 | Situation | `AssignmentStrategyCatalog` (P3) | `IncidentAccessPolicy` (P2) | Test |
 |---|---|---|---|
-| Bean absent | Startup succeeds. `GET` 200, `strategyCatalogStatus: ABSENT`, `availableStrategies: null`. `PUT` 503 (specific message) | Startup succeeds. Incident trail 503 (never an empty 200, never an own access rule) | `AssignmentSettingsWithoutCatalogIntegrationTest`, `IncidentAuditProviderUnavailableIntegrationTest` |
+| Bean absent | Startup succeeds. `GET` 200, `strategyCatalogStatus: ABSENT`, `availableStrategies: null`. `PUT` 503 (specific message) | Startup succeeds. Incident trail 503 (never an empty 200, never an own access rule) | `StrategyCatalogGatewayTest` (the running application now always has P3's catalog), `IncidentAuditProviderUnavailableIntegrationTest` |
 | Present, answers | `AVAILABLE` with its sorted keys. `PUT` validates every key; unknown key 400 | Policy decides; allowed -> 200 (an empty page is a valid 200), refused -> 403, unknown incident -> 404 | `AssignmentSettingsIntegrationTest`, `IncidentAuditIntegrationTest`, `ProviderFailureSemanticsIntegrationTest` |
 | Present but **empty** | `AVAILABLE`, `availableStrategies: []` (distinct from `null`); every `PUT` 400 | n/a (the policy returns a boolean) | `ProviderFailureSemanticsIntegrationTest` |
 | Throws a **domain** exception | n/a (the SPI declares none) | `ResourceNotFound` -> exactly 404 `RESOURCE_NOT_FOUND`; `UnauthorizedOperation` -> exactly 403 `FORBIDDEN` | `ProviderFailureSemanticsIntegrationTest` |
