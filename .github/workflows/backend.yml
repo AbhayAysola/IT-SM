@@ -114,7 +114,7 @@ jobs:
               'com.itsm.admin.itservice.ItServiceAdminIntegrationTest': 1,
               'com.itsm.admin.sla.SlaPolicyAdminIntegrationTest': 1,
               'com.itsm.admin.assignment.AssignmentSettingsIntegrationTest': 1,
-              'com.itsm.admin.assignment.AssignmentSettingsWithoutCatalogIntegrationTest': 1,
+              'com.itsm.admin.assignment.AssignmentSettingsRealCatalogIntegrationTest': 1,
               'com.itsm.auth.AuthSecurityIntegrationTest': 1,
               'com.itsm.admin.user.UserAdminIntegrationTest': 1,
               'com.itsm.bootstrap.AdminBootstrapIntegrationTest': 1,
