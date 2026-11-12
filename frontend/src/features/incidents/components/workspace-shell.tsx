@@ -38,7 +38,7 @@ function ActorLoader({ children }: { children: React.ReactNode }) {
       .then((u) => {
         if (!live) return;
         setCachedUser(u);
-        setActor({ email: u.email, name: u.name, role: toActorRole(u.role) });
+        setActor({ id: u.id, email: u.email, name: u.name, role: toActorRole(u.role) });
       })
       .catch((e: unknown) => {
         if (live) setError(e instanceof Error ? e.message : 'Something went wrong.');

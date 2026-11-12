@@ -1,5 +1,5 @@
-import { SEED_TECHNICIANS, SEED_USERS } from '@/features/admin/data/seed';
 import { defaultVisibility } from '../model/lifecycle';
+import { DEMO_REPORTERS, demoTechnician } from './people';
 import type { Actor, EntryType, Feedback, Incident, IncidentState, Priority, TimelineEntry } from '../model/types';
 
 /**
@@ -23,11 +23,8 @@ const at = (daysAgo: number, hour = 9) => {
   return t.toISOString();
 };
 
-const user = (id: string) => {
-  const u = SEED_USERS.find((x) => x.id === id)!;
-  return { email: u.email, name: u.name };
-};
-const technicianUser = (techId: string) => user(SEED_TECHNICIANS.find((t) => t.id === techId)!.userId);
+const user = (id: string) => DEMO_REPORTERS[id]!;
+const technicianUser = demoTechnician;
 
 type Person = { email: string; name: string };
 

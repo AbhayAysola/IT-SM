@@ -50,9 +50,16 @@ class P3PersistenceIntegrationTest {
 
     private val t0 = Instant.parse("2026-11-11T10:00:00Z")
     private fun userId(): Long = jdbc.queryForObject(
-        "INSERT INTO users (email, password, name, role) VALUES (?, 'x', 'Tester', 'USER') RETURNING id", Long::class.java, "p3-${UUID.randomUUID()}@campus.example"
+        "INSERT INTO users (email, password, name, role) VALUES (?, 'x', 'Tester', 'EMPLOYEE') RETURNING id", Long::class.java, "p3-${UUID.randomUUID()}@campus.example"
     )!!
-    private fun incident() = "INC" + UUID.randomUUID().toString().take(8)
+    private val reporter: Long by lazy { userId() }
+
+    /** A real incident row: V32 makes the timeline and feedback tables reference `incidents`. */
+    private fun incident(): String {
+        val id = "INC" + UUID.randomUUID().toString().take(8)
+        jdbc.update("INSERT INTO incidents (id, title, description, reporter_id) VALUES (?, 'Printer is down', 'Nothing prints', ?)", id, reporter)
+        return id
+    }
 
     private fun entry(
         inc: String, author: Long, type: InvestigationEntryType = InvestigationEntryType.NOTE, visibility: Visibility = type.defaultVisibility,
@@ -186,6 +193,16 @@ class P3PersistenceIntegrationTest {
         assertThrows<DataIntegrityViolationException> { insert(reporter = Long.MAX_VALUE) }
         assertThrows<DataIntegrityViolationException> { insert(id = "bad id!") }
         assertEquals(1, insert(rating = 1)); assertEquals(1, insert(rating = 5, comment = "x".repeat(1000)))
+    }
+
+    @Test fun `entries and feedback for an unknown incident are rejected by the foreign key`() {
+        val a = userId()
+        assertThrows<DataIntegrityViolationException> {
+            jdbc.update("INSERT INTO investigation_entries (incident_id, author_id, entry_type, visibility, body, incident_state) VALUES ('NOSUCH1', ?, 'NOTE', 'INTERNAL', 'x', 'IN_PROGRESS')", a)
+        }
+        assertThrows<DataIntegrityViolationException> {
+            jdbc.update("INSERT INTO incident_feedback (incident_id, reporter_id, rating) VALUES ('NOSUCH1', ?, 3)", a)
+        }
     }
 
     @Test fun `database failures map to the right API errors`() {

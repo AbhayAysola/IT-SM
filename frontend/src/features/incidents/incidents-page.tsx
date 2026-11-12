@@ -11,13 +11,14 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState, ErrorState, TableSkeleton } from '@/features/admin/components/states';
+import { Pagination } from '@/features/admin/components/pagination';
 import { PageHeader } from '@/features/admin/components/page-header';
 import { useToast } from '@/features/admin/components/toast';
 import { useDebounced, useResource } from '@/features/admin/hooks/use-resource';
 import { AssignDialog } from './components/assign-dialog';
 import { formatWhen, PriorityBadge, StateBadge } from './components/badges';
 import { useActor } from './components/workspace-shell';
-import { type IncidentRow, audienceFor, defaultTab, incidentService, TABS, type TabId } from './services/incident-service';
+import { type IncidentRow, audienceFor, defaultTab, incidentService, INCIDENT_PAGE_SIZE, TABS, type TabId } from './services/incident-service';
 
 const COPY = {
   EMPLOYEE: { title: 'My incidents', description: 'Problems you have reported and where each one stands. We’ll tell you here when we need something from you.' },
@@ -37,13 +38,14 @@ export default function IncidentsPage() {
   const tabs = TABS[actor.role];
   const [tab, setTab] = useState<TabId>(defaultTab(actor.role));
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   // The row is kept after closing so the dialog stays mounted (Radix returns focus to the opener on close).
   const [assigning, setAssigning] = useState<IncidentRow | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
   const debounced = useDebounced(search);
 
-  const { data, loading, error, reload } = useResource(() => incidentService.list(actor, tab, debounced), [actor.email, tab, debounced]);
+  const { data, loading, error, reload } = useResource(() => incidentService.list(actor, tab, debounced, page), [actor.email, tab, debounced, page]);
   const items = data?.items ?? [];
   const copy = COPY[actor.role];
 
@@ -51,7 +53,7 @@ export default function IncidentsPage() {
     <>
       <PageHeader title={copy.title} description={copy.description} />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as TabId); setPage(1); }}>
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <TabsList aria-label="Incident groups" className="h-auto flex-wrap justify-start">
             {tabs.map((t) => (
@@ -63,7 +65,7 @@ export default function IncidentsPage() {
           </TabsList>
           <div className="relative w-full sm:w-72">
             <Label htmlFor="incident-search" className="sr-only">Search incidents</Label>
-            <Input id="incident-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by ID, title or person" />
+            <Input id="incident-search" type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title or person" />
           </div>
         </div>
 
@@ -117,6 +119,9 @@ export default function IncidentsPage() {
                       ))}
                     </TableBody>
                   </Table>
+                )}
+                {data && data.total > INCIDENT_PAGE_SIZE && !error && (
+                  <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} noun="incidents" />
                 )}
               </Card>
             )}
