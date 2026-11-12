@@ -249,7 +249,12 @@ Details P4 can rely on:
 * An unknown `serviceId` throws `ServiceNotFound` (404). An **inactive service still resolves** against its active
   policies, so historical incidents on a retired service keep working.
 * `SlaPolicyView.serviceId == null` tells you the global default supplied the targets. `warningThresholdPct` defaults to 80.
-* Cost: two small queries (service existence, then at most two candidate rows); no N+1. Safe inside P4's transaction.
+* **Transactions.** `resolve` joins P4's transaction. `MissingSlaConfiguration` and `ServiceNotFound` are answers, not
+  failures: they do **not** mark P4's transaction rollback-only, so P4 may catch either, carry on and commit its other work
+  (regression test: `SlaProviderCallerTransactionIntegrationTest`). Any other exception, in particular a database or other
+  infrastructure failure, propagates unchanged (it is never reported as "no policy") and **does** doom P4's transaction as
+  usual, so a swallowed infrastructure error cannot commit as success.
+* Cost: two small queries (service existence, then at most two candidate rows); no N+1.
 * Cross-priority consistency (P1 never looser than P2, as the frontend mock enforces) is **not** enforced by the backend; see
   open decisions.
 
