@@ -174,6 +174,11 @@ stray environment variable cannot weaken a real deployment. Browsers drop `Secur
 deployment needs HTTPS (TLS terminated at the ingress or load balancer). Local HTTP development: `SPRING_PROFILES_ACTIVE=dev` plus
 `AUTH_COOKIE_SECURE=false` (the docker-compose stack does this).
 
+**Kubernetes and Helm are HTTPS only.** Both ingresses have a `tls:` section and `ssl-redirect: "true"`; the host and the TLS Secret name are
+placeholders the deployment owner replaces (the Secret must already exist; no certificate or issuer is provided or assumed). The allowed CORS origin is
+`https://<host>` (Helm derives it from `ingress.host`). The browser-facing API origin is compiled into the frontend image (`--build-arg
+NEXT_PUBLIC_API_URL=https://<host>`, the bare origin without `/api`); a runtime environment variable cannot change it.
+
 **Precedence (deterministic).** If an `Authorization` header is present only it is considered: a `Bearer` credential is validated, anything
 else (Basic, malformed) leaves the request unauthenticated. An invalid Bearer credential **never falls back to a valid cookie**. Only with no
 `Authorization` header is the cookie tried. Tampered, expired, unsigned or stale-version cookies are `401`, exactly like Bearer tokens.

@@ -26,11 +26,8 @@ spec:
           ports:
             - containerPort: 3000
               name: http
-          env:
-            - name: NEXT_PUBLIC_API_URL
-              value: "http://it-sm.local/api"
-            - name: BACKEND_INTERNAL_URL
-              value: "http://backend-service:8080"
+          # No NEXT_PUBLIC_API_URL here on purpose: it is compiled into the image by `next build` (see frontend/Dockerfile), so a runtime
+          # value would do nothing. Build the image with --build-arg NEXT_PUBLIC_API_URL=https://<host> (the bare public origin, no /api).
           livenessProbe:
             httpGet:
               path: /

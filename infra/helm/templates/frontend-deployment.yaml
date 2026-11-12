@@ -25,9 +25,7 @@ spec:
           ports:
             - containerPort: {{ .Values.frontend.service.port }}
               name: http
-          env:
-            - name: NEXT_PUBLIC_API_URL
-              value: {{ .Values.frontend.env.apiUrl | quote }}
+          {{- /* No NEXT_PUBLIC_API_URL here on purpose: `next build` compiles it into the image (see frontend/Dockerfile). */}}
           livenessProbe:
             httpGet:
               path: /

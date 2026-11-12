@@ -3,6 +3,8 @@
 set -euo pipefail
 
 CLUSTER_NAME="it-sm"
+# Checked first so a missing value fails before anything is created. The same host must be passed to deploy.sh.
+PUBLIC_HOST="${PUBLIC_HOST:?set PUBLIC_HOST to the public hostname you will pass to deploy.sh}"
 
 echo "Creating Kind cluster: $CLUSTER_NAME"
 cat <<EOF | kind create cluster --name $CLUSTER_NAME --config=-
@@ -38,7 +40,8 @@ kubectl wait --namespace ingress-nginx \
 
 echo "Building Docker images..."
 docker build -t it-sm/backend:latest ../backend
-docker build -t it-sm/frontend:latest ../frontend
+# The browser-facing API origin is compiled into the frontend image: use the host you will deploy with (bare https origin, no /api).
+docker build --build-arg NEXT_PUBLIC_API_URL="https://${PUBLIC_HOST}" -t it-sm/frontend:latest ../frontend
 
 echo "Loading images into Kind cluster..."
 kind load docker-image it-sm/backend:latest --name $CLUSTER_NAME

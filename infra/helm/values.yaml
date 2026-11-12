@@ -10,8 +10,9 @@ frontend:
   replicaCount: 1
   service:
     port: 3000
-  env:
-    apiUrl: http://it-sm-backend:8080
+  # There is deliberately NO api URL value here. The browser-facing API origin is compiled into the IMAGE by `next build`
+  # (frontend/Dockerfile, --build-arg NEXT_PUBLIC_API_URL=https://<ingress.host>: the bare origin, no /api). Build the image with the
+  # same host you set in `ingress.host`; changing an environment variable on the running pod cannot change it.
 
 backend:
   image:
@@ -26,7 +27,8 @@ backend:
     expiration: 86400000
   # Public origin(s) of the web app (comma separated, exact). REQUIRED for the browser session: cookie-authenticated writes and the web login
   # are refused from any other Origin. The session cookie is Secure, so serve the app over HTTPS (the dev profile is never active here).
-  allowedOrigins: "https://it-sm.local"
+  # Leave empty to use https://<ingress.host> (recommended: it cannot drift from the ingress). Set it only to allow additional origins.
+  allowedOrigins: ""
   registration:
     enabled: false   # public self-registration; keep OFF until email verification exists (see docs/architecture/security.md)
   trustedProxy:
@@ -61,7 +63,17 @@ rabbitmq:
 ingress:
   enabled: true
   className: nginx
+  # PLACEHOLDER, not a real domain: replace with your public hostname. Required (the chart fails if it is empty).
   host: it-sm.local
+  # HTTPS only (the session cookie is Secure). Nothing here creates or issues a certificate.
+  tls:
+    # REQUIRED: name of an existing kubernetes.io/tls Secret in the release namespace (`global.namespace`) holding a certificate valid
+    # for `host`. The chart fails while this is empty. Create the Secret yourself (no certificate material belongs in this repository):
+    #   kubectl -n it-sm create secret tls <name> --cert=<tls.crt> --key=<tls.key>
+    secretName: ""
+  # Optional extra annotations, e.g. your own certificate-issuer annotation. No issuer is assumed. The chart's own annotations
+  # (ssl-redirect "true", proxy-body-size) cannot be overridden here.
+  annotations: {}
 
 monitoring:
   prometheus:

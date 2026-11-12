@@ -18,4 +18,4 @@ data:
   REGISTRATION_ENABLED: {{ .Values.backend.registration.enabled | quote }}
   TRUSTED_PROXY_HOPS: {{ .Values.backend.trustedProxy.hops | quote }}
   TRUSTED_PROXIES: {{ .Values.backend.trustedProxy.cidrs | quote }}
-  CORS_ALLOWED_ORIGINS: {{ .Values.backend.allowedOrigins | quote }}
+  CORS_ALLOWED_ORIGINS: {{ default (printf "https://%s" (required "ingress.host is required (or set backend.allowedOrigins)" .Values.ingress.host)) .Values.backend.allowedOrigins | quote }}

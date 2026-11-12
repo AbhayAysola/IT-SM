@@ -179,24 +179,39 @@ This will:
 2. Install NGINX Ingress Controller
 3. Build and load Docker images into the cluster
 
+### HTTPS and the public origin (read before deploying)
+
+The Kubernetes deployment is **HTTPS only**: the session cookie is `Secure`, and CORS allows only `https://<host>`. Two things are yours to provide; the repository contains no real domain, certificate or issuer (`it-sm.local` is only a placeholder):
+
+1. **A TLS Secret** (`kubernetes.io/tls`) in the `it-sm` namespace, valid for your host, **created before** the ingress can serve HTTPS:
+   `kubectl -n it-sm create secret tls <name> --cert=<tls.crt> --key=<tls.key>` (or add your own certificate-issuer annotation: `ingress.annotations` in Helm, the annotations block in `infra/k8s/ingress.yaml`).
+2. **A frontend image built for that host.** `NEXT_PUBLIC_API_URL` is compiled into the client bundle by `next build`; **changing an environment variable on the running pod does nothing.** Build with the bare public origin (no `/api`, because every request path already starts with `/api`):
+   `docker build --build-arg NEXT_PUBLIC_API_URL=https://<host> -t it-sm/frontend:latest frontend` (`scripts/setup-kind.sh` does this from `PUBLIC_HOST`). The default `http://localhost:8080` is for local development only; never deploy an image built with it.
+
 ### Deploy with Helm
 
 ```bash
+export PUBLIC_HOST=<host> TLS_SECRET_NAME=<tls-secret> JWT_SECRET="$(openssl rand -base64 48)"
+./scripts/setup-kind.sh   # Kind only: cluster, ingress controller and images (frontend built for https://$PUBLIC_HOST)
 ./scripts/deploy.sh
 ```
 
-### Add local DNS entry
+The chart fails with a clear message if `ingress.host` or `ingress.tls.secretName` is empty. `CORS_ALLOWED_ORIGINS` defaults to `https://<ingress.host>`, so it cannot drift from the ingress.
+
+### Add local DNS entry (Kind)
 
 ```bash
-echo "127.0.0.1 it-sm.local" | sudo tee -a /etc/hosts
+echo "127.0.0.1 <host>" | sudo tee -a /etc/hosts
 ```
 
 | Service | URL |
 |---|---|
-| Frontend | http://it-sm.local |
-| Backend API | http://it-sm.local/api |
+| Frontend | `https://<host>` |
+| Backend API | `https://<host>/api` |
 
 ### Raw K8s manifests (alternative)
+
+Edit the marked PLACEHOLDERS first (`infra/k8s/ingress.yaml` host and TLS secret name, `infra/k8s/backend-configmap.yaml` `CORS_ALLOWED_ORIGINS`, and `backend-secret.yaml`), then:
 
 ```bash
 kubectl apply -f infra/k8s/namespace.yaml

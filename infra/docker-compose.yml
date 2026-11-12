@@ -108,12 +108,14 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        # Compiled into the client bundle at build time (a runtime variable would have no effect). Local development: the browser
+        # reaches the API on the published port 8080. Rebuild the image (`docker compose up --build`) after changing it.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     container_name: itsm-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
     depends_on:
       backend:
         condition: service_healthy

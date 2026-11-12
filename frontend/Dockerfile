@@ -8,6 +8,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_API_URL is compiled INTO the client bundle by `next build`: it cannot be changed by a runtime environment variable.
+# Build the image with the public origin the BROWSER will call, with no trailing slash and no `/api` (every request path already
+# starts with /api): `docker build --build-arg NEXT_PUBLIC_API_URL=https://<host> ...`. The default is for local development only
+# and must never be used for an image that is deployed to a cluster.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8080
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM node:20-alpine AS runner
