@@ -178,7 +178,12 @@ class IncidentFlowIntegrationTest {
     }
 
     @Test fun `similar fixes need a recorded resolution, prefer the same service, then the newest`() {
-        val r = user(Role.EMPLOYEE); val t = user(Role.TECHNICIAN); val category = 7000L + (System.nanoTime() % 100000)
+        val r = user(Role.EMPLOYEE); val t = user(Role.TECHNICIAN)
+        // V21 added FKs on category_id and service_id — seed real rows instead of using out-of-range IDs.
+        val uid = UUID.randomUUID().toString().take(8)
+        val category = jdbc.queryForObject("INSERT INTO incident_categories (code, name) VALUES (?, 'Test Cat') RETURNING id", Long::class.java, "TEST-$uid")!!
+        val svcSame  = jdbc.queryForObject("INSERT INTO it_services (name, business_criticality) VALUES (?, 3) RETURNING id", Long::class.java, "svc-same-$uid")!!
+        val svcOther = jdbc.queryForObject("INSERT INTO it_services (name, business_criticality) VALUES (?, 3) RETURNING id", Long::class.java, "svc-other-$uid")!!
         fun resolved(service: Long, at: Instant, fix: String?): String {
             val id = incident(r.id, S.RESOLVED, assignee = t.id, category = category, service = service, resolvedAt = at)
             if (fix != null) jdbc.update(
@@ -186,15 +191,15 @@ class IncidentFlowIntegrationTest {
             )
             return id
         }
-        val oldSame = resolved(3, Instant.parse("2026-10-01T00:00:00Z"), "restarted the spooler")
-        val newOther = resolved(4, Instant.parse("2026-11-01T00:00:00Z"), "replaced the cable")
-        resolved(3, Instant.parse("2026-11-02T00:00:00Z"), null) // no recorded fix: not useful as precedent
-        val current = incident(r.id, S.IN_PROGRESS, assignee = t.id, category = category, service = 3)
-        val found = store.similarResolved(category, 3, current, 5)
+        val oldSame = resolved(svcSame, Instant.parse("2026-10-01T00:00:00Z"), "restarted the spooler")
+        val newOther = resolved(svcOther, Instant.parse("2026-11-01T00:00:00Z"), "replaced the cable")
+        resolved(svcSame, Instant.parse("2026-11-02T00:00:00Z"), null) // no recorded fix: not useful as precedent
+        val current = incident(r.id, S.IN_PROGRESS, assignee = t.id, category = category, service = svcSame)
+        val found = store.similarResolved(category, svcSame, current, 5)
         assertEquals(listOf(oldSame, newOther), found.map { it.incidentId })
         assertEquals(listOf(true, false), found.map { it.sameService })
         assertEquals("restarted the spooler", found[0].resolution)
-        assertEquals(1, store.similarResolved(category, 3, current, 1).size)
+        assertEquals(1, store.similarResolved(category, svcSame, current, 1).size)
         assertTrue(store.similarResolved(category + 1, null, current, 5).isEmpty())
     }
 

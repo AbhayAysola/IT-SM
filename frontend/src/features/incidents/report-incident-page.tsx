@@ -119,7 +119,8 @@ export default function ReportIncidentPage() {
   };
 
   const busy = formState === 'analyzing' || formState === 'creating';
-  const reviewing = formState === 'reviewing';
+  // Keep the AI card visible while creating so the spinner button shows; otherwise the card unmounts immediately.
+  const reviewing = formState === 'reviewing' || formState === 'creating';
 
   return (
     <>
