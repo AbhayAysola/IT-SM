@@ -64,21 +64,43 @@ test.describe('admin: audit', () => {
     expect((await seed.admin.get(`/api/admin/audit-events/${id}`)).status).toBe(200);
   });
 
-  test('paging parameters are validated: an offset beyond the supported range is a 400, never a 500', async () => {
-    // [query, expected error code]. In-range numbers that make an offset too large are rejected by the paging guard (INVALID_INPUT);
-    // a number that does not even fit an Int never reaches it and is a malformed request. Both are generic 400s.
-    const cases: Array<[string, string]> = [
-      ['page=2147483647&size=100', 'INVALID_INPUT'], ['page=99999999999&size=10', 'MALFORMED_REQUEST'],
-      ['page=-1', 'INVALID_INPUT'], ['size=0', 'INVALID_INPUT'], ['size=100000', 'INVALID_INPUT'],
-    ];
-    for (const [q, code] of cases) {
-      const r = await seed.admin.get(`/api/admin/audit-events?${q}`);
+  test('paging: the four cases are told apart by WHERE they are rejected (B13 contract), and none is ever a 5xx', async () => {
+    const url = (q: string) => `/api/admin/audit-events?${q}`;
+
+    // 1. a normal page, and the largest VALID offsets (page * size <= 2^31-1): 200, the latter an empty page, never an error
+    const normal = await seed.admin.get(url('page=0&size=1'));
+    expect(normal.status).toBe(200);
+    expect(normal.body.page).toBe(0);
+    for (const q of ['page=21474836&size=100', 'page=107374182&size=20', 'page=2147483647&size=1']) {   // offsets 2147483600, 2147483640, 2147483647
+      const r = await seed.admin.get(url(q));
+      expect(r.status, q).toBe(200);
+      expect(r.body.items, q).toEqual([]);
+    }
+
+    // 2. a page that FITS an Int but whose offset (page * size) exceeds 2^31-1: rejected by PageQuery -> 400 INVALID_INPUT on `page`
+    for (const q of ['page=21474837&size=100', 'page=107374183&size=20', 'page=2147483647&size=2', 'page=2147483647&size=100']) {
+      const r = await seed.admin.get(url(q));
       expect(r.status, q).toBe(400);
-      expect(r.body.code, q).toBe(code);
+      expect(r.body.code, q).toBe('INVALID_INPUT');
+      expect(r.body.errors?.[0], q).toMatchObject({ field: 'page', message: 'is out of range' });
+      expectNo(JSON.stringify(r.body), /Exception|at com\.|Integer\.MAX_VALUE/, `${q}: the 400 body must not leak internals`);
+    }
+
+    // 3. a page that does not even FIT an Int: the HTTP binding layer refuses it BEFORE PageQuery runs -> 400 MALFORMED_REQUEST
+    //    (a different code, same safe 400, never a 500). This is the one case that is not INVALID_INPUT, by design.
+    for (const q of ['page=2147483648&size=20', 'page=99999999999&size=10', 'page=9223372036854775808', 'page=abc', 'page=1.5']) {
+      const r = await seed.admin.get(url(q));
+      expect(r.status, q).toBe(400);
+      expect(r.body.code, q).toBe('MALFORMED_REQUEST');
       expectNo(JSON.stringify(r.body), /Exception|at com\.|NumberFormat/, `${q}: the 400 body must not leak internals`);
     }
-    const ok = await seed.admin.get('/api/admin/audit-events?page=0&size=1');
-    expect(ok.status).toBe(200);
+
+    // 4. ordinary range errors keep their own INVALID_INPUT
+    for (const q of ['page=-1', 'size=0', 'size=101', 'size=100000']) {
+      const r = await seed.admin.get(url(q));
+      expect(r.status, q).toBe(400);
+      expect(r.body.code, q).toBe('INVALID_INPUT');
+    }
   });
 
   test('the audit page lists the event for an entity, filtered through the real API', async ({ page }) => {

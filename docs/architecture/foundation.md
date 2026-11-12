@@ -104,7 +104,7 @@ first in the service and throw `DuplicateResource`; the DB mapping is the safety
 
 `/api/...` base; admin endpoints under `/api/admin`; JSON camelCase; ISO-8601 UTC instants; numeric
 ids except incident ids (strings like `INC1024`). Lists use `PageQuery` (`page` from 0, `size` 1..100,
-default 20; `page * size` must not exceed 2^31−1 or the request is a 400 `INVALID_INPUT` on `page`) and return
+default 20; `page * size` must not exceed 2^31−1 or the request is a 400 `INVALID_INPUT` on `page`; a `page` that does not fit an `Int`, or is not a number, never reaches `PageQuery`: request binding rejects it first as a 400 `MALFORMED_REQUEST`) and return
 `PageResponse` (`items, page, size, totalItems, totalPages`). Create returns
 201 + `Location`, update 200, delete 204.
 

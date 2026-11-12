@@ -17,7 +17,7 @@ feedback loop. CI runs this one in `.github/workflows/real-stack.yml` ("Real sta
 | `catalog` | categories and services: validation, uniqueness, dependency cycles, optimistic lock, (de)activation |
 | `sla` | service-specific policies, validation, duplicates, effective lookup, optimistic lock, deactivation |
 | `assignment` | the real **ABSENT** strategy catalog: API status, fail-closed 503 write, read-only UI, overview notice |
-| `audit` | attributable events, **privacy** (no password/hash/token/cookie), admin-only, read-only, paging guard (B13), audit page |
+| `audit` | attributable events, **privacy** (no password/hash/token/cookie), admin-only, read-only, paging contract (B13: an offset past 2^31−1 is `INVALID_INPUT`; a page that does not fit an Int is `MALFORMED_REQUEST`), audit page |
 | `ratelimit` | per-email login limit at its production value (5 → 429 + Retry-After), per-account scope, registration (identical 202, no escalation), and proof that the CI throttle arguments bind |
 
 ## Skips, exclusions and what a pass means
