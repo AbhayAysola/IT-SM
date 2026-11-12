@@ -5,6 +5,12 @@ import com.itsm.auth.AuthService
 import com.itsm.auth.JwtAuthFilter
 import com.itsm.auth.JwtService
 import com.itsm.auth.dto.LoginRequest
+import com.itsm.auth.ratelimit.AuthAttemptLimiter
+import com.itsm.auth.ratelimit.AuthRateLimitSettings
+import com.itsm.auth.ratelimit.RegisterRateLimitFilter
+import com.itsm.auth.ratelimit.ThrottleEvents
+import com.itsm.auth.web.OriginSyntaxFilter
+import com.itsm.auth.web.WebSessionPolicy
 import com.itsm.common.error.AuthenticationFailed
 import com.itsm.common.error.ErrorCode
 import com.itsm.common.model.Role
@@ -32,6 +38,8 @@ import org.springframework.security.authentication.ProviderManager
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.core.userdetails.UsernameNotFoundException
+import org.springframework.transaction.PlatformTransactionManager
+import java.time.Clock
 import java.util.Optional
 
 /** Unit level (no DB, no HTTP): the auth classes work together with [ItsmUserDetails], the `active` flag and token versions. */
@@ -39,14 +47,19 @@ class ExistingAuthFlowCompatibilityTest {
 
     private val repo: UserRepository = mock(UserRepository::class.java)
     private val config = SecurityConfig(
-        mock(JwtAuthFilter::class.java), repo,
+        mock(JwtAuthFilter::class.java), mock(RegisterRateLimitFilter::class.java), OriginSyntaxFilter(ObjectMapper()), repo,
         JsonAuthenticationEntryPoint(ObjectMapper()), JsonAccessDeniedHandler(ObjectMapper())
     )
     private val encoder = config.passwordEncoder()
     private val jwt = JwtService("test-secret-test-secret-test-secret-123456", 3_600_000)
     private val uds: UserDetailsService = config.userDetailsService()
     private val authManager = ProviderManager(config.authenticationProvider())
-    private val service = AuthService(repo, encoder, jwt, authManager, mock(AuditPublisher::class.java))
+    private val web = WebSessionPolicy("itsm_session", true, java.time.Duration.ofHours(1), listOf("http://localhost:3000"))
+    private val limiter = AuthAttemptLimiter(AuthRateLimitSettings(), Clock.systemUTC(), mock(ThrottleEvents::class.java))
+    private val service = AuthService(
+        repo, encoder, jwt, authManager, mock(AuditPublisher::class.java), limiter,
+        mock(PlatformTransactionManager::class.java), registrationEnabled = true
+    )
 
     private lateinit var emp: UserEntity
     private lateinit var tech: UserEntity
@@ -66,7 +79,7 @@ class ExistingAuthFlowCompatibilityTest {
         SecurityContextHolder.clearContext()
         val request = MockHttpServletRequest().apply { addHeader("Authorization", "Bearer $token") }
         val response = MockHttpServletResponse()
-        JwtAuthFilter(jwt, repo, ObjectMapper()).doFilter(request, response, MockFilterChain())
+        JwtAuthFilter(jwt, repo, ObjectMapper(), web).doFilter(request, response, MockFilterChain())
         return response
     }
 
@@ -90,7 +103,7 @@ class ExistingAuthFlowCompatibilityTest {
     }
 
     @Test fun `login issues a token that authenticates through the filter`() {
-        val response = service.login(LoginRequest("Emp@X.com", "password1"))
+        val response = service.login(LoginRequest("Emp@X.com", "password1"), "198.51.100.7")
         assertEquals("EMPLOYEE", response.user.role)
         filterWith(response.token)
         assertEquals("emp@x.com", authenticated()!!.name)
@@ -100,7 +113,7 @@ class ExistingAuthFlowCompatibilityTest {
     @Test fun `wrong password, unknown user and inactive account all give the same invalid credentials error`() {
         emp.active = false
         for (req in listOf(LoginRequest("emp@x.com", "password1"), LoginRequest("tech@x.com", "wrong"), LoginRequest("none@x.com", "password1"))) {
-            val ex = assertThrows<AuthenticationFailed> { service.login(req) }
+            val ex = assertThrows<AuthenticationFailed> { service.login(req, "198.51.100.7") }
             assertEquals(ErrorCode.INVALID_CREDENTIALS, ex.code)
         }
     }
@@ -124,7 +137,7 @@ class ExistingAuthFlowCompatibilityTest {
     @Test fun `invalid tokens continue the chain unauthenticated so the entry point answers 401`() {
         val chain = MockFilterChain()
         val request = MockHttpServletRequest().apply { addHeader("Authorization", "Bearer not.a.jwt") }
-        JwtAuthFilter(jwt, repo, ObjectMapper()).doFilter(request, MockHttpServletResponse(), chain)
+        JwtAuthFilter(jwt, repo, ObjectMapper(), web).doFilter(request, MockHttpServletResponse(), chain)
         assertNull(authenticated()); assertTrue(chain.request != null, "chain must continue for an invalid token")
     }
 
@@ -133,7 +146,7 @@ class ExistingAuthFlowCompatibilityTest {
         val chain = MockFilterChain()
         val request = MockHttpServletRequest().apply { addHeader("Authorization", "Bearer ${jwt.generateToken(8, 3)}") }
         val response = MockHttpServletResponse()
-        JwtAuthFilter(jwt, repo, ObjectMapper()).doFilter(request, response, chain)
+        JwtAuthFilter(jwt, repo, ObjectMapper(), web).doFilter(request, response, chain)
         assertNull(authenticated()); assertNull(chain.request, "request must not reach the controller")
         assertEquals(503, response.status); assertEquals("5", response.getHeader("Retry-After"))
         val body = response.contentAsString
@@ -150,7 +163,7 @@ class ExistingAuthFlowCompatibilityTest {
             org.mockito.Mockito.doThrow(failure).`when`(repo).findById(8L)
             val chain = MockFilterChain(); val response = MockHttpServletResponse()
             val request = MockHttpServletRequest().apply { addHeader("Authorization", "Bearer $token") }
-            JwtAuthFilter(jwt, repo, ObjectMapper()).doFilter(request, response, chain)
+            JwtAuthFilter(jwt, repo, ObjectMapper(), web).doFilter(request, response, chain)
             assertNull(authenticated()); assertNull(chain.request); assertEquals(status, response.status)
             assertFalse(response.contentAsString.contains("internal detail") || response.contentAsString.contains("pool exhausted"))
         }

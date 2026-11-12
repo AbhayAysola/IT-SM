@@ -31,6 +31,12 @@ class AuthenticationFailed(
     }
 }
 
+/**
+ * 429. A rate limit was exceeded. The message is deliberately generic: it never says WHICH limit (per account, per address,
+ * registration) was hit. [retryAfterSeconds] becomes the `Retry-After` header.
+ */
+class RateLimited(val retryAfterSeconds: Long) : ItsmException(ErrorCode.RATE_LIMITED, "Too many attempts. Please try again later.")
+
 /** 403. The caller is authenticated but not allowed to do this. */
 class UnauthorizedOperation(
     message: String = "You are not allowed to perform this operation"

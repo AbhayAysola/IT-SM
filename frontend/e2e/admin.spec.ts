@@ -3,10 +3,10 @@ import { axeViolations, expectNoHorizontalOverflow, settle, signIn, trackErrors 
 import { dialog, openAdmin, pick, registerSelf, rowMenu, rows, search, summary, toast } from './admin-helpers';
 
 test.describe('admin: access and shell', () => {
-  test('unauthenticated /admin redirects to sign-in with no API calls', async ({ page, api }) => {
+  test('unauthenticated /admin redirects to sign-in after the one session check, with no other API call', async ({ page, api }) => {
     await page.goto('/admin/users');
     await page.waitForURL(/\/\?redirect=%2Fadmin%2Fusers/);
-    expect(api.calls).toEqual([]);
+    expect(api.calls).toEqual(['/api/users/me']);
   });
 
   test('sidebar navigates between admin pages and marks the current one', async ({ page, api }) => {

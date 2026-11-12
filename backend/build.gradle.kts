@@ -58,6 +58,12 @@ tasks.withType<Test> {
     useJUnitPlatform()
     // The application has no default JWT secret (it refuses to start without one); tests get a throwaway one.
     environment("JWT_SECRET", "test-only-jwt-signing-secret-0123456789-abcdefXYZ")
+    // Most integration tests create many accounts and log in from the single MockMvc address; the throttles have their own
+    // dedicated tests (which set realistic limits) and must not interfere with the rest. Registration is enabled for tests.
+    systemProperty("app.registration.enabled", "true")
+    systemProperty("app.rate-limit.login-pair.max-failures", "100000")
+    systemProperty("app.rate-limit.login-ip.max-failures", "100000")
+    systemProperty("app.rate-limit.register-ip.max-attempts", "100000")
     // Failures must be diagnosable from the CI log alone: full stack traces, and every non-passing test named.
     testLogging {
         events("failed", "skipped")

@@ -127,7 +127,7 @@ The profile-creation picker uses only these capabilities: `GET /users?role=TECHN
 
 | Status / code | `ServiceError.code` | Shown |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | token cleared, redirect to `/?redirect=<current path>` |
+| 401 | `UNAUTHENTICATED` | client session cleared (cached user dropped; the HttpOnly cookie is dead server-side), redirect to `/?redirect=<current path>` |
 | 403 | `FORBIDDEN` | fixed text; audit page also wipes its rows |
 | 404 | `NOT_FOUND` | server message |
 | 400 | `VALIDATION` | server message; `errors[]` mapped onto fields by name (`keywords[2]`, `skills[0].proficiency`) |

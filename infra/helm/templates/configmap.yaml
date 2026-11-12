@@ -15,3 +15,7 @@ data:
   SPRING_RABBITMQ_PORT: "5672"
   SPRING_RABBITMQ_VHOST: {{ .Values.rabbitmq.vhost | quote }}
   SERVER_PORT: {{ .Values.backend.service.port | quote }}
+  REGISTRATION_ENABLED: {{ .Values.backend.registration.enabled | quote }}
+  TRUSTED_PROXY_HOPS: {{ .Values.backend.trustedProxy.hops | quote }}
+  TRUSTED_PROXIES: {{ .Values.backend.trustedProxy.cidrs | quote }}
+  CORS_ALLOWED_ORIGINS: {{ .Values.backend.allowedOrigins | quote }}

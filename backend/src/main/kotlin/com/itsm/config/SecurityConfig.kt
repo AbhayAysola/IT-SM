@@ -1,6 +1,9 @@
 package com.itsm.config
 
 import com.itsm.auth.JwtAuthFilter
+import com.itsm.auth.ratelimit.RegisterRateLimitFilter
+import com.itsm.auth.web.OriginSyntaxFilter
+import com.itsm.auth.web.WebSessionPolicy
 import com.itsm.common.model.Role
 import com.itsm.common.security.ItsmUserDetails
 import com.itsm.common.security.JsonAccessDeniedHandler
@@ -26,6 +29,7 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
+import org.springframework.web.filter.CorsFilter
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
@@ -36,6 +40,8 @@ class SecurityConfig(
     // No @Lazy: JwtAuthFilter depends on UserRepository, never on beans of this class, so there is no cycle. A @Lazy
     // parameter would inject a CGLIB proxy of the filter (and log "Unable to proxy ... final" warnings).
     private val jwtAuthFilter: JwtAuthFilter,
+    private val registerRateLimitFilter: RegisterRateLimitFilter,
+    private val originSyntaxFilter: OriginSyntaxFilter,
     private val userRepository: UserRepository,
     private val authenticationEntryPoint: JsonAuthenticationEntryPoint,
     private val accessDeniedHandler: JsonAccessDeniedHandler
@@ -71,10 +77,9 @@ class SecurityConfig(
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val config = CorsConfiguration()
-        config.allowedOrigins = allowedOrigins.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-            .also { origins -> require("*" !in origins) { "app.cors.allowed-origins must list explicit origins, not '*'" } }
+        config.allowedOrigins = WebSessionPolicy.parseOrigins(allowedOrigins)
         config.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-        config.allowedHeaders = listOf("Authorization", "Content-Type", "Accept")
+        config.allowedHeaders = listOf("Authorization", "Content-Type", "Accept", WebSessionPolicy.CLIENT_HEADER)
         config.maxAge = 3600
         config.allowCredentials = true
         val source = UrlBasedCorsConfigurationSource()
@@ -86,8 +91,9 @@ class SecurityConfig(
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
             .cors { it.configurationSource(corsConfigurationSource()) }
-            // CSRF is off because auth is a Bearer header (not a cookie) and there is no server session. This MUST be
-            // revisited together with cookie-based refresh tokens (docs/architecture/security.md).
+            // Spring's built-in CSRF is off: there is no server session, and cookie authentication is protected by JwtAuthFilter
+            // itself (X-ITSM-Client header + exact Origin allow-list on every unsafe cookie-authenticated request, and on the web
+            // login). Bearer-only clients are not subject to it. See docs/architecture/security.md.
             .csrf { it.disable() }
             .authorizeHttpRequests {
                 // Only liveness/readiness and build info are public (health details are ADMIN-only, see application.yml).
@@ -114,6 +120,10 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter::class.java)
+            // Charged before authentication and before the body is read.
+            .addFilterBefore(registerRateLimitFilter, JwtAuthFilter::class.java)
+            // First of all: a malformed Origin must be refused before Spring's CORS code parses it (that parse throws).
+            .addFilterBefore(originSyntaxFilter, CorsFilter::class.java)
         return http.build()
     }
 }

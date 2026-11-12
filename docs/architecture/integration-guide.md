@@ -383,6 +383,11 @@ Full detail: [security.md](security.md). What other modules need:
 * **`UserDirectory`** (`JpaUserDirectory`): `findById`/`requireById`, `listAdmins` (active ADMINs only) return immutable
   `UserSummary(id, email, name, role, active)`. Technician methods are specified in "Technician profiles" below. `findById`
   still returns inactive users (check `active`).
+* **Authentication (frontend and other clients)**: the web app signs in with `X-ITSM-Client: web`, receives an HttpOnly `itsm_session`
+  cookie and `{user}` (no token), sends `credentials: 'include'` plus `X-ITSM-Client: web` on every call, and asks `GET /api/users/me`
+  after a reload. Non-browser clients log in without that header and use `Authorization: Bearer <token>`. Unsafe cookie requests also need an
+  `Origin` from `CORS_ALLOWED_ORIGINS`. Logout (`POST /api/auth/logout`) revokes every session of the user. See `security.md`, "Browser
+  sessions". Modules P2-P4 never touch this: they receive an authenticated `CurrentUser` either way.
 * **Authorization**: `@PreAuthorize("hasAuthority('<PERMISSION>')")`; permissions are unchanged. Roles: `EMPLOYEE`,
   `TECHNICIAN`, `ADMIN`, nothing else.
 * **Tests**: `AdminApiTestSupport.caller(role)` inserts a user and mints a valid token (`generateToken(userId, tokenVersion)`).

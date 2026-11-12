@@ -207,11 +207,12 @@ kubectl apply -f infra/k8s/
 
 ## 🔌 API Reference
 
-All endpoints (except auth) require `Authorization: Bearer <token>` header.
+All endpoints (except login and register) require authentication: `Authorization: Bearer <token>` for scripts and services (token from `POST /api/auth/login` **without** the `X-ITSM-Client` header), or the HttpOnly session cookie for the web app (login with `X-ITSM-Client: web`; see `docs/architecture/security.md`).
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/logout` | End the session: revokes ALL of the caller's tokens and clears the cookie |
+| POST | `/api/auth/register` | Self-register (disabled unless `REGISTRATION_ENABLED=true`); always `202 {"status":"ACCEPTED"}`, no token, then sign in |
 | POST | `/api/auth/login` | Login, returns JWT |
 | GET | `/api/users/me` | Get current user profile |
 | GET | `/api/products` | List all products (Redis cached) |

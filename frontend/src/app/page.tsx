@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
-import { setToken, setCachedUser, isAuthenticated } from '@/lib/auth';
+import { api, ApiErrorResponse } from '@/lib/api';
+import { setCachedUser, purgeLegacyCredentials } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,60 +11,72 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { ShieldCheck, Mail, Lock, User as UserIcon, Loader2, AlertCircle } from 'lucide-react';
 
+/** Shown after EVERY accepted registration: it must not hint at whether the address was already in use. */
+const REGISTRATION_NOTICE =
+  'Thanks. If this address can be used, your account is ready: sign in below. If you already have an account, sign in with it or ask an administrator to reset your password.';
+
+/** 429 gets a calm, specific message; everything else keeps the backend's own message. */
+function authErrorMessage(err: unknown): string {
+  if (err instanceof ApiErrorResponse && err.status === 429) return 'Too many attempts. Please wait a few minutes and try again.';
+  if (err instanceof ApiErrorResponse && err.status === 403) return 'This request was blocked. Reload the page and try again.';
+  return err instanceof Error ? err.message : 'An error occurred during authentication';
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
-  // Auto redirect if already authenticated
+  // Already signed in? Ask the backend (the cookie is HttpOnly, so the client cannot tell by itself). Skipped when a guard just sent
+  // us here (`?redirect=`): that only happens because the session was missing or rejected.
   useEffect(() => {
-    if (isAuthenticated()) {
-      router.replace('/dashboard');
-    }
+    purgeLegacyCredentials();
+    if (new URLSearchParams(window.location.search).has('redirect')) return;
+    let active = true;
+    api
+      .getMe()
+      .then((user) => {
+        if (!active) return;
+        setCachedUser(user);
+        router.replace('/dashboard');
+      })
+      .catch(() => {
+        // 401 is the normal answer for a visitor who is not signed in; the form stays.
+      });
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     try {
       if (isLogin) {
-        // Handle Login
+        // Handle Login. The backend answers with an HttpOnly session cookie and `{user}`; there is no token for us to keep.
         const res = await api.login({ email, password });
-        if (res.token) {
-          setToken(res.token);
-          if (res.user) {
-            setCachedUser(res.user);
-          }
-          router.replace('/dashboard');
-        } else {
-          throw new Error('No authentication token received');
-        }
+        if (res.user) setCachedUser(res.user);
+        router.replace('/dashboard');
       } else {
-        // Handle Register
-        const res = await api.register({ email, password, name });
-        if (res.token) {
-          setToken(res.token);
-          if (res.user) {
-            setCachedUser(res.user);
-          }
-          router.replace('/dashboard');
-        } else {
-          // If register returns message instead of direct token, switch to login
-          setIsLogin(true);
-          setError('Registration successful! Please sign in with your credentials.');
-        }
+        // Handle Register. The backend answers the same 202 for a new and an already registered address, and never returns a
+        // token, so this must NOT assume an account was created or sign the user in: say the same neutral thing every time.
+        await api.register({ email, password, name });
+        setIsLogin(true);
+        setPassword('');
+        setNotice(REGISTRATION_NOTICE);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'An error occurred during authentication';
-      setError(msg);
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -104,6 +116,7 @@ export default function LoginPage() {
                   onClick={() => {
                     setIsLogin(mode);
                     setError(null);
+                    setNotice(null);
                   }}
                   className={cn(
                     'h-8 text-sm',
@@ -125,6 +138,16 @@ export default function LoginPage() {
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 <div className="flex-1 font-medium leading-relaxed">{error}</div>
+              </div>
+            )}
+
+            {/* Neutral, identical for every registration outcome (see REGISTRATION_NOTICE) */}
+            {notice && (
+              <div
+                role="status"
+                className="mb-6 rounded-md border border-border bg-muted p-3 text-sm font-medium leading-relaxed text-foreground"
+              >
+                {notice}
               </div>
             )}
 
