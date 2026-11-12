@@ -1,3 +1,14 @@
+# Public entry point. HTTPS ONLY: the session cookie is Secure (and the backend refuses to start without that outside the dev profile),
+# so a browser on plain HTTP could neither store it nor be allowed by CORS (the allowed origin is https://).
+#
+# PLACEHOLDERS to replace before deploying (nothing here is a real domain or a real certificate):
+#   * host `it-sm.local`  -> your public hostname. Use the SAME host in backend-configmap.yaml (CORS_ALLOWED_ORIGINS=https://<host>)
+#                            and in the frontend image (--build-arg NEXT_PUBLIC_API_URL=https://<host>, no /api).
+#   * secretName `it-sm-tls` -> a kubernetes.io/tls Secret in THIS namespace (`it-sm`) holding a certificate valid for the host.
+#     That Secret must already exist: this repository does not create it, does not contain certificate material, and nothing here
+#     provisions a certificate automatically. Create it yourself, e.g.
+#       kubectl -n it-sm create secret tls it-sm-tls --cert=<path/to/tls.crt> --key=<path/to/tls.key>
+#     or add your own certificate-issuer annotation below (the issuer is yours to choose; none is assumed).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,11 +19,16 @@ metadata:
     app.kubernetes.io/part-of: it-sm
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "64m"
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Add your certificate-issuer annotation here if you use one, for example cert-manager.io/cluster-issuer: <your-issuer>
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - it-sm.local          # PLACEHOLDER host
+      secretName: it-sm-tls    # PLACEHOLDER: must exist (type kubernetes.io/tls) before HTTPS can be served
   rules:
-    - host: it-sm.local
+    - host: it-sm.local        # PLACEHOLDER host (same as above)
       http:
         paths:
           - path: /api

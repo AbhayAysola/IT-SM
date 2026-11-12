@@ -1,4 +1,8 @@
 {{- if .Values.ingress.enabled -}}
+{{- $host := required "ingress.host is required: set your public hostname (the default it-sm.local is only a placeholder)" .Values.ingress.host -}}
+{{- $secret := required "ingress.tls.secretName is required: name an existing kubernetes.io/tls Secret for the host (HTTPS only; the session cookie is Secure)" .Values.ingress.tls.secretName -}}
+{{- /* The chart's own annotations come first in `merge`, so user annotations can add to them but never weaken them. */ -}}
+{{- $annotations := merge (dict "nginx.ingress.kubernetes.io/proxy-body-size" "64m" "nginx.ingress.kubernetes.io/ssl-redirect" "true") (default (dict) .Values.ingress.annotations) -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,14 +11,17 @@ metadata:
   labels:
     {{- include "it-sm.labels" . | nindent 4 }}
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    {{- toYaml $annotations | nindent 4 }}
 spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $secret | quote }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    - host: {{ $host | quote }}
       http:
         paths:
           - path: /api

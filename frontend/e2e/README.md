@@ -32,6 +32,10 @@ In live mode `api.seed` **skips** any test that needs a role other than `USER`: 
 admins yet, and the suite will not fake one through public registration. So in live mode the admin specs report
 as skipped, not passed.
 
+> **Real backend:** the admin and persona flows are tested against the real backend and PostgreSQL by a separate suite,
+> `e2e-real/` (see `e2e-real/README.md`, run in CI by `.github/workflows/real-stack.yml`). It provisions its own admin through the
+> product's bootstrap command and the real admin API. This hermetic suite stays the fast, independent layer.
+
 ## Two modes
 
 | Mode | Command | API |
@@ -45,7 +49,7 @@ as skipped, not passed.
 - The backend must be reachable at `E2E_API_URL` (default `http://localhost:8080`).
 - That URL is compiled into the frontend, so it must equal `NEXT_PUBLIC_API_URL` at build time (`src/lib/api.ts`, same default). If you change one, change both: `NEXT_PUBLIC_API_URL=http://host:port E2E_API_URL=http://host:port E2E_LIVE_API=1 npm run test:e2e`.
 - The backend only allows the origin `http://localhost:3000` (CORS in `SecurityConfig`), so leave `E2E_WEB_PORT` at 3000 in live mode.
-- The backend must include the shared foundation (merged to `main`). The specs expect a 409 `Email is already registered` and RFC 7807 errors that carry a `message`.
+- The backend must include the shared foundation (`feat/p1-shared-foundation` or later). The specs expect RFC 7807 errors that carry a `message` and the B14a registration contract: `202 {"status":"ACCEPTED"}` with no token, identical for a new and an existing address. Public registration is **off by default**: start the backend with `REGISTRATION_ENABLED=true` (the seed helper registers accounts through it). The session is an HttpOnly cookie, so for plain-HTTP local runs also start it with `SPRING_PROFILES_ACTIVE=dev AUTH_COOKIE_SECURE=false` and `CORS_ALLOWED_ORIGINS=http://localhost:<E2E_WEB_PORT>` (the web origin must be on the allow-list: the backend refuses cookie-authenticated writes and the web login from any other Origin). The throttles (5 failed logins per IP+email, 10 registrations per hour per IP) apply to a live run from one machine; raise `app.rate-limit.register-ip.max-attempts` (`--app.rate-limit.register-ip.max-attempts=1000`) for long runs. The `429` UI test is skipped in live mode.
 
 **Test database: use a disposable PostgreSQL 16, never a shared, staging or production one.**
 - The tests create real accounts and never delete them. Each run adds about 16, named `e2e-<label>-<timestamp>-<random>@example.test` with the password `Passw0rd!`. Those are weak, publicly documented credentials: they must not exist anywhere that matters.
@@ -78,6 +82,20 @@ rm -rf ../backend/build ../backend/.gradle   # build output; both are untracked 
 
 If you must reuse a long-lived local database instead, remove the test accounts afterwards (and only these):
 `DELETE FROM users WHERE email LIKE 'e2e-%@example.test';`
+
+## Live incidents (`incidents-live.spec.ts`)
+
+Drives the P3 workspace in a real browser against the real backend: a technician works an incident, the reporter answers and rates it,
+an admin closes it, a stranger gets "not found", and the list is paged by the server. **Opt-in**: it is skipped unless
+`E2E_INCIDENTS_LIVE=1`. The backend cannot yet create incidents or promote accounts, so the spec does both with SQL in the
+throwaway database container (`E2E_PG_CONTAINER`, default `e2e-pg`): use the stack above, and note:
+
+* build the frontend with `NEXT_PUBLIC_INCIDENTS_API=live npm run build` (the default build uses the mock service);
+* the backend jar must be built from a checkout that has the incidents table (V20) and the endpoints;
+* run `E2E_INCIDENTS_LIVE=1 E2E_LIVE_API=1 npx playwright test e2e/incidents-live.spec.ts --workers=1`;
+* a normal `npm run test:e2e` rebuilds in mock mode afterwards.
+
+Assigning needs P1's providers, which are not on `main`, so the spec asserts the graceful "not available yet" instead.
 
 ## CI recipe (Node 20, reproducible)
 

@@ -2,7 +2,8 @@ import { test, expect } from './fixtures';
 
 test('the app declares a favicon that loads, and no request fails with 404', async ({ page, baseURL }) => {
   const failed: string[] = [];
-  page.on('response', (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url()}`); });
+  // The anonymous session check (GET /api/users/me -> 401) is expected; anything else that fails is not.
+  page.on('response', (r) => { if (r.status() >= 400 && !r.url().endsWith('/api/users/me')) failed.push(`${r.status()} ${r.url()}`); });
 
   await page.goto('/');
   await page.waitForLoadState('networkidle');

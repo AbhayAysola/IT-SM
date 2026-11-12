@@ -19,6 +19,7 @@ enum class ErrorCode(val httpStatus: Int, val title: String) {
     INVALID_STATE_TRANSITION(409, "Invalid state transition"),
     TECHNICIAN_UNAVAILABLE(409, "Technician unavailable"),
     WORKLOAD_EXCEEDED(409, "Technician workload exceeded"),
+    RATE_LIMITED(429, "Too many requests"),
     MISSING_SLA_CONFIG(422, "SLA configuration missing"),
     EXTERNAL_SERVICE_FAILURE(502, "External service failure"),
     SERVICE_UNAVAILABLE(503, "Service temporarily unavailable"),
@@ -33,6 +34,7 @@ enum class ErrorCode(val httpStatus: Int, val title: String) {
             405 -> METHOD_NOT_ALLOWED
             409 -> CONFLICT
             415 -> UNSUPPORTED_MEDIA_TYPE
+            429 -> RATE_LIMITED
             503 -> SERVICE_UNAVAILABLE
             in 400..499 -> MALFORMED_REQUEST
             else -> INTERNAL_ERROR

@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { clearToken, getCachedUser, setCachedUser } from '@/lib/auth';
+import { getCachedUser, setCachedUser } from '@/lib/auth';
+import { endSession } from '@/lib/session';
 import { api } from '@/lib/api';
 import { User } from '@/types';
 import { Badge } from '@/components/ui/badge';
@@ -58,8 +59,8 @@ export default function Navbar() {
     };
   }, []);
 
-  const handleLogout = () => {
-    clearToken();
+  const handleLogout = async () => {
+    await endSession();
     router.replace('/');
   };
 

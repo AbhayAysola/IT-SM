@@ -1,6 +1,4 @@
-import { SEED_TECHNICIANS, SEED_USERS } from '@/features/admin/data/seed';
-import { loadCollection } from '@/features/admin/services/store';
-import type { ManagedUser, TechnicianProfile } from '@/features/admin/types';
+import { DEMO_TECHNICIANS } from '../data/people';
 import { buildWorld, type World } from '../data/seed';
 import {
   applyTransition, availableTransitions, defaultVisibility, entryTypeFor, FEEDBACK_STATES, hasPermission, NOTE_STATES,
@@ -14,33 +12,14 @@ import {
   type SimilarResolution, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { loadWorld, saveWorld, simulate } from './store';
+import { liveIncidentService } from './live-incident-service';
+import { needsAttention, same } from './attention';
+import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 
-// ---- Tabs ---------------------------------------------------------------------------------------------------------
-
-export type TabId = 'ACTIVE' | 'WAITING' | 'DONE' | 'UNASSIGNED' | 'OPEN';
-
-export const TABS: Record<ActorRole, { id: TabId; label: string; states: IncidentState[] }[]> = {
-  TECHNICIAN: [
-    { id: 'ACTIVE', label: 'Active', states: ['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS'] },
-    { id: 'WAITING', label: 'Waiting on reporter', states: ['PENDING_INFO', 'RESOLVED'] },
-    { id: 'DONE', label: 'Done', states: ['VERIFIED', 'CLOSED'] },
-  ],
-  ADMIN: [
-    { id: 'UNASSIGNED', label: 'Awaiting assignment', states: ['NEW', 'CLASSIFIED'] },
-    { id: 'ACTIVE', label: 'In progress', states: ['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO', 'RESOLVED'] },
-    { id: 'DONE', label: 'Done', states: ['VERIFIED', 'CLOSED'] },
-  ],
-  EMPLOYEE: [
-    { id: 'OPEN', label: 'Open', states: ['NEW', 'CLASSIFIED', 'ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO', 'RESOLVED'] },
-    { id: 'DONE', label: 'Done', states: ['VERIFIED', 'CLOSED'] },
-  ],
-};
-
-export const defaultTab = (role: ActorRole): TabId => TABS[role][0].id;
+export { TABS, defaultTab, INCIDENT_PAGE_SIZE, type TabId } from './tabs';
 
 // ---- Visibility and access ----------------------------------------------------------------------------------------
 
-const same = (a: string | null | undefined, b: string) => !!a && a.toLowerCase() === b.toLowerCase();
 
 /** Admins see everything; others only what they are assigned or reported. Anything else behaves as "not found". */
 const canOpen = (actor: Actor, i: Incident) =>
@@ -58,20 +37,16 @@ function find(w: World, actor: Actor, id: string): Incident {
 
 const nextEntryId = (w: World) => `e-${w.timeline.length + 1}-${Date.now().toString(36)}`;
 
-// ---- Technician pool (shared with the admin workspace's mock data) ---------------------------------------------
+// ---- Technician pool (this feature's own mock data, see data/people.ts) --------------------------------------------
 
 function candidates(w: World): Candidate[] {
-  const profiles = loadCollection<TechnicianProfile>('technicians', SEED_TECHNICIANS);
-  const users = loadCollection<ManagedUser>('users', SEED_USERS);
-  return profiles.flatMap((p) => {
-    const u = users.find((x) => x.id === p.userId);
-    if (!u) return [];
-    const skills = Object.fromEntries(p.skills.map((s) => [s, LEVEL_PROFICIENCY[p.skillLevel]]));
-    const activeCount = w.incidents.filter((i) => same(i.assigneeEmail, u.email) && WORKLOAD_STATES.includes(i.state)).length;
-    return [{
-      email: u.email, name: u.name, team: p.team, available: p.availability === 'AVAILABLE' && u.status === 'ACTIVE',
-      maxWorkload: p.maxWorkload, activeCount, experienceYears: LEVEL_YEARS[p.skillLevel], skills,
-    }];
+  return DEMO_TECHNICIANS.map((t) => {
+    const skills = Object.fromEntries(t.skills.map((s) => [s, LEVEL_PROFICIENCY[t.skillLevel]]));
+    const activeCount = w.incidents.filter((i) => same(i.assigneeEmail, t.email) && WORKLOAD_STATES.includes(i.state)).length;
+    return {
+      email: t.email, name: t.name, team: t.team, available: t.available,
+      maxWorkload: t.maxWorkload, activeCount, experienceYears: LEVEL_YEARS[t.skillLevel], skills,
+    };
   });
 }
 
@@ -80,6 +55,15 @@ function candidates(w: World): Candidate[] {
 export interface IncidentRow extends Incident {
   /** True when this person is the one who has to act next. */
   needsAttention: boolean;
+}
+
+/** One page of a tab. `page` is 1-based; `total` counts the whole tab (after the search), not just this page. */
+export interface IncidentListResult {
+  items: IncidentRow[];
+  counts: Partial<Record<TabId, number>>;
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface IncidentDetail {
@@ -91,13 +75,6 @@ export interface IncidentDetail {
   canAddNote: boolean;
   canGiveFeedback: boolean;
   similar: SimilarResolution[];
-}
-
-function needsAttention(actor: Actor, i: Incident, hasFeedback: boolean): boolean {
-  if (actor.role === 'ADMIN') return i.state === 'CLASSIFIED' || i.state === 'NEW';
-  if (hasPermission(actor.role, 'INCIDENT_WORK') && same(i.assigneeEmail, actor.email)) return i.state === 'ASSIGNED' || i.state === 'ACKNOWLEDGED';
-  if (same(i.reporterEmail, actor.email)) return needsReporter(i.state) || (FEEDBACK_STATES.includes(i.state) && !hasFeedback && hasPermission(actor.role, 'INCIDENT_VERIFY_OWN'));
-  return false;
 }
 
 const PRIORITY_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;
@@ -131,8 +108,8 @@ export const COMMENT_MAX = 1000;
 
 // ---- The service --------------------------------------------------------------------------------------------------
 
-export const incidentService = {
-  async list(actor: Actor, tab: TabId, search = ''): Promise<{ items: IncidentRow[]; counts: Partial<Record<TabId, number>> }> {
+export const mockIncidentService = {
+  async list(actor: Actor, tab: TabId, search = '', page = 1): Promise<IncidentListResult> {
     return simulate(() => {
       const w = world(actor);
       const mine = w.incidents.filter((i) => canOpen(actor, i));
@@ -146,7 +123,9 @@ export const incidentService = {
         .filter((i) => !q || [i.id, i.title, i.category, i.service, i.reporterName, i.assigneeName ?? ''].some((s) => s.toLowerCase().includes(q)))
         .map((i) => ({ ...i, needsAttention: needsAttention(actor, i, hasFb(i.id)) }))
         .sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention) || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-      return { items, counts };
+      const pages = Math.max(1, Math.ceil(items.length / INCIDENT_PAGE_SIZE));
+      const current = Math.min(Math.max(1, page), pages);
+      return { items: items.slice((current - 1) * INCIDENT_PAGE_SIZE, current * INCIDENT_PAGE_SIZE), counts, total: items.length, page: current, pageSize: INCIDENT_PAGE_SIZE };
     });
   },
 
@@ -277,3 +256,10 @@ export const incidentService = {
     });
   },
 };
+
+/**
+ * Which implementation the pages use, fixed at build time. Default is the mock (the demo and the e2e suite).
+ * `NEXT_PUBLIC_INCIDENTS_API=live` talks to the backend: see `docs/architecture/p3.md` ("Frontend") for what it cannot do yet.
+ */
+export const incidentService: typeof mockIncidentService =
+  process.env.NEXT_PUBLIC_INCIDENTS_API === 'live' ? liveIncidentService : mockIncidentService;

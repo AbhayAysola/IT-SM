@@ -4,41 +4,43 @@ Routes live in `src/app/admin/*`; everything else is in this folder.
 
 | Folder | Contents |
 |---|---|
-| `services/` | Typed services, one per domain. All business rules and validation live here. |
-| `data/` | Seed data for a fresh install. |
-| `components/`, `hooks/` | Shared admin UI (shell, confirm dialog, filters, pagination, states, toasts) and `useResource`. |
-| `users/`, `technicians/`, `categories/`, `it-services/`, `sla/`, `assignment/`, `audit/`, `overview/` | Pages and their dialogs. They call services and render; they hold no business rules. |
+| `services/` | `http.ts` (the one admin HTTP path: query encoding, JSON, error mapping) and one typed `*-api.ts` per domain with its request builders and client-side validation. |
+| `components/`, `hooks/` | Shared admin UI (shell, confirm dialog, filters, pagination, states, toasts, `FormError`) and `useResource` / `useListState`. |
+| `users/`, `technicians/`, `categories/`, `it-services/`, `sla/`, `assignment/`, `audit/`, `overview/` | Pages and their dialogs. |
 
-## Mock persistence (temporary)
+## Backend integration
 
-There are no admin endpoints in the backend yet, so services persist to `localStorage` through `services/store.ts`
-(keys `itsm_admin_v1_*`, with an in-memory fallback). Connecting the backend means re-implementing the service
-functions; pages and components should not need to change. No API endpoints have been invented.
+Every admin page reads and writes the real backend. The endpoint-by-endpoint contract, the error mapping and the list of
+dropped mock-only features are in [`docs/architecture/admin-frontend-contract.md`](../../../../docs/architecture/admin-frontend-contract.md).
+Rules of thumb for changing anything here:
 
-- Malformed or outdated stored data is reseeded or ignored rather than crashing a page.
-- Every call has simulated latency so loading states are real.
-- `localStorage.itsm_admin_simulate_error = "1"` makes every service call fail. The Playwright suite uses it to
-  exercise error states. It exists only because the data is mocked: it can only cause failures, never grant access,
-  and it disappears with the mock layer.
-- Seed data is fictitious. Seeded email addresses use the reserved `campus.example` domain (RFC 2606), so they cannot
-  belong to anyone.
-- Storage is per browser profile: data is not shared between users or devices, and clearing site data resets it.
+- Go through `services/http.ts#call` (which wraps the app's single `lib/api.ts#request`). Do not add another client.
+- Types mirror the backend JSON: numeric ids, `version`, no frontend-only fields. If the backend lacks something,
+  document it; do not invent it.
+- Client validation mirrors the backend rules for fast feedback; the server stays authoritative, and its field
+  errors are shown on the matching field.
+- A failed save never clears the form. A stale `version` (409) offers "Keep my edits on the latest version" or
+  "Discard mine and load latest". Lists reload after a confirmed success; nothing updates optimistically.
+- Nothing is deleted: accounts, profiles, categories, services and policies are deactivated.
+- No mock layer, `localStorage` data or simulated latency remains in this folder.
 
 ## Audit log
 
-- Every successful mutation appends one entry through `recordAudit`. Rejected or failed mutations write nothing.
-  Updates and status changes record before/after values for the changed fields only.
-- The viewer's `auditService` exposes only `recent`, `list` and `get`. There is no edit or delete anywhere in the app.
-- Seeded history is flagged `seed: true` and labelled "Demo data". Entries written before before/after recording
-  existed show "No before/after values were recorded".
-- **Not tamper-proof.** The log is a mock in browser storage, so anyone with devtools can change it. Real
-  append-only guarantees must come from the backend.
+- The frontend **never writes** audit events; the backend publishes one for every successful mutation.
+- **Audit logs is the authoritative view** (`services/audit-api.ts`, `GET /api/admin/audit-events`; contract in
+  `docs/architecture/audit-retrieval.md`). It is read-only: the client has no write method and the endpoints are GET only.
+- The overview's "Recent changes" card reads the latest six events from the same endpoint.
 
 ## Ownership boundaries
 
-- **Assignment settings** store configuration only. `MANUAL`, `ROUND_ROBIN` and `SKILL_BASED`, and their options,
-  are this frontend's own placeholder names. They are not a P3 contract. P3 owns the algorithms, workload
-  calculations and assignment execution.
+- **Assignment settings** store configuration only: the strategy key, a default workload ceiling and per-category
+  overrides. Strategy keys come only from P3's registered catalog (`availableStrategies`); none is hardcoded here. The page
+  follows `strategyCatalogStatus`: editable only when the catalog is AVAILABLE with keys; read-only, with its own
+  explanation, when it is ABSENT (not deployed), FAILED (unreachable, retry) or AVAILABLE but empty. A saved key that is no
+  longer registered stays visible as "(not registered)" and is never selectable or silently replaced. P3 owns the algorithms, workload calculations and
+  assignment execution.
+- **Technician profiles** carry an administrator's `available` eligibility flag and a configured `maxWorkload`
+  ceiling. Neither is live workload and neither means "assignable right now".
 - **SLA policies** are configuration only. P4 owns timers, breach detection and escalation.
 - Incident creation, categorisation and incident access policy belong to P2.
 
@@ -55,19 +57,15 @@ functions; pages and components should not need to change. No API endpoints have
 
 **This is UX, not security.** The backend must enforce authorization on every admin API.
 
-### Backend dependency: nobody can open `/admin` yet
+### Provisioning
 
-The backend still issues a single role, `USER` (`UserEntity.role` defaults to `"USER"`; there are no `EMPLOYEE`,
-`TECHNICIAN` or `ADMIN` values). Until P1 backend work lands, the real application shows "Access denied" to every
-account on `/admin`. That is intended. The agreed provisioning model:
-
-- The first `ADMIN` is created by an explicit one-time backend bootstrap command.
-- Further admins are created by an existing `ADMIN` through user management.
-- Public registration always creates `EMPLOYEE` and never accepts a role. (The frontend form sends only
-  `email`, `name` and `password`.)
+The backend issues the canonical roles `EMPLOYEE`, `TECHNICIAN` and `ADMIN`. The first `ADMIN` is created by the
+one-time backend bootstrap command; further admins are created by an existing `ADMIN` under Users. Public registration
+always creates an `EMPLOYEE` and never accepts a role (the frontend form sends only `email`, `name` and `password`).
 
 There is deliberately no development bypass. The hermetic Playwright suite reaches the admin pages through ADMIN
-personas in its fake API (`e2e/fixtures.ts`); in live mode, tests that need a non-`USER` role are skipped.
+personas and a stateful fake of the admin API (`e2e/fixtures.ts`, `e2e/admin-fake.ts`); in live mode, tests that need a
+non-`USER` role are skipped.
 
 ## Token storage (backend dependency)
 

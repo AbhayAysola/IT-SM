@@ -69,7 +69,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      # `dev` allows the non-Secure session cookie below. Remove `dev` (and AUTH_COOKIE_SECURE) for anything served over HTTPS.
+      SPRING_PROFILES_ACTIVE: docker,dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/itsm
       SPRING_DATASOURCE_USERNAME: itsm
       SPRING_DATASOURCE_PASSWORD: itsm_password
@@ -80,6 +81,13 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: itsm
       SPRING_RABBITMQ_PASSWORD: rabbitmq_password
+      # Required, no default: >= 32 bytes of random secret (e.g. `openssl rand -base64 48`). Export it or put it in infra/.env.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to at least 32 bytes of random secret material}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      # Local development stack: self-registration on so you can create an account. Set to false anywhere real (security.md).
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      # Local plain-HTTP development only: the browser would drop a Secure cookie from http://localhost:3000. Needs the `dev` profile above.
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,12 +108,14 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        # Compiled into the client bundle at build time (a runtime variable would have no effect). Local development: the browser
+        # reaches the API on the published port 8080. Rebuild the image (`docker compose up --build`) after changing it.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     container_name: itsm-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
     depends_on:
       backend:
         condition: service_healthy

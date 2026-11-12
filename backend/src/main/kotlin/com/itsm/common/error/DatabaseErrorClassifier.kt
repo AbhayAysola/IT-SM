@@ -26,6 +26,9 @@ object DatabaseErrorClassifier {
             // Optimistic/pessimistic lock failures and deadlocks: retryable client conflict.
             ex is ConcurrencyFailureException -> ErrorCode.CONCURRENT_MODIFICATION
 
+            // Deliberate application SQLSTATEs raised by V16's triggers: expected conflicts, nothing else gets this mapping.
+            sqlState in APP_CONFLICT_STATES -> ErrorCode.CONFLICT
+
             ex is DuplicateKeyException || sqlState == "23505" -> ErrorCode.DUPLICATE_RESOURCE
             sqlState == "23503" -> ErrorCode.REFERENCE_CONSTRAINT
             sqlState == "23502" || sqlState == "23514" || sqlState?.startsWith("22") == true -> ErrorCode.INVALID_INPUT
@@ -34,6 +37,21 @@ object DatabaseErrorClassifier {
             isInfrastructureFailure(ex, sqlState) -> ErrorCode.SERVICE_UNAVAILABLE
             else -> ErrorCode.INTERNAL_ERROR
         }
+    }
+
+    /** Application SQLSTATEs raised on purpose by our triggers (see V16). */
+    const val ROLE_KEEPS_TECHNICIAN_PROFILE = "IT001"
+    const val TECHNICIAN_PROFILE_INVARIANT = "IT002"
+    private val APP_CONFLICT_STATES = setOf(ROLE_KEEPS_TECHNICIAN_PROFILE, TECHNICIAN_PROFILE_INVARIANT)
+
+    /**
+     * Fixed, client-safe wording for the deliberate trigger conflicts, or null for every other failure. The database's own
+     * message is never used.
+     */
+    fun conflictDetail(ex: Throwable): String? = when (findSqlState(ex)) {
+        ROLE_KEEPS_TECHNICIAN_PROFILE -> "This user has an active technician profile; deactivate the profile before changing the role."
+        TECHNICIAN_PROFILE_INVARIANT -> "The technician profile change conflicts with a reporting-line or role rule."
+        else -> null
     }
 
     private fun isInfrastructureFailure(ex: Throwable, sqlState: String?): Boolean =

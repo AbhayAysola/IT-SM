@@ -1,0 +1,46 @@
+package com.itsm.admin.category
+
+import com.itsm.common.error.InvalidInput
+import com.itsm.common.error.ResourceNotFound
+import com.itsm.common.spi.CategoryCatalog
+import com.itsm.common.spi.CategoryView
+import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
+
+/**
+ * P1's implementation of the shared [CategoryCatalog] SPI. Returns immutable [CategoryView]s, never entities.
+ * Read-only transactions join the caller's transaction when there is one (e.g. P2's incident creation).
+ *
+ * Semantics (the interface leaves these open; documented in docs/architecture/integration-guide.md):
+ *  - [findById] / [findByCode] return active AND inactive categories, so historical incidents can still be shown;
+ *    use `requireActive` to validate a choice for a new incident.
+ *  - [findByCode] matches the stored code exactly (codes are UPPER_SNAKE_CASE).
+ *  - [listActive] is ordered by name; keywords inside each view are normalised and sorted.
+ *
+ * Transactions. `requireActive` is an interface default method, but Kotlin compiles a public bridge for it into this class,
+ * so the class-level `@Transactional` proxy wraps it and it joins the caller's transaction. Spring marks that transaction
+ * rollback-only for any RuntimeException leaving the bean, so a caller that caught the exception would still fail at commit
+ * with `UnexpectedRollbackException`. [ResourceNotFound] (unknown) and [InvalidInput] (inactive) are the documented
+ * outcomes of `requireActive` (the caller is told it may catch them), thrown after the lookup returned normally, so they are
+ * excluded from the rollback rule. Every other exception, above all a data-access failure, keeps the default behaviour and
+ * still dooms the transaction.
+ */
+@Component
+@Transactional(readOnly = true, noRollbackFor = [ResourceNotFound::class, InvalidInput::class])
+class JpaCategoryCatalog(private val categories: CategoryRepository) : CategoryCatalog {
+
+    override fun findById(categoryId: Long): CategoryView? = categories.findById(categoryId).orElse(null)?.toView()
+
+    override fun findByCode(code: String): CategoryView? = categories.findByCode(code)?.toView()
+
+    override fun listActive(): List<CategoryView> = categories.findAllByActiveTrueOrderByNameAsc().map { it.toView() }
+
+    private fun CategoryEntity.toView() = CategoryView(
+        id = requireId(),
+        code = code,
+        name = name,
+        description = description,
+        keywords = java.util.Collections.unmodifiableList(keywords.sorted()),
+        active = active
+    )
+}

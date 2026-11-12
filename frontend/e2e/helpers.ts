@@ -55,12 +55,18 @@ export async function signIn(page: Page, api: ApiHelper, user: TestUser) {
   await page.locator('dd').first().waitFor();
 }
 
-/** Collects uncaught exceptions and console errors, ignoring failed-resource logs for expected 4xx API answers. */
+/**
+ * Collects uncaught exceptions and console errors. The browser logs "Failed to load resource ... 401" for every anonymous session
+ * check (`GET /api/users/me` is how a client learns whether its HttpOnly cookie is valid), so that one expected line is ignored; every
+ * other console error, including any other failed resource, is still collected.
+ */
 export function trackErrors(page: Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`console: ${m.text().slice(0, 160)}`);
+    if (m.type() === 'error' && !/Failed to load resource: the server responded with a status of 401/.test(m.text())) {
+      errors.push(`console: ${m.text().slice(0, 160)}`);
+    }
   });
   return errors;
 }

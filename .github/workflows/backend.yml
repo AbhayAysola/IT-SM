@@ -1,0 +1,160 @@
+name: Backend
+
+# Deliberately NO `paths` filter: both jobs are required status checks, and a path-filtered workflow reports nothing
+# for a PR that does not touch backend files, which would leave the required check pending forever.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feat/p1-admin-backend, feat/p1-b18-final-integration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  # Migrations are validated twice on purpose:
+  #  1. here, with the plain Flyway CLI (the exact version Spring Boot 3.3.1 manages) on an EMPTY PostgreSQL 16, run
+  #     twice to prove a second run is a no-op; this catches SQL / ordering / naming errors with no Spring involved;
+  #  2. in `tests`, where the Spring application boots on another empty PostgreSQL 16 with
+  #     `ddl-auto: validate`, so Hibernate proves the entities match what the migrations created.
+  migrations:
+    name: Flyway on a clean PostgreSQL 16
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: itsm
+          POSTGRES_USER: itsm
+          POSTGRES_PASSWORD: itsm_password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U itsm -d itsm"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Migrate an empty database (twice)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for run in 1 2; do
+            echo "::group::flyway migrate (run $run)"
+            docker run --rm --network host \
+              -v "$PWD/backend/src/main/resources/db/migration":/flyway/sql:ro \
+              flyway/flyway:10.10.0 \
+              -url=jdbc:postgresql://localhost:5432/itsm -user=itsm -password=itsm_password \
+              -validateMigrationNaming=true -outOfOrder=false migrate
+            echo "::endgroup::"
+          done
+          docker run --rm --network host \
+            -v "$PWD/backend/src/main/resources/db/migration":/flyway/sql:ro \
+            flyway/flyway:10.10.0 \
+            -url=jdbc:postgresql://localhost:5432/itsm -user=itsm -password=itsm_password \
+            -outOfOrder=false validate info
+
+  tests:
+    name: Build and test (JDK 17, PostgreSQL Testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Makes DockerAvailabilityGuardTest fail the build if Docker is unreachable.
+      ITSM_REQUIRE_DOCKER: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17' # build.gradle.kts targets 17; Kotlin 1.9.24 cannot run on JDK > 21
+
+      - name: Set up Gradle (wrapper validation + dependency cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Docker is available
+        run: docker version
+
+      - name: Build and test
+        run: ./gradlew build --no-daemon --stacktrace
+
+      # Defence in depth: the guard test covers "no Docker", this covers every other way a test could be skipped
+      # or the integration test could silently disappear (renamed, excluded, filtered).
+      - name: Require the Testcontainers tests to have run, with nothing skipped
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import glob, sys
+          import xml.etree.ElementTree as ET
+          # Docker-backed classes that must each have executed at least this many tests. The purpose is to notice a class
+          # that silently stops running (renamed, excluded, skipped), not to pin the number of test methods.
+          REQUIRED = {
+              'com.itsm.config.ApplicationStartupIntegrationTest': 3,
+              'com.itsm.audit.AuditPersistenceIntegrationTest': 1,
+              'com.itsm.audit.AuditRetrievalIntegrationTest': 1,
+              'com.itsm.audit.IncidentAuditIntegrationTest': 1,
+              'com.itsm.audit.IncidentAuditPageOrderingIntegrationTest': 1,
+              'com.itsm.auth.AuthThrottleIntegrationTest': 1,
+              'com.itsm.auth.RegistrationHardeningIntegrationTest': 1,
+              'com.itsm.auth.RegistrationDisabledIntegrationTest': 1,
+              'com.itsm.auth.TrustedProxyThrottleIntegrationTest': 1,
+              'com.itsm.auth.WebSessionIntegrationTest': 1,
+              'com.itsm.auth.WebSessionDevProfileIntegrationTest': 1,
+              'com.itsm.auth.MalformedOriginIntegrationTest': 1,
+              'com.itsm.audit.IncidentAuditProviderUnavailableIntegrationTest': 1,
+              'com.itsm.admin.category.CategoryAdminIntegrationTest': 1,
+              'com.itsm.admin.itservice.ItServiceAdminIntegrationTest': 1,
+              'com.itsm.admin.sla.SlaPolicyAdminIntegrationTest': 1,
+              'com.itsm.admin.assignment.AssignmentSettingsIntegrationTest': 1,
+              'com.itsm.admin.assignment.AssignmentSettingsRealCatalogIntegrationTest': 1,
+              'com.itsm.auth.AuthSecurityIntegrationTest': 1,
+              'com.itsm.admin.user.UserAdminIntegrationTest': 1,
+              'com.itsm.bootstrap.AdminBootstrapIntegrationTest': 1,
+              'com.itsm.auth.JwtFilterInfrastructureFailureIntegrationTest': 1,
+              'com.itsm.migration.UsersMigrationIntegrationTest': 1,
+              'com.itsm.migration.TechnicianProfilesMigrationIntegrationTest': 1,
+              'com.itsm.admin.technician.TechnicianAdminIntegrationTest': 1,
+              'com.itsm.admin.technician.TechnicianDirectoryIntegrationTest': 1,
+              'com.itsm.integration.ProviderFailureSemanticsIntegrationTest': 1,
+              'com.itsm.integration.RouteAuthorizationMatrixIntegrationTest': 1,
+              'com.itsm.integration.ListQueryCountIntegrationTest': 1,
+              'com.itsm.integration.SlaProviderCallerTransactionIntegrationTest': 1,
+              'com.itsm.integration.CatalogCallerTransactionIntegrationTest': 1,
+              'com.itsm.integration.PaginationOffsetIntegrationTest': 1,
+          }
+          total = skipped = 0
+          executed = {}
+          for path in glob.glob('build/test-results/test/*.xml'):
+              suite = ET.parse(path).getroot()
+              tests, skips = int(suite.get('tests')), int(suite.get('skipped'))
+              total += tests
+              skipped += skips
+              executed[suite.get('name')] = tests - skips
+              if skips:
+                  print(f'::error::{suite.get("name")}: {skips} skipped test(s)')
+          print(f'tests={total} skipped={skipped}', {name: executed.get(name, 0) for name in REQUIRED})
+          if skipped:
+              sys.exit('Skipped tests are not accepted in CI.')
+          for name, minimum in REQUIRED.items():
+              if executed.get(name, 0) < minimum:
+                  sys.exit(f'{name} must execute at least {minimum} tests; it executed {executed.get(name, 0)}.')
+          PY
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            backend/build/reports/tests/
+            backend/build/test-results/
+          retention-days: 14
+          if-no-files-found: warn

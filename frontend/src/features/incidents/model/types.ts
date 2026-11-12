@@ -22,6 +22,8 @@ export type ActorRole = 'EMPLOYEE' | 'TECHNICIAN' | 'ADMIN';
 
 /** The signed-in person as the incident services see them. `role` comes from GET /api/users/me. */
 export interface Actor {
+  /** The user's id from GET /api/users/me. The live API identifies people by id; the mock layer uses the email. */
+  id?: number;
   email: string;
   name: string;
   role: ActorRole;
@@ -99,11 +101,12 @@ export interface Recommendation {
 export interface SimilarResolution {
   incidentId: string;
   title: string;
-  priority: Priority;
+  /** Null when the source does not know it (the live API does not return it yet). */
+  priority: Priority | null;
   sameService: boolean;
   /** The RESOLUTION entry's text. */
   resolution: string;
-  resolvedBy: string;
+  resolvedBy: string | null;
   /** Whole days from report to resolution. */
-  daysToResolve: number;
+  daysToResolve: number | null;
 }

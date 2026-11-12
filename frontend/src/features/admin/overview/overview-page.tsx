@@ -11,8 +11,9 @@ import { PageHeader } from '../components/page-header';
 import { ErrorState } from '../components/states';
 import { ROLE_LABEL, formatDateTime } from '../components/status-badges';
 import { useResource } from '../hooks/use-resource';
-import { auditService } from '../services/audit-service';
-import { overviewService } from '../services/overview-service';
+import { auditApi } from '../services/audit-api';
+import { loadOverview } from '../services/overview-api';
+import { EMPTY_AUDIT_FILTERS, actorLabel, humanize } from '../audit/audit-types';
 
 function Kpi({ label, value, note }: { label: string; value: React.ReactNode; note?: string }) {
   return (
@@ -27,15 +28,15 @@ function Kpi({ label, value, note }: { label: string; value: React.ReactNode; no
 }
 
 export default function OverviewPage() {
-  const overview = useResource(() => overviewService.get(), []);
-  const activity = useResource(() => auditService.recent(6), []);
+  const overview = useResource(() => loadOverview(), []);
+  const activity = useResource(() => auditApi.list({ filters: EMPTY_AUDIT_FILTERS, sort: 'occurredAt', dir: 'desc', page: 1, pageSize: 6 }), []);
   const o = overview.data;
 
   return (
     <>
       <PageHeader
         title="Admin overview"
-        description="People, technician capacity and anything that needs a decision."
+        description="People, configuration and anything that needs a decision."
         actions={
           <>
             <Button asChild variant="outline"><Link href="/admin/technicians"><UserCog aria-hidden="true" /> Technicians</Link></Button>
@@ -54,10 +55,10 @@ export default function OverviewPage() {
       ) : (
         <div className="space-y-6">
           <section aria-label="Key figures" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi label="Total users" value={o.totalUsers} note={`${o.activeUsers} active`} />
-            <Kpi label="Pending invitations" value={o.invitedUsers} note={`${o.suspendedUsers} suspended`} />
-            <Kpi label="Technicians available" value={`${o.technicians.available} / ${o.technicians.total}`} note={`${o.technicians.overCapacity} at full workload`} />
-            <Kpi label="Technician utilisation" value={`${o.technicians.utilisationPct}%`} note="Active incidents vs. capacity" />
+            <Kpi label="Total users" value={o.users.total} note={`${o.users.active} active`} />
+            <Kpi label="Technician profiles" value={o.technicians.activeProfiles} note={`${o.technicians.notAvailable} not available`} />
+            <Kpi label="Incident categories" value={o.catalog.categories} note="Active" />
+            <Kpi label="IT services" value={o.catalog.services} note={`${o.catalog.slaPolicies} active SLA policies`} />
           </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -96,7 +97,7 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-3">
-                  {o.byRole.map((r) => (
+                  {o.users.byRole.map((r) => (
                     <li key={r.role}>
                       <Link href={`/admin/users?role=${r.role}`} className="group block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <div className="flex items-baseline justify-between text-sm">
@@ -104,7 +105,7 @@ export default function OverviewPage() {
                           <span className="text-muted-foreground">{r.count}</span>
                         </div>
                         <div className="mt-1 h-2 overflow-hidden rounded-sm bg-muted" aria-hidden="true">
-                          <div className="h-full bg-primary" style={{ width: `${(r.count / o.totalUsers) * 100}%` }} />
+                          <div className="h-full bg-primary" style={{ width: `${(o.users.total ? (r.count / o.users.total) * 100 : 0)}%` }} />
                         </div>
                       </Link>
                     </li>
@@ -114,31 +115,31 @@ export default function OverviewPage() {
             </Card>
           </div>
 
-          <Card>
+          <Card data-testid="recent-changes-card">
             <CardHeader>
               <CardTitle className="text-lg">Recent changes</CardTitle>
-              <CardDescription>Latest administrative actions on users and technicians.</CardDescription>
+              <CardDescription>The latest persisted audit events, read from the server.</CardDescription>
             </CardHeader>
             <CardContent>
               {activity.error ? (
                 <ErrorState message={activity.error} onRetry={activity.reload} />
               ) : !activity.data ? (
                 <div role="status" aria-label="Loading recent changes" className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10" />)}</div>
-              ) : activity.data.length === 0 ? (
+              ) : activity.data.items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No changes recorded yet.</p>
               ) : (
                 <ul className="divide-y" data-testid="recent-changes">
-                  {activity.data.map((a) => (
+                  {activity.data.items.map((a) => (
                     <li key={a.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:gap-4">
-                      <time dateTime={a.at} className="w-40 shrink-0 text-xs text-muted-foreground">{formatDateTime(a.at)}</time>
-                      <p className="min-w-0 flex-1 text-sm">{a.summary}</p>
-                      <Badge variant="outline" className="w-fit">{a.actor}</Badge>
+                      <time dateTime={a.occurredAt} className="w-40 shrink-0 text-xs text-muted-foreground">{formatDateTime(a.occurredAt)}</time>
+                      <p className="min-w-0 flex-1 text-sm">{humanize(a.action)}</p>
+                      <Badge variant="outline" className="w-fit">{actorLabel(a.actor)}</Badge>
                     </li>
                   ))}
                 </ul>
               )}
               <Link href="/admin/audit-logs" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
-                View all audit logs <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                Open the audit logs <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </CardContent>
           </Card>

@@ -104,8 +104,14 @@ first in the service and throw `DuplicateResource`; the DB mapping is the safety
 
 `/api/...` base; admin endpoints under `/api/admin`; JSON camelCase; ISO-8601 UTC instants; numeric
 ids except incident ids (strings like `INC1024`). Lists use `PageQuery` (`page` from 0, `size` 1..100,
-default 20) and return `PageResponse` (`items, page, size, totalItems, totalPages`). Create returns
+default 20; `page * size` must not exceed 2^31−1 or the request is a 400 `INVALID_INPUT` on `page`; a `page` that does not fit an `Int`, or is not a number, never reaches `PageQuery`: request binding rejects it first as a 400 `MALFORMED_REQUEST`) and return
+`PageResponse` (`items, page, size, totalItems, totalPages`). Create returns
 201 + `Location`, update 200, delete 204.
+
+> **Fixed bug:** `PageQuery` used to reject every input, including the default, because its validation read `size`
+> inside `buildList { }`, where a bare `size` is the builder list's own size (always 0), not the requested page size.
+> It is fixed in `common/api/PageResponse.kt` and guarded by `PageQueryTest`. Inside a `buildList`/`apply`/`with`
+> block, qualify properties of the enclosing class (`this@PageQuery.size`) when the receiver has a member of the same name.
 
 ## 6. Auditing
 
@@ -137,14 +143,37 @@ fun assign(incidentId: String, techId: Long) {
   data (beyond ids) in metadata.
 * Audit is not for notifications. If P4 needs to react to a change, that is a separate domain event.
 
-> **Current limitation:** `SpringAuditPublisher` publishes the event on Spring's bus, but the
-> listener that **persists** it (`@TransactionalEventListener(BEFORE_COMMIT)` into the append-only
-> `audit_events` table, see `docs/migrations.md`) is not written yet. Until the audit branch lands,
-> published events are not stored anywhere. Code against the interface now; storage arrives later
-> without API changes.
->
-> Why BEFORE_COMMIT: the audit row is written in the same transaction as the business change, so
-> they commit or roll back together. If the audit insert fails, the business action fails too.
+### How persistence works
+
+`SpringAuditPublisher` (propagation `MANDATORY`) hands the event to Spring's event bus. The listener
+`AuditEventPersistenceListener` is a `@TransactionalEventListener(phase = BEFORE_COMMIT)`: it inserts one row into
+`audit_events` (V10) while the business transaction is still open, immediately before it commits.
+
+```
+@Transactional business method
+  ├─ change state
+  ├─ audit.publish(event)        -> event is queued on the transaction (nothing written yet)
+  └─ commit
+       ├─ BEFORE_COMMIT: listener INSERTs audit_events row   (same connection, same transaction)
+       └─ COMMIT  -> business change and audit row become visible together
+```
+
+* **Rollback removes the audit row.** The row was never committed on its own, so when the business transaction
+  rolls back (exception or rollback-only) there is nothing to undo. Audit never records an action that did not happen.
+* **A failed audit insert fails the business action.** The exception propagates out of the commit and rolls back
+  the whole transaction; it is not caught, logged-and-ignored, or retried in another transaction. An unaudited change must
+  not become permanent. There is no `REQUIRES_NEW` and no `AFTER_COMMIT`, either of which could keep a row for work that was
+  rolled back, or lose one for work that was committed.
+* **What is stored:** event id (UUID), `occurred_at`, actor type + stable user id + role (or a system job name),
+  `action`, `entity_type`, `entity_id`, `incident_id`, `previous_state`, `new_state`, `description`, `metadata` (JSONB).
+  The actor's **email is not stored**: audit rows are permanent, so they identify the actor by id and role only.
+  Metadata values read back as JSON (e.g. a `Long` that fits in 32 bits comes back as a number, not a `Long`).
+* **Append-only, in three layers:** (1) the PostgreSQL trigger `audit_events_reject_mutation` rejects `UPDATE`, `DELETE`
+  and `TRUNCATE` (SQLSTATE 23000) and is the authoritative guard; (2) `AuditEventEntity` is Hibernate `@Immutable` with
+  `val` properties; (3) `AuditEventRepository` extends the bare `Repository` and exposes only `save`. There is no audit
+  editing or deletion service. The trigger does not stop a database owner who drops it: restrict who owns the schema in
+  production. The table has no foreign keys so rows outlive the users and incidents they describe.
+* Reading audit data (the admin viewer API and the incident trail) is implemented read-only in `AuditEventReader`/`AuditQueryService`, outside the repository above; contract in [audit-retrieval.md](audit-retrieval.md).
 
 ## 7. Planned auth hardening (not implemented yet)
 
@@ -157,26 +186,21 @@ Documented here so teammates can rely on the direction:
 * Public registration creates EMPLOYEE only; the `role` claim and a `token_version` are added to the JWT
   for revocation; login lockout; the secret moves out of `application.yml`.
 
-## 8. Startup cycle fix in `SecurityConfig` (`@Lazy`)
+## 8. Startup cycle in `SecurityConfig` (resolved in B5)
 
-The original boilerplate never started: `JwtAuthFilter` needs the `userDetailsService` bean, which is
-declared *inside* `SecurityConfig`, and `SecurityConfig`'s constructor needs `JwtAuthFilter`. That is a
-constructor cycle, which Spring cannot resolve (`APPLICATION FAILED TO START ... form a cycle`).
-`@Lazy` on the `jwtAuthFilter` constructor parameter injects a proxy, so `SecurityConfig` can be built
-first and the real filter is created on first use. `JwtAuthFilter` itself is unchanged.
+The boilerplate on `main` never started: `JwtAuthFilter` needed the `userDetailsService` bean, declared *inside*
+`SecurityConfig`, whose constructor needed `JwtAuthFilter` (a constructor cycle). This branch first worked around it with
+`@Lazy` on the filter parameter, which injects a CGLIB proxy (and logs "Unable to proxy interface-implementing method ...
+final" warnings, because `OncePerRequestFilter.doFilter/init` are final). B5 made `JwtAuthFilter` depend on `UserRepository`
+directly, which removed the cycle, so `@Lazy` was dropped and the real filter bean is injected.
 
-Guarded by `SecurityWiringContextTest` (no Docker needed) and `ApplicationStartupIntegrationTest`
-(full Spring Boot startup on PostgreSQL 16 via Testcontainers). The clean fix (moving
-`userDetailsService`/`passwordEncoder` into their own configuration class) belongs to auth hardening.
+Guarded by `SecurityWiringContextTest` (no Docker needed) and `ApplicationStartupIntegrationTest`.
 
-## 9. Known issues not yet fixed
+## 9. Known pre-existing issues (status after B5)
 
-* `POST /api/auth/register` is open and assigns `role = 'USER'`. (Duplicate emails now return
-  409 `DUPLICATE_RESOURCE`; a concurrent duplicate that slips past the check is caught by the unique
-  constraint and also maps to 409.) Emails are not normalised, so `A@x.com` and `a@x.com` are distinct.
-* `JwtAuthFilter` throws (-> 500) for a token whose user no longer exists, and `Role.fromStored`
-  throws for an unknown stored role. Both are auth-hardening work (the filter is out of scope here).
-* The JWT secret is hardcoded in `application.yml`.
+All three issues originally listed here were fixed by B5: public registration now always creates an `EMPLOYEE` with
+normalised, case-insensitively unique emails; `JwtAuthFilter` no longer throws for deleted users or unknown roles (401; a
+database outage is 503); and the JWT secret comes from `JWT_SECRET` with no default. See [security.md](security.md).
 
 ## 10. Running the build and tests
 
@@ -188,6 +212,17 @@ cd backend
 docker run --rm -v "$PWD":/app -w /app -u "$(id -u):$(id -g)" -e GRADLE_USER_HOME=/app/.gradle-home \
   gradle:8.8-jdk17 ./gradlew build --no-daemon
 ```
+
+Audit persistence tests (all need Docker except the first):
+
+```bash
+./gradlew test --tests 'com.itsm.audit.AuditEventPersistenceListenerTest'      # database-free: phase, no swallowing, mapping
+./gradlew test --tests 'com.itsm.audit.AuditPersistenceIntegrationTest'        # PostgreSQL 16: commit, rollback, trigger
+ITSM_REQUIRE_DOCKER=true ./gradlew test   # what CI does: fails instead of silently skipping the Docker tests
+```
+
+`AuditPersistenceIntegrationTest` never deletes rows (the table is append-only); each test writes under its own
+unique entity id and only inspects those rows.
 
 Almost all tests are database-free. `ApplicationStartupIntegrationTest` needs Docker (it starts
 `postgres:16` with Testcontainers) and is **skipped, not failed**, when Docker is unavailable, so check the

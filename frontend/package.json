@@ -10,7 +10,10 @@
     "check:contrast": "node scripts/check-contrast.mjs",
     "typecheck": "tsc --noEmit",
     "test:e2e": "next build && playwright test",
-    "test:e2e:run": "playwright test"
+    "test:e2e:run": "playwright test",
+    "test:real-stack": "playwright test -c playwright.real.config.ts",
+    "check:real-stack": "node scripts/check-real-stack-results.mjs",
+    "scan:real-stack": "node scripts/scan-real-stack-secrets.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.3.1",

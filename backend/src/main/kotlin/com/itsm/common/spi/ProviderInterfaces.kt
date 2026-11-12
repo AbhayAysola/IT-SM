@@ -13,7 +13,13 @@ import com.itsm.common.security.CurrentUser
  * inside another module. "Provided by" says who writes the implementation bean.
  */
 
-/** Provided by P1 (access). Users and technician profiles. */
+/**
+ * Provided by P1 (access). Users and technician profiles.
+ *
+ * Technician methods return only USABLE technicians: active profile, active user account, role TECHNICIAN. `available` in
+ * [TechnicianSummary] is an administrator-set flag (leave / off shift), NOT a workload or assignability verdict: P3 owns
+ * workload and assignment policy. `findTechnician` returns null for anything not usable (use `findById` for the account).
+ */
 interface UserDirectory {
     fun findById(userId: Long): UserSummary?
     fun requireById(userId: Long): UserSummary = findById(userId) ?: throw ResourceNotFound("User", userId)
@@ -77,10 +83,9 @@ interface AssignmentSettingsProvider {
  * Provided by P1. Publish an audit event. MUST be called inside the business transaction
  * (enforced: calling it without one throws IllegalTransactionStateException).
  *
- * TEMPORARY LIMITATION: events are currently published but NOT persisted. Persistence arrives
- * with P1's audit branch as a `@TransactionalEventListener(BEFORE_COMMIT)` writing to the
- * append-only `audit_events` table; from then on the audit row and the business change commit or
- * roll back together. Callers do not change when that lands.
+ * Events are persisted by `AuditEventPersistenceListener` (`@TransactionalEventListener(BEFORE_COMMIT)`)
+ * into the append-only `audit_events` table, inside this same transaction: the audit row and the
+ * business change commit or roll back together, and a failed audit insert fails the business action.
  */
 interface AuditPublisher {
     fun publish(event: AuditableEvent)

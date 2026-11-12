@@ -205,24 +205,39 @@ This will:
 2. Install NGINX Ingress Controller
 3. Build and load Docker images into the cluster
 
+### HTTPS and the public origin (read before deploying)
+
+The Kubernetes deployment is **HTTPS only**: the session cookie is `Secure`, and CORS allows only `https://<host>`. Two things are yours to provide; the repository contains no real domain, certificate or issuer (`it-sm.local` is only a placeholder):
+
+1. **A TLS Secret** (`kubernetes.io/tls`) in the `it-sm` namespace, valid for your host, **created before** the ingress can serve HTTPS:
+   `kubectl -n it-sm create secret tls <name> --cert=<tls.crt> --key=<tls.key>` (or add your own certificate-issuer annotation: `ingress.annotations` in Helm, the annotations block in `infra/k8s/ingress.yaml`).
+2. **A frontend image built for that host.** `NEXT_PUBLIC_API_URL` is compiled into the client bundle by `next build`; **changing an environment variable on the running pod does nothing.** Build with the bare public origin (no `/api`, because every request path already starts with `/api`):
+   `docker build --build-arg NEXT_PUBLIC_API_URL=https://<host> -t it-sm/frontend:latest frontend` (`scripts/setup-kind.sh` does this from `PUBLIC_HOST`). The default `http://localhost:8080` is for local development only; never deploy an image built with it.
+
 ### Deploy with Helm
 
 ```bash
+export PUBLIC_HOST=<host> TLS_SECRET_NAME=<tls-secret> JWT_SECRET="$(openssl rand -base64 48)"
+./scripts/setup-kind.sh   # Kind only: cluster, ingress controller and images (frontend built for https://$PUBLIC_HOST)
 ./scripts/deploy.sh
 ```
 
-### Add local DNS entry
+The chart fails with a clear message if `ingress.host` or `ingress.tls.secretName` is empty. `CORS_ALLOWED_ORIGINS` defaults to `https://<ingress.host>`, so it cannot drift from the ingress.
+
+### Add local DNS entry (Kind)
 
 ```bash
-echo "127.0.0.1 it-sm.local" | sudo tee -a /etc/hosts
+echo "127.0.0.1 <host>" | sudo tee -a /etc/hosts
 ```
 
 | Service | URL |
 |---|---|
-| Frontend | http://it-sm.local |
-| Backend API | http://it-sm.local/api |
+| Frontend | `https://<host>` |
+| Backend API | `https://<host>/api` |
 
 ### Raw K8s manifests (alternative)
+
+Edit the marked PLACEHOLDERS first (`infra/k8s/ingress.yaml` host and TLS secret name, `infra/k8s/backend-configmap.yaml` `CORS_ALLOWED_ORIGINS`, and `backend-secret.yaml`), then:
 
 ```bash
 kubectl apply -f infra/k8s/namespace.yaml
@@ -233,17 +248,18 @@ kubectl apply -f infra/k8s/
 
 ## 🔌 API Reference
 
-Implemented today. Authenticated endpoints need an `Authorization: Bearer <token>` header. Errors are RFC 7807 `application/problem+json` (see [foundation.md](docs/architecture/foundation.md#4-errors)).
+Authenticated endpoints need `Authorization: Bearer <token>` for scripts and services (token from `POST /api/auth/login` **without** the `X-ITSM-Client` header), or the HttpOnly session cookie for the web app (login with `X-ITSM-Client: web`; see `docs/architecture/security.md`). Errors are RFC 7807 `application/problem+json` (see [foundation.md](docs/architecture/foundation.md#4-errors)).
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/api/auth/register` | public | Register new user (`email`, `name`, `password`) |
+| POST | `/api/auth/register` | public | Self-register (disabled unless `REGISTRATION_ENABLED=true`); always `202 {"status":"ACCEPTED"}`, no token, then sign in |
 | POST | `/api/auth/login` | public | Login, returns JWT |
+| POST | `/api/auth/logout` | required | End the session: revokes ALL of the caller's tokens and clears the cookie |
 | GET | `/api/users/me` | required | Current user profile |
 | GET | `/actuator/health` | public | Health check |
-| GET | `/actuator/prometheus` | public | Prometheus metrics |
+| GET | `/actuator/prometheus` | admin | Prometheus metrics |
 
-Planned endpoints (incidents, admin, SLA, ...) are described per owner in the [integration guide](docs/architecture/integration-guide.md); conventions are in [foundation.md](docs/architecture/foundation.md#5-api-conventions).
+The administration endpoints (users, technicians, catalogs, SLA, assignment settings, audit) are listed in the [integration guide](docs/architecture/integration-guide.md); conventions are in [foundation.md](docs/architecture/foundation.md#5-api-conventions).
 
 ### Example: Register + Login
 
@@ -270,8 +286,8 @@ curl http://localhost:8080/api/users/me -H "Authorization: Bearer <token>"
 
 | Property | Default | Description |
 |---|---|---|
-| `app.jwt.secret` | `your-256-bit-secret...` | **Change in production** |
-| `app.jwt.expiration` | `86400000` | Token TTL (ms), default 24h |
+| `app.jwt.secret` (env `JWT_SECRET`) | none | **Required**: >= 32 bytes of random secret; startup fails if missing, short or a placeholder. See `docs/architecture/security.md` |
+| `app.jwt.expiration` (env `JWT_EXPIRATION`) | `86400000` | Token TTL (ms), default 24h |
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5432/itsm` | PostgreSQL URL |
 | `spring.data.redis.host` | `localhost` | Redis host |
 | `spring.rabbitmq.host` | `localhost` | RabbitMQ host |

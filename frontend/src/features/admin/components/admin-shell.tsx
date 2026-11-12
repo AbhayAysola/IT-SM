@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronDown, LogOut, ShieldCheck } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
-import { clearToken, getCachedUser } from '@/lib/auth';
+import { getCachedUser } from '@/lib/auth';
+import { endSession } from '@/lib/session';
 import type { User } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,8 +56,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   useEffect(() => setUser(getCachedUser()), []);
 
-  const signOut = () => {
-    clearToken();
+  const signOut = async () => {
+    await endSession();
     router.replace('/');
   };
 

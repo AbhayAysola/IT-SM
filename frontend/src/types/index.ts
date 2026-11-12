@@ -23,8 +23,13 @@ export interface RegisterRequest {
   name: string;
 }
 
-export interface AuthResponse {
-  token: string;
+/** `POST /api/auth/register` answers 202 with exactly this for a new AND an already registered address; there is no token. */
+export interface RegistrationResponse {
+  status: 'ACCEPTED';
+}
+
+/** Browser login answer: the session is an HttpOnly cookie, so there is no token in the body. */
+export interface WebLoginResponse {
   user: User;
 }
 

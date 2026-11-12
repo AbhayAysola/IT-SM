@@ -1,24 +1,12 @@
-import type { Page } from '@playwright/test';
 import { test, expect, newAdmin } from './fixtures';
 import { axeViolations, expectNoHorizontalOverflow, settle, signIn, trackErrors } from './helpers';
-
-/** Signs in through the real form, then opens an admin route. Mock admin data lives in this context's localStorage. */
-async function openAdmin(page: Page, api: Parameters<typeof signIn>[1], path = '/admin') {
-  await signIn(page, api, newAdmin('admin'));
-  await page.goto(path);
-  await expect(page.getByRole('navigation', { name: 'Admin sections' })).toBeVisible();
-}
-
-const rows = (page: Page) => page.locator('tbody tr');
-const search = (page: Page, q: string) => page.getByRole('searchbox').fill(q);
-const rowMenu = (page: Page, name: string) => page.getByRole('button', { name: `Actions for ${name}` }).click();
-const toast = (page: Page, text: string | RegExp) => expect(page.getByTestId('toasts').getByText(text)).toBeVisible();
+import { dialog, openAdmin, pick, registerSelf, rowMenu, rows, search, summary, toast } from './admin-helpers';
 
 test.describe('admin: access and shell', () => {
-  test('unauthenticated /admin redirects to sign-in with no API calls', async ({ page, api }) => {
+  test('unauthenticated /admin redirects to sign-in after the one session check, with no other API call', async ({ page, api }) => {
     await page.goto('/admin/users');
     await page.waitForURL(/\/\?redirect=%2Fadmin%2Fusers/);
-    expect(api.calls).toEqual([]);
+    expect(api.calls).toEqual(['/api/users/me']);
   });
 
   test('sidebar navigates between admin pages and marks the current one', async ({ page, api }) => {
@@ -47,331 +35,346 @@ test.describe('admin: access and shell', () => {
 });
 
 test.describe('admin: overview', () => {
-  test('shows figures, attention items that deep-link into filtered lists, and recent changes', async ({ page, api }) => {
+  test('shows real figures, attention items that deep-link into filtered lists, and the persisted recent changes', async ({ page, api }) => {
     await openAdmin(page, api);
-    await expect(page.getByRole('region', { name: 'Key figures' })).toContainText('Total users');
+    const figures = page.getByRole('region', { name: 'Key figures' });
+    await expect(figures).toContainText('Total users');
+    await expect(figures.getByText('Total users').locator('xpath=..')).toContainText('7');
+    await expect(figures.getByText('Total users').locator('xpath=..')).toContainText('6 active');
+    await expect(figures).toContainText('Technician profiles');
     await expect(page.getByTestId('recent-changes').getByRole('listitem')).toHaveCount(6);
+    // figures are the totals of ordinary list calls (page size 1), never a stored or simulated number
+    expect(api.admin.requests.every((r) => r.method === 'GET')).toBe(true);
+    await page.getByRole('link', { name: /1 inactive account/ }).click();
+    await page.waitForURL('**/admin/users?active=false');
+    await expect(rows(page)).toHaveCount(1);
+    await expect(rows(page).first()).toContainText('Barbara Liskov');
+  });
 
-    await page.getByRole('link', { name: /pending invitations/ }).click();
-    await page.waitForURL('**/admin/users?status=INVITED');
-    await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByRole('combobox', { name: 'Filter by status' })).toContainText('Invited');
+  test('flags a missing global SLA policy', async ({ page, api }) => {
+    api.admin.sla = api.admin.sla.filter((p) => !(p.serviceId === null && p.priority === 'P2'));
+    await openAdmin(page, api);
+    await expect(page.getByRole('link', { name: /No global SLA policy for P2/ })).toBeVisible();
+  });
+
+  test('tells the three assignment-catalog problems apart, and says nothing when all is well', async ({ page, api }) => {
+    await openAdmin(page, api);
+    await expect(page.getByRole('link', { name: /catalog|strateg/i })).toHaveCount(0);
+
+    api.admin.strategies = null;
+    await page.reload();
+    await expect(page.getByRole('link', { name: /Assignment strategy catalog not deployed yet/ })).toBeVisible();
+
+    api.admin.strategies = ['ROUND_ROBIN', 'SKILL_BASED'];
+    api.admin.catalogFailed = true;
+    await page.reload();
+    await expect(page.getByRole('link', { name: /Assignment strategy catalog could not be reached/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /not deployed/ })).toHaveCount(0);
+
+    api.admin.catalogFailed = false;
+    api.admin.strategies = [];
+    await page.reload();
+    await expect(page.getByRole('link', { name: /No assignment strategies are registered/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /not deployed|could not be reached/ })).toHaveCount(0);
+
+    api.admin.strategies = ['SKILL_BASED'];
+    await page.reload();
+    await expect(page.getByRole('link', { name: /Saved assignment strategy not registered: ROUND_ROBIN/ })).toBeVisible();
   });
 
   test('error state offers retry and recovers', async ({ page, api }) => {
+    api.admin.failures.push({ match: 'GET /api/admin/users', status: 500, code: 'INTERNAL_ERROR', detail: 'boom', times: 1 });
     await signIn(page, api, newAdmin('overview-err'));
-    await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
     await page.goto('/admin');
     await expect(page.getByRole('alert').filter({ hasText: 'We couldn’t load this.' }).first()).toBeVisible();
-    await page.evaluate(() => localStorage.removeItem('itsm_admin_simulate_error'));
+    await expect(page.getByText('boom')).toHaveCount(0); // raw server text is never shown for 5xx
     await page.getByRole('button', { name: 'Try again' }).first().click();
     await expect(page.getByRole('region', { name: 'Key figures' })).toBeVisible();
-  });
-
-  test('a change made elsewhere shows up in recent changes', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/users');
-    await rowMenu(page, 'Elena Petrova');
-    await page.getByRole('menuitem', { name: 'Suspend' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Suspend user' }).click();
-    await toast(page, 'Elena Petrova was suspended.');
-    await page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'Admin overview' }).click();
-    await expect(page.getByTestId('recent-changes')).toContainText('Suspended Elena Petrova');
   });
 });
 
 test.describe('admin: users', () => {
-  test('lists with a loading state, paginates, and searches', async ({ page, api }) => {
+  test('lists users from the API with canonical roles, status and no secrets', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
-    await expect(rows(page)).toHaveCount(8);
-    await expect(page.getByTestId('pagination-summary')).toHaveText('Showing 1–8 of 25 users');
-    await page.getByRole('button', { name: /Next/ }).click();
-    await expect(page.getByTestId('pagination-summary')).toHaveText('Showing 9–16 of 25 users');
-    await search(page, 'priya');
+    await expect(rows(page)).toHaveCount(7);
+    await expect(summary(page)).toHaveText('Showing 1–7 of 7 users');
+    await expect(rows(page).filter({ hasText: 'Ada Lovelace' })).toContainText('Administrator');
+    await expect(rows(page).filter({ hasText: 'Linus Torvalds' })).toContainText('Technician');
+    await expect(rows(page).filter({ hasText: 'Barbara Liskov' })).toContainText('Inactive');
+    const text = await page.locator('main').innerText();
+    expect(text).not.toMatch(/password|hash|token/i);
+    const first = api.admin.last('GET', '/api/admin/users')!;
+    expect(first.query.get('page')).toBe('0');
+    expect(first.query.get('size')).toBe('10');
+    expect(first.query.get('sort')).toBe('name');
+  });
+
+  test('search, role, status and sort go to the API as query parameters; the URL stays shareable', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    await search(page, 'turing');
     await expect(rows(page)).toHaveCount(1);
-    await expect(rows(page).first()).toContainText('Priya Natarajan');
-    await expect(page.getByTestId('pagination-summary')).toHaveText('Showing 1–1 of 1 users');
-  });
-
-  test('filters by role, status and department, shows an empty state, and clears', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/users');
-    await page.getByRole('combobox', { name: 'Filter by role' }).click();
-    await page.getByRole('option', { name: 'Administrator' }).click();
+    expect(api.admin.last('GET', '/api/admin/users')!.query.get('search')).toBe('turing');
+    await page.waitForURL('**/admin/users?q=turing');
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await pick(page, 'Filter by role', 'Administrator');
     await expect(rows(page)).toHaveCount(2);
-    await page.getByRole('combobox', { name: 'Filter by status' }).click();
-    await page.getByRole('option', { name: 'Suspended' }).click();
-    await expect(page.getByTestId('empty-state')).toContainText('No users match your filters');
+    expect(api.admin.last('GET', '/api/admin/users')!.query.get('role')).toBe('ADMIN');
+    await pick(page, 'Filter by status', 'Inactive');
+    await expect(page.getByText('No users match your filters')).toBeVisible();
+    expect(api.admin.last('GET', '/api/admin/users')!.query.get('active')).toBe('false');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
-    await expect(rows(page)).toHaveCount(8);
-    await page.getByRole('combobox', { name: 'Filter by department' }).click();
-    await page.getByRole('option', { name: 'Library' }).click();
-    await expect(rows(page)).toHaveCount(2);
+    await page.getByRole('button', { name: 'Role', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Role' })).toHaveAttribute('aria-sort', 'ascending');
+    expect(api.admin.last('GET', '/api/admin/users')!.query.get('sort')).toBe('role');
+    await page.getByRole('button', { name: 'Role', exact: true }).click();
+    expect(api.admin.last('GET', '/api/admin/users')!.query.get('dir')).toBe('desc');
   });
 
-  test('sorts by name in both directions', async ({ page, api }) => {
+  test('pages through the API 10 at a time', async ({ page, api }) => {
+    for (let i = 0; i < 8; i++) api.admin.addUser(`Extra Person ${i}`, 'EMPLOYEE');
     await openAdmin(page, api, '/admin/users');
-    await expect(rows(page).first()).toContainText('Aisha Rahman');
-    await page.getByRole('button', { name: 'User', exact: true }).click();
-    await expect(page.getByRole('columnheader', { name: 'User', exact: true })).toHaveAttribute('aria-sort', 'descending');
-    await expect(rows(page).first()).toContainText('Yuki Tanaka');
+    await expect(summary(page)).toHaveText('Showing 1–10 of 15 users');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(summary(page)).toHaveText('Showing 11–15 of 15 users');
+    expect(api.admin.last('GET', '/api/admin/users')!.query.get('page')).toBe('1');
   });
 
-  test('add user validates, rejects duplicates, then saves and persists across reload', async ({ page, api }) => {
+  test('adding a user validates first, sends only the contract fields, and never keeps the password', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
     await page.getByRole('button', { name: 'Add user' }).first().click();
-    const dlg = page.getByRole('dialog');
-    await dlg.getByRole('button', { name: 'Add user' }).click();
-    await expect(dlg.getByText('Enter the full name')).toBeVisible();
-    await expect(dlg.getByText('Enter a valid email address')).toBeVisible();
-    await expect(dlg.getByText('Choose a department.')).toBeVisible();
-    await expect(dlg).toBeVisible();
-
-    await dlg.getByLabel('Full name').fill('Test Person');
-    await dlg.getByLabel('Email address').fill('priya.natarajan@campus.example');
-    await dlg.getByLabel('Department').click();
-    await page.getByRole('option', { name: 'Finance' }).click();
-    await dlg.getByRole('button', { name: 'Add user' }).click();
-    await expect(dlg.getByRole('alert')).toContainText('already registered');
-
-    await dlg.getByLabel('Email address').fill('test.person@campus.example');
-    await dlg.getByRole('button', { name: 'Add user' }).click();
-    await toast(page, 'Test Person was invited.');
-    await expect(dlg).toBeHidden();
-
-    await page.reload();
-    await search(page, 'test.person');
-    await expect(rows(page)).toHaveCount(1);
-    await expect(rows(page).first()).toContainText('Invited');
+    await dialog(page).getByRole('button', { name: 'Add user' }).click();
+    await expect(dialog(page).getByText('Enter a name.')).toBeVisible();
+    await expect(dialog(page).getByText('Enter an email address.')).toBeVisible();
+    await expect(dialog(page).getByText('Use at least 8 characters.')).toBeVisible();
+    expect(api.admin.count('POST', '/api/admin/users')).toBe(0);
+    await dialog(page).getByLabel('Full name').fill('  Dana Scully  ');
+    await dialog(page).getByLabel('Email address').fill('Dana@Example.test');
+    await dialog(page).getByLabel('Initial password').fill('s3cret-pass');
+    await dialog(page).getByRole('button', { name: 'Add user' }).click();
+    await toast(page, 'Dana Scully was added.');
+    expect(api.admin.last('POST', '/api/admin/users')!.body).toEqual({ email: 'Dana@Example.test', name: 'Dana Scully', password: 's3cret-pass', role: 'EMPLOYEE' });
+    await expect(rows(page).filter({ hasText: 'Dana Scully' })).toContainText('Employee');
+    await page.getByRole('button', { name: 'Add user' }).first().click();
+    await expect(dialog(page).getByLabel('Initial password')).toHaveValue('');
   });
 
-  test('edit changes a role and cancelling keeps the original', async ({ page, api }) => {
+  test('a duplicate email is explained, and what was typed is kept', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
-    await search(page, 'elena');
-    await rowMenu(page, 'Elena Petrova');
-    await page.getByRole('menuitem', { name: 'Edit' }).click();
-    const dlg = page.getByRole('dialog');
-    await dlg.getByLabel('Full name').fill('');
-    await dlg.getByRole('button', { name: 'Save changes' }).click();
-    await expect(dlg.getByText('Enter the full name')).toBeVisible();
-    await dlg.getByLabel('Full name').fill('Elena P. Petrova');
-    await dlg.getByRole('button', { name: 'Cancel' }).click();
-    await expect(rows(page).first()).toContainText('Elena Petrova');
-
-    await rowMenu(page, 'Elena Petrova');
-    await page.getByRole('menuitem', { name: 'Edit' }).click();
-    await dlg.getByLabel('Full name').fill('Elena P. Petrova');
-    await dlg.getByLabel('Role').click();
-    await page.getByRole('option', { name: 'Administrator' }).click();
-    await dlg.getByRole('button', { name: 'Save changes' }).click();
-    await toast(page, 'Elena P. Petrova was updated.');
-    await expect(rows(page).first()).toContainText('Administrator');
+    await page.getByRole('button', { name: 'Add user' }).first().click();
+    await dialog(page).getByLabel('Full name').fill('Another Ada');
+    await dialog(page).getByLabel('Email address').fill('ada.lovelace@example.test');
+    await dialog(page).getByLabel('Initial password').fill('long-enough-1');
+    await dialog(page).getByRole('button', { name: 'Add user' }).click();
+    await expect(dialog(page).getByTestId('form-error')).toContainText('Email is already registered');
+    await expect(dialog(page).getByLabel('Full name')).toHaveValue('Another Ada');
+    await expect(dialog(page).getByLabel('Initial password')).toHaveValue('long-enough-1');
   });
 
-  test('suspend asks for confirmation; reactivate works', async ({ page, api }) => {
+  test('editing sends the version; a stale version offers "keep my edits" and then succeeds', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
-    await search(page, 'hannah');
-    await rowMenu(page, 'Hannah Becker');
-    await page.getByRole('menuitem', { name: 'Suspend' }).click();
-    const dlg = page.getByRole('dialog');
-    await expect(dlg).toContainText('Suspend Hannah Becker?');
-    await dlg.getByRole('button', { name: 'Cancel' }).click();
-    await expect(rows(page).first()).toContainText('Active');
-
-    await rowMenu(page, 'Hannah Becker');
-    await page.getByRole('menuitem', { name: 'Suspend' }).click();
-    await dlg.getByRole('button', { name: 'Suspend user' }).click();
-    await expect(rows(page).first()).toContainText('Suspended');
-    await rowMenu(page, 'Hannah Becker');
-    await page.getByRole('menuitem', { name: 'Reactivate' }).click();
-    await toast(page, 'Hannah Becker was reactivated.');
-    await expect(rows(page).first()).toContainText('Active');
+    await rowMenu(page, 'Edsger Dijkstra');
+    await page.getByRole('menuitem', { name: 'Edit details' }).click();
+    api.admin.bump('users', 6); // someone else saves first
+    await dialog(page).getByLabel('Full name').fill('Edsger W. Dijkstra');
+    await dialog(page).getByRole('button', { name: 'Save changes' }).click();
+    await expect(dialog(page).getByTestId('form-error')).toContainText('changed by someone else');
+    expect((api.admin.last('PUT', '/api/admin/users/6')!.body as { version: number }).version).toBe(0);
+    await expect(dialog(page).getByLabel('Full name')).toHaveValue('Edsger W. Dijkstra');
+    await dialog(page).getByRole('button', { name: 'Keep my edits on the latest version' }).click();
+    await expect(dialog(page).getByTestId('form-error')).toHaveCount(0);
+    await dialog(page).getByRole('button', { name: 'Save changes' }).click();
+    await toast(page, 'Edsger W. Dijkstra was updated.');
+    expect((api.admin.last('PUT', '/api/admin/users/6')!.body as { version: number }).version).toBe(1);
   });
 
-  test('delete asks for confirmation and removes the user', async ({ page, api }) => {
+  test('"discard mine and load latest" replaces the form with the stored values', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
-    await search(page, 'victor');
-    await rowMenu(page, 'Victor Ng');
-    await page.getByRole('menuitem', { name: 'Delete' }).click();
-    await expect(page.getByRole('dialog')).toContainText('cannot be undone');
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete user' }).click();
-    await toast(page, 'Victor Ng was deleted.');
-    await expect(page.getByTestId('empty-state')).toBeVisible();
+    await rowMenu(page, 'Edsger Dijkstra');
+    await page.getByRole('menuitem', { name: 'Edit details' }).click();
+    api.admin.users.find((u) => u.id === 6)!.name = 'Renamed Elsewhere';
+    api.admin.bump('users', 6);
+    await dialog(page).getByLabel('Full name').fill('Mine');
+    await dialog(page).getByRole('button', { name: 'Save changes' }).click();
+    await dialog(page).getByRole('button', { name: 'Discard mine and load latest' }).click();
+    await expect(dialog(page).getByLabel('Full name')).toHaveValue('Renamed Elsewhere');
   });
 
-  test('the last active administrator cannot be removed', async ({ page, api }) => {
+  test('changing a role asks the API; changing your own role is refused with the server’s message', async ({ page, api }) => {
+    const me = newAdmin('self');
+    registerSelf(api, me);
+    await openAdmin(page, api, '/admin/users', me);
+    await rowMenu(page, 'Edsger Dijkstra');
+    await page.getByRole('menuitem', { name: 'Change role' }).click();
+    await pick(page, 'Role', 'Technician');
+    await dialog(page).getByRole('button', { name: 'Change role' }).click();
+    await toast(page, 'Edsger Dijkstra is now Technician.');
+    expect(api.admin.last('PUT', '/api/admin/users/6/role')!.body).toEqual({ role: 'TECHNICIAN', version: 0 });
+    await rowMenu(page, me.name);
+    await page.getByRole('menuitem', { name: 'Change role' }).click();
+    await pick(page, 'Role', 'Employee');
+    await dialog(page).getByRole('button', { name: 'Change role' }).click();
+    await expect(dialog(page).getByTestId('form-error')).toContainText('You cannot change your own administrator role');
+  });
+
+  test('a role cannot change while the user has an active technician profile, and the server says why', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
-    await page.getByRole('combobox', { name: 'Filter by role' }).click();
-    await page.getByRole('option', { name: 'Administrator' }).click();
-    await rowMenu(page, 'Daniel Whitfield');
-    await page.getByRole('menuitem', { name: 'Delete' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete user' }).click();
-    await expect(rows(page)).toHaveCount(1);
-
-    await rowMenu(page, 'Amara Okafor');
-    await page.getByRole('menuitem', { name: 'Delete' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete user' }).click();
-    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('only active administrator');
-    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
-    await expect(rows(page)).toHaveCount(1);
+    await rowMenu(page, 'Linus Torvalds');
+    await page.getByRole('menuitem', { name: 'Change role' }).click();
+    await pick(page, 'Role', 'Employee');
+    await dialog(page).getByRole('button', { name: 'Change role' }).click();
+    await expect(dialog(page).getByTestId('form-error')).toContainText('deactivate the profile before changing the role');
+    await expect(rows(page).filter({ hasText: 'Linus Torvalds' })).toContainText('Technician');
   });
 
-  test('bulk suspend works on a selection', async ({ page, api }) => {
+  test('deactivating is confirmed, protects the last administrator and yourself, and activating needs no scare text', async ({ page, api }) => {
+    const me = newAdmin('self2');
+    registerSelf(api, me);
+    await openAdmin(page, api, '/admin/users', me);
+    await rowMenu(page, 'Linus Torvalds');
+    await page.getByRole('menuitem', { name: 'Deactivate' }).click();
+    await expect(dialog(page)).toContainText('Their history is kept');
+    await dialog(page).getByRole('button', { name: 'Deactivate user' }).click();
+    await toast(page, 'Linus Torvalds was deactivated.');
+    expect(api.admin.last('POST', '/api/admin/users/3/deactivate')!.body).toEqual({ version: 0 });
+    await rowMenu(page, me.name);
+    await page.getByRole('menuitem', { name: 'Deactivate' }).click();
+    await dialog(page).getByRole('button', { name: 'Deactivate user' }).click();
+    await expect(dialog(page)).toContainText('You cannot deactivate your own account');
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+    await rowMenu(page, 'Barbara Liskov');
+    await page.getByRole('menuitem', { name: 'Activate' }).click();
+    await dialog(page).getByRole('button', { name: 'Activate user' }).click();
+    await toast(page, 'Barbara Liskov was activated.');
+  });
+
+  test('the last active administrator cannot be deactivated', async ({ page, api }) => {
+    api.admin.users.find((u) => u.id === 2)!.active = false;
     await openAdmin(page, api, '/admin/users');
-    await page.getByLabel('Select Elena Petrova').check();
-    await page.getByLabel('Select Aisha Rahman').check();
-    await expect(page.getByText('2 selected')).toBeVisible();
-    await page.getByRole('button', { name: 'Suspend selected' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Suspend selected' }).click();
-    await toast(page, '2 users suspended.');
-    await expect(page.getByText('2 selected')).toBeHidden();
-    await search(page, 'aisha');
-    await expect(rows(page).first()).toContainText('Suspended');
+    await rowMenu(page, 'Ada Lovelace');
+    await page.getByRole('menuitem', { name: 'Deactivate' }).click();
+    await dialog(page).getByRole('button', { name: 'Deactivate user' }).click();
+    await expect(dialog(page)).toContainText('last active administrator');
   });
 
-  test('error state offers retry', async ({ page, api }) => {
-    await signIn(page, api, newAdmin('users-err'));
-    await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
+  test('a stale deactivate refreshes the version so confirming again works', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    await rowMenu(page, 'Alan Turing');
+    await page.getByRole('menuitem', { name: 'Deactivate' }).click();
+    api.admin.bump('users', 5);
+    await dialog(page).getByRole('button', { name: 'Deactivate user' }).click();
+    await expect(dialog(page)).toContainText('changed by someone else');
+    await dialog(page).getByRole('button', { name: 'Deactivate user' }).click();
+    await toast(page, 'Alan Turing was deactivated.');
+    expect(api.admin.last('POST', '/api/admin/users/5/deactivate')!.body).toEqual({ version: 1 });
+  });
+
+  test('resetting a password validates it, sends only the password and says it is never shown again', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    await rowMenu(page, 'Margaret Hamilton');
+    await page.getByRole('menuitem', { name: 'Reset password' }).click();
+    await expect(dialog(page)).toContainText('never shown again');
+    await dialog(page).getByRole('button', { name: 'Reset password' }).click();
+    await expect(dialog(page).getByText('Use at least 8 characters.')).toBeVisible();
+    expect(api.admin.count('POST', '/api/admin/users/4/reset-password')).toBe(0);
+    await dialog(page).getByLabel('New password').fill('brand-new-pass');
+    await dialog(page).getByRole('button', { name: 'Reset password' }).click();
+    await toast(page, /Password reset for Margaret Hamilton/);
+    expect(api.admin.last('POST', '/api/admin/users/4/reset-password')!.body).toEqual({ password: 'brand-new-pass' });
+  });
+
+  test('revoking sessions is confirmed and sends no body fields', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    await rowMenu(page, 'Alan Turing');
+    await page.getByRole('menuitem', { name: 'Revoke sessions' }).click();
+    await dialog(page).getByRole('button', { name: 'Revoke sessions' }).click();
+    await toast(page, 'Sessions of Alan Turing were revoked.');
+    expect(api.admin.count('POST', '/api/admin/users/5/revoke-sessions')).toBe(1);
+  });
+
+  test('rows with the same display name have distinct accessible action names (the email tells them apart)', async ({ page, api }) => {
+    api.admin.addUser('Sam Twin', 'EMPLOYEE', 'sam.one@example.test');
+    api.admin.addUser('Sam Twin', 'EMPLOYEE', 'sam.two@example.test');
+    await openAdmin(page, api, '/admin/users');
+    const names = await page.getByRole('button', { name: /^Actions for Sam Twin/ }).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+    expect(names).toEqual(['Actions for Sam Twin (sam.one@example.test)', 'Actions for Sam Twin (sam.two@example.test)']);
+    expect(new Set(names).size).toBe(2);
+    await page.getByRole('button', { name: 'Actions for Sam Twin (sam.two@example.test)' }).click();
+    await page.getByRole('menuitem', { name: 'Edit details' }).click();
+    await expect(dialog(page).getByLabel('Email address')).toHaveValue('sam.two@example.test');
+    await settle(page);
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('there is no delete action, and the page offers no bulk or department features that the API lacks', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    await rowMenu(page, 'Alan Turing');
+    await expect(page.getByRole('menuitem', { name: /delete/i })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('combobox', { name: /department/i })).toHaveCount(0);
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+    expect(api.admin.requests.filter((r) => r.method === 'DELETE')).toEqual([]);
+  });
+
+  test('loading, error and empty states', async ({ page, api }) => {
+    api.admin.failures.push({ match: 'GET /api/admin/users', status: 500, code: 'INTERNAL_ERROR', detail: 'db exploded', times: 1 });
+    await signIn(page, api, newAdmin('states'));
     await page.goto('/admin/users');
-    await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' })).toBeVisible();
-    await page.evaluate(() => localStorage.removeItem('itsm_admin_simulate_error'));
+    await expect(page.getByRole('alert').filter({ hasText: 'We couldn’t load this.' }).first()).toBeVisible();
+    await expect(page.getByText('db exploded')).toHaveCount(0);
     await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(rows(page)).toHaveCount(8);
-  });
-});
-
-test.describe('admin: technicians', () => {
-  test('lists profiles with workload and filters by skill, availability and team', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/technicians');
-    await expect(rows(page)).toHaveCount(6);
-    await expect(page.getByTestId('pagination-summary')).toHaveText('Showing 1–6 of 6 technicians');
-    await page.getByRole('combobox', { name: 'Filter by skill' }).click();
-    await page.getByRole('option', { name: 'Cloud' }).click();
-    await expect(rows(page)).toHaveCount(2);
-    await page.getByRole('combobox', { name: 'Filter by availability' }).click();
-    await page.getByRole('option', { name: 'Off shift' }).click();
-    await expect(rows(page)).toHaveCount(1);
-    await expect(rows(page).first()).toContainText('Sara Lindqvist');
-    await page.getByRole('combobox', { name: 'Filter by team' }).click();
-    await page.getByRole('option', { name: 'Security' }).click();
-    await expect(page.getByTestId('empty-state')).toBeVisible();
-    await page.getByRole('button', { name: 'Clear filters' }).first().click();
-    await expect(rows(page)).toHaveCount(6);
-    await search(page, 'networking');
-    await expect(rows(page)).toHaveCount(1);
-  });
-
-  test('edit validates and persists skills and workload', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/technicians');
-    await rowMenu(page, 'Kofi Mensah');
-    await page.getByRole('menuitem', { name: 'Edit profile' }).click();
-    const dlg = page.getByRole('dialog');
-    await dlg.getByRole('button', { name: 'macOS' }).click();
-    await dlg.getByRole('button', { name: 'Hardware' }).click();
-    await dlg.getByRole('button', { name: 'Audio/Visual' }).click();
-    await dlg.getByRole('button', { name: 'Save changes' }).click();
-    await expect(dlg.getByText('Select at least one skill')).toBeVisible();
-
-    await dlg.getByRole('button', { name: 'Security' }).click();
-    await dlg.getByLabel('Maximum workload').fill('0');
-    await dlg.getByRole('button', { name: 'Save changes' }).click();
-    await expect(dlg.getByText('whole number from 1 to 20')).toBeVisible();
-    await dlg.getByLabel('Maximum workload').fill('1');
-    await dlg.getByRole('button', { name: 'Save changes' }).click();
-    await expect(dlg.getByRole('alert')).toContainText('cannot be below the current workload');
-
-    await dlg.getByLabel('Maximum workload').fill('10');
-    await dlg.getByRole('button', { name: 'Save changes' }).click();
-    await toast(page, 'Kofi Mensah’s profile was updated.');
+    await expect(rows(page).first()).toBeVisible();
+    api.admin.users = [];
     await page.reload();
-    await search(page, 'kofi');
-    await expect(rows(page).first()).toContainText('Security');
-    await expect(rows(page).first()).toContainText('2 / 10');
+    await expect(page.getByText('No users yet')).toBeVisible();
   });
 
-  test('quick availability change and workload sort', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/technicians');
-    await search(page, 'tom');
-    await rowMenu(page, 'Tomás Herrera');
-    await page.getByRole('menuitem', { name: 'Available' }).click();
-    await toast(page, 'Tomás Herrera is now available.');
-    await expect(rows(page).first()).toContainText('Available');
-    await page.getByRole('searchbox').fill('');
-    await page.getByRole('button', { name: 'Workload' }).click();
-    await expect(page.getByRole('columnheader', { name: 'Workload' })).toHaveAttribute('aria-sort', 'descending');
-    await expect(rows(page).first()).toContainText('Tomás Herrera'); // 6/6 = 100%
+  test('a 403 from the server replaces the data with a permission message and no retry loop', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    await expect(rows(page).first()).toBeVisible();
+    api.admin.failures.push({ match: 'GET /api/admin/users', status: 403, code: 'FORBIDDEN', detail: 'internal detail', times: 1 });
+    await search(page, 'ada');
+    await expect(page.getByRole('alert').filter({ hasText: 'You don’t have permission to do this.' }).first()).toBeVisible();
+    await expect(page.getByText('internal detail')).toHaveCount(0);
   });
 
-  test('remove profile confirms, then the account can be given a profile again', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/technicians');
-    await search(page, 'rahul');
-    await rowMenu(page, 'Rahul Verma');
-    await page.getByRole('menuitem', { name: 'Remove profile' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Remove profile' }).click();
-    await toast(page, /profile was removed/);
-    await expect(page.getByTestId('empty-state')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Add profile' }).first().click();
-    const dlg = page.getByRole('dialog');
-    await dlg.getByRole('button', { name: 'Add profile' }).click();
-    await expect(dlg.getByText('Choose the technician account')).toBeVisible();
-    await dlg.getByLabel('Technician account').click();
-    await page.getByRole('option', { name: /Rahul Verma/ }).click();
-    await dlg.getByRole('button', { name: 'Windows' }).click();
-    await dlg.getByRole('button', { name: 'Add profile' }).click();
-    await toast(page, 'Profile added for Rahul Verma.');
-    await expect(rows(page).first()).toContainText('Windows');
+  test('a loading skeleton shows while the list is being fetched', async ({ page, api }) => {
+    await signIn(page, api, newAdmin('loading'));
+    await page.route('**/api/admin/users?*', async (route) => { await new Promise((r) => setTimeout(r, 600)); await route.fallback(); });
+    await page.goto('/admin/users');
+    await expect(page.getByRole('status', { name: 'Loading users' })).toBeVisible();
+    await expect(rows(page).first()).toBeVisible();
   });
 
-  test('add profile with no candidates points to Users; a new technician user gets a profile automatically', async ({ page, api }) => {
-    await openAdmin(page, api, '/admin/technicians');
-    await page.getByRole('button', { name: 'Add profile' }).first().click();
-    await expect(page.getByRole('dialog')).toContainText('Every technician account already has a profile');
-    await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).first().click();
-
-    await page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'Users' }).click();
-    await page.getByRole('button', { name: 'Add user' }).first().click();
-    const dlg = page.getByRole('dialog');
-    await dlg.getByLabel('Full name').fill('Nora Technician');
-    await dlg.getByLabel('Email address').fill('nora.tech@campus.example');
-    await dlg.getByLabel('Role').click();
-    await page.getByRole('option', { name: 'Technician' }).click();
-    await dlg.getByLabel('Department').click();
-    await page.getByRole('option', { name: 'Information Technology' }).click();
-    await dlg.getByRole('button', { name: 'Add user' }).click();
-    await toast(page, 'Nora Technician was invited.');
-
-    await page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'Technicians' }).click();
-    await expect(page.getByRole('heading', { name: 'Technicians', level: 1 })).toBeVisible();
-    await search(page, 'nora');
-    await expect(rows(page)).toHaveCount(1);
-    await expect(rows(page).first()).toContainText('None set');
-  });
-
-  test('error state offers retry', async ({ page, api }) => {
-    await signIn(page, api, newAdmin('tech-err'));
-    await page.evaluate(() => localStorage.setItem('itsm_admin_simulate_error', '1'));
-    await page.goto('/admin/technicians');
-    await expect(page.getByRole('alert').filter({ hasText: 'directory service is unavailable' })).toBeVisible();
-    await page.evaluate(() => localStorage.removeItem('itsm_admin_simulate_error'));
-    await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(rows(page)).toHaveCount(6);
+  test('an expired session (401) mid-use clears the token and returns to sign-in', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin/users');
+    api.admin.failures.push({ match: 'GET /api/admin/users', status: 401, code: 'UNAUTHENTICATED', detail: 'expired', times: 1 });
+    await search(page, 'ada');
+    await page.waitForURL(/\/\?redirect=/);
+    expect(await page.evaluate(() => localStorage.getItem('it_sm_token'))).toBeNull();
   });
 });
+
 
 test.describe('admin: quality', () => {
-  for (const path of ['/admin', '/admin/users', '/admin/technicians']) {
+  const pages: [string, string][] = [
+    ['/admin', 'Key figures'], ['/admin/users', ''], ['/admin/technicians', ''], ['/admin/categories', ''], ['/admin/services', ''], ['/admin/sla-policies', ''], ['/admin/assignment-settings', 'Current configuration'],
+  ];
+  for (const [path, region] of pages) {
     test(`${path} has no axe violations and no console errors`, async ({ page, api }) => {
       await signIn(page, api, newAdmin('axe'));
       const errors = trackErrors(page);
       await page.goto(path);
-      if (path !== '/admin') await expect(rows(page).first()).toBeVisible();
-      else await expect(page.getByRole('region', { name: 'Key figures' })).toBeVisible();
+      if (region === 'Key figures') await expect(page.getByRole('region', { name: 'Key figures' })).toBeVisible();
+      else if (region) await expect(page.getByText(region).first()).toBeVisible();
+      else await expect(rows(page).first()).toBeVisible();
       await settle(page);
       expect(await axeViolations(page)).toEqual([]);
       expect(errors).toEqual([]);
     });
   }
 
-  test('dialog passes axe', async ({ page, api }) => {
+  test('the add-user dialog passes axe', async ({ page, api }) => {
     await openAdmin(page, api, '/admin/users');
     await page.getByRole('button', { name: 'Add user' }).first().click();
     await settle(page);
@@ -382,19 +385,24 @@ test.describe('admin: quality', () => {
 test.describe('admin: responsive', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-  for (const path of ['/admin', '/admin/users', '/admin/technicians']) {
-    test(`${path} has no horizontal page overflow and the nav opens as a drawer`, async ({ page, api }) => {
+  for (const path of ['/admin', '/admin/users', '/admin/technicians', '/admin/categories', '/admin/services', '/admin/sla-policies', '/admin/assignment-settings']) {
+    test(`${path} has no horizontal page overflow`, async ({ page, api }) => {
       await signIn(page, api, newAdmin('mobile'));
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       await page.waitForLoadState('networkidle');
       await expectNoHorizontalOverflow(page);
-      await page.getByRole('button', { name: 'Toggle navigation' }).click();
-      const nav = page.getByRole('dialog').getByRole('navigation', { name: 'Admin sections' });
-      await expect(nav).toBeVisible();
-      await nav.getByRole('link', { name: 'Technicians' }).click();
-      await page.waitForURL('**/admin/technicians');
-      await expect(page.getByRole('dialog')).toBeHidden();
     });
   }
+
+  test('the nav opens as a drawer', async ({ page, api }) => {
+    await signIn(page, api, newAdmin('drawer'));
+    await page.goto('/admin');
+    await page.getByRole('button', { name: 'Toggle navigation' }).click();
+    const nav = page.getByRole('dialog').getByRole('navigation', { name: 'Admin sections' });
+    await expect(nav).toBeVisible();
+    await nav.getByRole('link', { name: 'Technicians' }).click();
+    await page.waitForURL('**/admin/technicians');
+    await expect(page.getByRole('dialog')).toBeHidden();
+  });
 });

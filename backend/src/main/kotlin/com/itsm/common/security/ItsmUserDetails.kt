@@ -9,14 +9,16 @@ import org.springframework.security.core.userdetails.UserDetails
 /**
  * Principal carrying the user id and role, so downstream code never hits the DB for identity.
  *
- * Compatible with the existing auth flow: `username` is still the email and the token
- * is still keyed by email. Authorities = `ROLE_<role>` plus one authority per [Permission].
+ * `username` is the (normalised) email; the JWT subject is the user id. Authorities = `ROLE_<role>` plus one authority per [Permission].
  */
 class ItsmUserDetails(
     val id: Long,
     val email: String,
     passwordHash: String,
-    val role: Role
+    val role: Role,
+    val active: Boolean = true,
+    /** The `users.token_version` this principal was loaded with; a JWT is valid only if it carries the same value. */
+    val tokenVersion: Int = 0
 ) : UserDetails, CredentialsContainer {
 
     private var passwordHash: String? = passwordHash
@@ -32,7 +34,7 @@ class ItsmUserDetails(
     override fun isAccountNonExpired() = true
     override fun isAccountNonLocked() = true      // lockout arrives with auth hardening
     override fun isCredentialsNonExpired() = true
-    override fun isEnabled() = true               // `active` flag arrives with auth hardening
+    override fun isEnabled() = active
     override fun eraseCredentials() { passwordHash = null }
 
     override fun equals(other: Any?) = other is ItsmUserDetails && other.email == email

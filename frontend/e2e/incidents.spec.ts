@@ -43,6 +43,38 @@ test.describe('incidents: navigation and access', () => {
   });
 });
 
+test.describe('incidents: paging', () => {
+  test('a long list is paged, and searching starts again at page 1', async ({ page, api }) => {
+    const user = newUser('inc-paging', 'EMPLOYEE');
+    await signIn(page, api, user);
+    await page.goto('/incidents');
+    await page.getByRole('heading', { level: 1 }).first().waitFor();
+    await expect(tab(page, /^Open \(4\)/)).toBeVisible(); // the demo data is created on the first load
+    // Grow this account's demo data to 44 open incidents (the seed has 4).
+    await page.evaluate((email) => {
+      const key = `itsm_p3_v1_world_${email.toLowerCase()}`;
+      const w = JSON.parse(localStorage.getItem(key)!);
+      const template = w.incidents.find((i: { reporterEmail: string; state: string }) => i.reporterEmail.toLowerCase() === email.toLowerCase() && !['VERIFIED', 'CLOSED'].includes(i.state));
+      for (let n = 0; n < 40; n++) w.incidents.push({ ...template, id: `INC9${String(n).padStart(3, '0')}`, title: `Bulk ${n}` });
+      localStorage.setItem(key, JSON.stringify(w));
+    }, user.email);
+    await page.reload();
+
+    const summary = page.getByTestId('pagination-summary');
+    await expect(summary).toHaveText('Showing 1–20 of 44 incidents');
+    await expect(page.getByRole('button', { name: /Previous/ })).toBeDisabled();
+    await page.getByRole('button', { name: /Next/ }).click();
+    await expect(summary).toHaveText('Showing 21–40 of 44 incidents');
+    await page.getByRole('button', { name: /Next/ }).click();
+    await expect(summary).toHaveText('Showing 41–44 of 44 incidents');
+    await expect(page.getByRole('button', { name: /Next/ })).toBeDisabled();
+
+    await page.getByLabel('Search incidents').fill('Bulk 7');
+    await expect(row(page, 'INC9007')).toBeVisible(); // back on page 1 of the matches, and one page is no pager
+    await expect(summary).toHaveCount(0);
+  });
+});
+
 test.describe('incidents: employee (reporter)', () => {
   test('sees plain-language statuses and what needs them', async ({ page, api }) => {
     await open(page, api, 'EMPLOYEE');

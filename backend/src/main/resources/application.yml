@@ -31,8 +31,27 @@ spring:
 
 app:
   jwt:
-    secret: your-256-bit-secret-key-replace-in-production-minimum-32-chars
-    expiration: 86400000  # 24 hours in ms
+    # No default on purpose: startup fails unless JWT_SECRET holds >= 32 bytes of real secret material.
+    secret: ${JWT_SECRET:}
+    expiration: ${JWT_EXPIRATION:86400000}  # 24 hours in ms
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  auth:
+    cookie:
+      name: ${AUTH_COOKIE_NAME:itsm_session}
+      # Secure by default. `false` is only accepted with the dev/local Spring profile (startup fails otherwise): plain-HTTP local use.
+      secure: ${AUTH_COOKIE_SECURE:true}
+  registration:
+    # Public self-registration. OFF by default: without email verification it cannot be made enumeration-proof.
+    # Enable it explicitly (REGISTRATION_ENABLED=true) for development or a closed network.
+    enabled: ${REGISTRATION_ENABLED:false}
+  security:
+    # Proxies you operate in front of this service. 0 = use the TCP peer and ignore X-Forwarded-For.
+    trusted-proxy-hops: ${TRUSTED_PROXY_HOPS:0}
+    # Exact IPs or CIDR blocks of those proxies (required when hops > 0). See docs/architecture/security.md.
+    trusted-proxies: ${TRUSTED_PROXIES:}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
 
 management:
   endpoints:
@@ -41,7 +60,22 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
+      roles: ADMIN
+      # Kubernetes probes use /actuator/health/liveness and /actuator/health/readiness (explicit, not left to environment detection).
+      # `/actuator/health` itself still aggregates EVERY indicator, including Redis and RabbitMQ.
+      probes:
+        enabled: true
+      group:
+        # Liveness = "is the process itself still able to run": livenessState only. A dependency outage must never restart the pod
+        # (a restart fixes nothing and wipes the in-memory login throttles).
+        liveness:
+          include: livenessState
+        # Readiness = "can this instance serve the P1 business APIs": the application is accepting traffic AND PostgreSQL answers.
+        # Redis and RabbitMQ are deliberately NOT here: nothing in P1 uses them (no cache or message call exists). A module that
+        # starts to depend on one of them must add its indicator (`redis`, `rabbit`) to this list in the same change.
+        readiness:
+          include: readinessState,db
   metrics:
     export:
       prometheus:
