@@ -108,6 +108,7 @@ jobs:
               'com.itsm.auth.TrustedProxyThrottleIntegrationTest': 1,
               'com.itsm.auth.WebSessionIntegrationTest': 1,
               'com.itsm.auth.WebSessionDevProfileIntegrationTest': 1,
+              'com.itsm.auth.MalformedOriginIntegrationTest': 1,
               'com.itsm.audit.IncidentAuditProviderUnavailableIntegrationTest': 1,
               'com.itsm.admin.category.CategoryAdminIntegrationTest': 1,
               'com.itsm.admin.itservice.ItServiceAdminIntegrationTest': 1,
