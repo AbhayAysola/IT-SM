@@ -107,7 +107,14 @@ export default function IncidentDetailPage() {
     <>
       {back}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{i.title}</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-semibold tracking-tight">{i.title}</h1>
+          {(i.state === 'NEW' || i.state === 'CLASSIFIED') && (actor.role === 'ADMIN' || i.reporterEmail === actor.email) && (
+            <Link href={`/incidents/${i.id}/edit`} className="shrink-0">
+              <Button variant="outline" size="sm">Edit</Button>
+            </Link>
+          )}
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           <span className="font-mono text-xs text-muted-foreground">{i.id}</span>
           <PriorityBadge priority={i.priority} />

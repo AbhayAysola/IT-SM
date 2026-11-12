@@ -57,7 +57,9 @@ class IncidentApiIntegrationTest {
 
     private fun incident(reporter: Long): String {
         val id = "INC" + UUID.randomUUID().toString().take(8)
-        jdbc.update("INSERT INTO incidents (id, title, description, state, reporter_id, category_id, service_id, priority) VALUES (?, 'VPN down', 'Cannot connect', 'CLASSIFIED', ?, 7, 3, 'P2')", id, reporter)
+        // V21 added FK from incidents.service_id → it_services; seed a service so the constraint is satisfied.
+        val svcId = jdbc.queryForObject("INSERT INTO it_services (name, business_criticality) VALUES (?, 3) RETURNING id", Long::class.java, "svc-$id")!!
+        jdbc.update("INSERT INTO incidents (id, title, description, state, reporter_id, category_id, service_id, priority) VALUES (?, 'VPN down', 'Cannot connect', 'CLASSIFIED', ?, 7, ?, 'P2')", id, reporter, svcId)
         return id
     }
 
