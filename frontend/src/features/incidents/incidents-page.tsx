@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
-import { Inbox } from 'lucide-react';
+import { ArrowUpDown, Inbox } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -31,6 +31,23 @@ const EMPTY: Record<TabId, string> = {
   UNASSIGNED: 'Every incident has a technician.', OPEN: 'You have no open incidents.',
 };
 
+const PRIO_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;
+
+/** Wraps the first case-insensitive match of `query` in a <mark>. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-sm bg-yellow-200 px-0.5 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100">{text.slice(idx, idx + q.length)}</mark>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
 export default function IncidentsPage() {
   const actor = useActor();
   const toast = useToast();
@@ -42,11 +59,13 @@ export default function IncidentsPage() {
   // The row is kept after closing so the dialog stays mounted (Radix returns focus to the opener on close).
   const [assigning, setAssigning] = useState<IncidentRow | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [sortPriority, setSortPriority] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
   const debounced = useDebounced(search);
 
   const { data, loading, error, reload } = useResource(() => incidentService.list(actor, tab, debounced, page), [actor.email, tab, debounced, page]);
-  const items = data?.items ?? [];
+  const rawItems = data?.items ?? [];
+  const items = sortPriority ? [...rawItems].sort((a, b) => PRIO_ORDER[a.priority] - PRIO_ORDER[b.priority]) : rawItems;
   const copy = COPY[actor.role];
 
   return (
@@ -71,9 +90,22 @@ export default function IncidentsPage() {
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="relative w-full sm:w-72">
-            <Label htmlFor="incident-search" className="sr-only">Search incidents</Label>
-            <Input id="incident-search" type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title or person" />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={sortPriority ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => setSortPriority((v) => !v)}
+              aria-pressed={sortPriority}
+              title="Sort by priority (P1 first)"
+            >
+              <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
+              Priority
+            </Button>
+            <div className="relative w-full sm:w-72">
+              <Label htmlFor="incident-search" className="sr-only">Search incidents</Label>
+              <Input id="incident-search" type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title or person" />
+            </div>
           </div>
         </div>
 
@@ -104,17 +136,25 @@ export default function IncidentsPage() {
                       {items.map((i) => (
                         <TableRow key={i.id}>
                           <TableCell className="min-w-[240px]">
-                            <Link href={`/incidents/${i.id}`} className="font-medium text-primary underline-offset-4 hover:underline">{i.title}</Link>
+                            <Link href={`/incidents/${i.id}`} className="font-medium text-primary underline-offset-4 hover:underline">
+                              <Highlight text={i.title} query={debounced} />
+                            </Link>
                             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                              <span className="font-mono">{i.id}</span>
+                              <span className="font-mono"><Highlight text={i.id} query={debounced} /></span>
                               <span>{i.category}</span>
                               {i.needsAttention && <Badge variant="warning">Needs you</Badge>}
                             </div>
                           </TableCell>
                           <TableCell><PriorityBadge priority={i.priority} /></TableCell>
                           <TableCell><StateBadge state={i.state} audience={audience} /></TableCell>
-                          <TableCell className="whitespace-nowrap">{audience === 'staff' ? i.reporterName : i.assigneeName ?? 'Not assigned yet'}</TableCell>
-                          {audience === 'staff' && actor.role === 'ADMIN' && <TableCell className="whitespace-nowrap">{i.assigneeName ?? 'Unassigned'}</TableCell>}
+                          <TableCell className="whitespace-nowrap">
+                            <Highlight text={audience === 'staff' ? i.reporterName : (i.assigneeName ?? 'Not assigned yet')} query={debounced} />
+                          </TableCell>
+                          {audience === 'staff' && actor.role === 'ADMIN' && (
+                            <TableCell className="whitespace-nowrap">
+                              <Highlight text={i.assigneeName ?? 'Unassigned'} query={debounced} />
+                            </TableCell>
+                          )}
                           <TableCell className="whitespace-nowrap text-muted-foreground">{formatWhen(i.updatedAt)}</TableCell>
                           {actor.role === 'ADMIN' && (
                             <TableCell className="text-right">
