@@ -1,0 +1,134 @@
+name: Real stack
+
+# The REAL frontend against the REAL backend and PostgreSQL 16: no mocks, no fake API. It complements (and does not replace) the
+# fast hermetic suite in frontend.yml and the backend suite in backend.yml. See frontend/e2e-real/README.md.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/real-stack.yml'
+  push:
+    branches: [main, feat/p1-admin-backend]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-stack:
+    name: Frontend ↔ backend on PostgreSQL 16
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The suite needs the web app on :3000 and the API on :8080: those are the compiled-in API URL and the backend's default
+      # CORS allow-list, so nothing about CORS, CSRF or cookies is relaxed.
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # matches frontend/Dockerfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Everything secret is generated here, per run, masked, and kept in the job environment only. Nothing is committed, and
+      # nothing is written to a file. The database is created with its own random password for the same reason.
+      - name: Generate ephemeral credentials
+        run: |
+          set -euo pipefail
+          gen() { openssl rand -hex "$1"; }
+          DB_PASSWORD="$(gen 16)"
+          JWT_SECRET_VALUE="$(openssl rand -base64 48 | tr -d '\n')"
+          ADMIN_PASSWORD="Aa1!$(gen 9)"
+          ADMIN_EMAIL="ci-admin-$(gen 3)@example.test"
+          for v in "$DB_PASSWORD" "$JWT_SECRET_VALUE" "$ADMIN_PASSWORD"; do echo "::add-mask::$v"; done
+          {
+            echo "SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/itsm"
+            echo "SPRING_DATASOURCE_USERNAME=itsm"
+            echo "SPRING_DATASOURCE_PASSWORD=$DB_PASSWORD"
+            echo "JWT_SECRET=$JWT_SECRET_VALUE"
+            echo "E2E_ADMIN_EMAIL=$ADMIN_EMAIL"
+            echo "E2E_ADMIN_PASSWORD=$ADMIN_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL 16
+        run: |
+          set -euo pipefail
+          docker run -d --name real-stack-pg -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_DB=itsm -e POSTGRES_USER=itsm -e POSTGRES_PASSWORD="$SPRING_DATASOURCE_PASSWORD" postgres:16
+          for _ in $(seq 1 30); do
+            docker exec real-stack-pg pg_isready -U itsm -d itsm >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready"; exit 1
+
+      - name: Build the backend (JDK 17)
+        working-directory: backend
+        run: ./gradlew bootJar -x test --no-daemon --stacktrace
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build the frontend (production build)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright Chromium and system dependencies
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # Existing command-mode bootstrap creates the first ADMIN (Flyway migrates the empty database first), then the jar is started.
+      # Only the IP-wide throttles are raised (see stack.sh); the per-email login limit and all security rules are production's.
+      - name: Bootstrap the first admin and start the backend
+        run: frontend/e2e-real/stack.sh backend-up
+
+      # Starts the real `next start` on :3000, provisions EMPLOYEE/TECHNICIAN personas through the real admin API (global-setup),
+      # and runs every spec. No traces, video or screenshots (they would record cookies and passwords).
+      - name: Real-stack end-to-end tests
+        id: suite
+        working-directory: frontend
+        run: npm run test:real-stack
+
+      # Fails on any skipped, flaky, failed, unexpected or missing test, and on an unregistered spec or a skip in the source.
+      - name: Verify every required test ran and passed
+        id: check
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run check:real-stack
+
+      - name: Stop the backend
+        if: ${{ always() }}
+        run: frontend/e2e-real/stack.sh backend-down
+
+      # Before ANY upload. On a hit it names the rule and file (never the text) and deletes the report directory.
+      - name: Scan diagnostics for secrets
+        id: scan
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run scan:real-stack
+
+      - name: Upload diagnostics (failure only, scanned clean)
+        if: ${{ failure() && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-stack-diagnostics
+          path: frontend/real-stack-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Remove the database container
+        if: ${{ always() }}
+        run: docker rm -fv real-stack-pg || true

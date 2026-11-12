@@ -30,6 +30,10 @@ In live mode `api.seed` **skips** any test that needs a role other than `USER`: 
 admins yet, and the suite will not fake one through public registration. So in live mode the admin specs report
 as skipped, not passed.
 
+> **Real backend:** the admin and persona flows are tested against the real backend and PostgreSQL by a separate suite,
+> `e2e-real/` (see `e2e-real/README.md`, run in CI by `.github/workflows/real-stack.yml`). It provisions its own admin through the
+> product's bootstrap command and the real admin API. This hermetic suite stays the fast, independent layer.
+
 ## Two modes
 
 | Mode | Command | API |
