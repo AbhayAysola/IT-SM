@@ -94,14 +94,18 @@ class IncidentFlowIntegrationTest {
     }
 
     private fun incident(
-        reporter: Long, state: S = S.CLASSIFIED, assignee: Long? = null, category: Long? = 7, service: Long? = 3, priority: String? = "P3",
+        reporter: Long, state: S = S.CLASSIFIED, assignee: Long? = null, category: Long? = 7, service: Long? = null, priority: String? = "P3",
         assignedAt: Instant? = assignee?.let { Instant.now() }, resolvedAt: Instant? = null
     ): String {
         val id = "INC" + UUID.randomUUID().toString().take(8)
+        // V21 added FK from incidents.service_id → it_services; non-NEW states require a real service row.
+        val svcId = service ?: if (state != S.NEW) {
+            jdbc.queryForObject("INSERT INTO it_services (name, business_criticality) VALUES (?, 3) RETURNING id", Long::class.java, "svc-$id")!!
+        } else null
         jdbc.update(
             "INSERT INTO incidents (id, title, description, state, reporter_id, assignee_id, category_id, service_id, priority, assigned_at, resolved_at) " +
                 "VALUES (?, 'Printer is down', 'Nothing prints', ?, ?, ?, ?, ?, ?, ?, ?)",
-            id, state.name, reporter, assignee, category, service, priority,
+            id, state.name, reporter, assignee, category, svcId, priority,
             assignedAt?.let(java.sql.Timestamp::from), resolvedAt?.let(java.sql.Timestamp::from)
         )
         return id
