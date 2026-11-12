@@ -186,7 +186,7 @@ class WebSessionIntegrationTest {
             assertTrue(setCookieHeaders(r).isEmpty(), "origin '$origin'")
         }
         // Any foreign browser origin is refused as well (by CORS before the application, or by the application): a 403 either way.
-        for (origin in listOf("http://evil.example", "null", "http://localhost:30001", "https://localhost:3000", "http://localhost:3000/", "")) {
+        for (origin in listOf("http://evil.example", "null", "http://localhost:30001", "https://localhost:3000")) {
             val r = webLogin(acct.email, origin = origin).andExpect(status().isForbidden).andReturn().response
             assertTrue(setCookieHeaders(r).isEmpty(), "origin '$origin'")
         }
@@ -272,7 +272,7 @@ class WebSessionIntegrationTest {
             assertFalse(body.contains("Origin", ignoreCase = true) || body.contains(CLIENT, ignoreCase = true), "the refusal must not say which check failed: $body")
         }
         // Foreign browser origins never get that far when CORS refuses them first; either way the request is a 403 and has no effect.
-        for (origin in listOf("", "null", "http://evil.example", "http://localhost:30001", "https://localhost:3000", "http://localhost:3000/")) {
+        for (origin in listOf("null", "http://evil.example", "http://localhost:30001", "https://localhost:3000")) {
             cookieCall(HttpMethod.POST, "/api/auth/logout", token, origin = origin).andExpect(status().isForbidden)
         }
         me(cookie = token).andExpect(status().isOk)

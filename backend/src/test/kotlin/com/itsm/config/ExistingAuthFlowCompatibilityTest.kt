@@ -9,6 +9,7 @@ import com.itsm.auth.ratelimit.AuthAttemptLimiter
 import com.itsm.auth.ratelimit.AuthRateLimitSettings
 import com.itsm.auth.ratelimit.RegisterRateLimitFilter
 import com.itsm.auth.ratelimit.ThrottleEvents
+import com.itsm.auth.web.OriginSyntaxFilter
 import com.itsm.auth.web.WebSessionPolicy
 import com.itsm.common.error.AuthenticationFailed
 import com.itsm.common.error.ErrorCode
@@ -46,7 +47,7 @@ class ExistingAuthFlowCompatibilityTest {
 
     private val repo: UserRepository = mock(UserRepository::class.java)
     private val config = SecurityConfig(
-        mock(JwtAuthFilter::class.java), mock(RegisterRateLimitFilter::class.java), repo,
+        mock(JwtAuthFilter::class.java), mock(RegisterRateLimitFilter::class.java), OriginSyntaxFilter(ObjectMapper()), repo,
         JsonAuthenticationEntryPoint(ObjectMapper()), JsonAccessDeniedHandler(ObjectMapper())
     )
     private val encoder = config.passwordEncoder()

@@ -190,6 +190,14 @@ foreign origins, the application-level Origin check is a second, independent lay
 is not listed, and requests with no Origin at all). **`CORS_ALLOWED_ORIGINS` must therefore list the public origin of the web app in every
 deployment**, including a same-origin one behind an ingress (e.g. `https://it-sm.example.com`).
 
+**Malformed `Origin` (B14c).** `OriginSyntaxFilter` is the first filter of the security chain. A request whose `Origin` is not `null` or
+`http(s)://host[:port]` (a DNS name, IPv4 or bracketed IPv6 host, port 1-65535, no path, userinfo, whitespace or second value), or that carries
+more than one `Origin` header, is answered with one generic `400` (`VALIDATION_FAILED`, "Invalid Origin header") before Spring's CORS code, the
+CSRF check, authentication or any controller runs. Reason: Spring's CORS parser throws on values such as `http://localhost:3000.evil.example`
+(a 500 on a header any client can send). The response never echoes the value, the parser message or the allow-list. This is syntax only: whether a
+well-formed origin is allowed is still decided solely by `app.cors.allowed-origins` (a foreign origin remains a 403). Requests without an
+`Origin` (Bearer clients, scripts) are unaffected.
+
 **CORS.** `allowCredentials` is on, origins are the explicit list only (`*` is rejected at startup), allowed headers are
 `Authorization, Content-Type, Accept, X-ITSM-Client`. A browser on any other origin gets no `Access-Control-Allow-*` header and cannot make
 a credentialed call.

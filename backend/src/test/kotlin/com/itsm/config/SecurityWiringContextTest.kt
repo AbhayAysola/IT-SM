@@ -3,6 +3,7 @@ package com.itsm.config
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.itsm.auth.JwtAuthFilter
 import com.itsm.auth.JwtService
+import com.itsm.auth.web.OriginSyntaxFilter
 import com.itsm.common.security.JsonAccessDeniedHandler
 import com.itsm.common.security.JsonAuthenticationEntryPoint
 import com.itsm.user.UserRepository
@@ -30,7 +31,7 @@ class SecurityWiringContextTest {
 
     @Configuration
     @EnableWebMvc   // HttpSecurity.requestMatchers needs the MVC HandlerMappingIntrospector
-    @Import(SecurityConfig::class, AuthRateLimitConfig::class, WebSessionConfig::class, JwtAuthFilter::class, JwtService::class,
+    @Import(SecurityConfig::class, AuthRateLimitConfig::class, WebSessionConfig::class, OriginSyntaxFilter::class, JwtAuthFilter::class, JwtService::class,
         JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
     class Config {
         @Bean fun objectMapper() = ObjectMapper()
