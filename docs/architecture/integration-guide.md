@@ -144,6 +144,12 @@ The interfaces leave a few points open; this is what the implementations do.
 
 All views are immutable copies (no JPA entity crosses the boundary). Calls join your transaction if you have one.
 
+**Transactions.** Calls join your transaction. The documented outcomes of `requireActive` (`ResourceNotFound` /
+`ServiceNotFound` for an unknown id, `InvalidInput` for an inactive one) do **not** mark your transaction rollback-only, so
+you may catch them, carry on and commit (regression test: `CatalogCallerTransactionIntegrationTest`). Any other exception,
+in particular a database or other infrastructure failure, propagates unchanged and **does** doom your transaction as usual;
+do not catch and ignore arbitrary exceptions.
+
 **P2** validates the reporter's choice with `requireActive`, matches ticket text against `listActive()` keywords (two
 active categories never share a keyword, so a keyword hit is unambiguous), and stores `categoryId`/`serviceId` as foreign
 keys. **P4** reads `findById(id).businessCriticality` (1..5) for priority and walks `dependentsOf` for impact.

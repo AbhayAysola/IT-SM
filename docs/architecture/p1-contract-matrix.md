@@ -134,7 +134,9 @@ The area-to-permission table lives in the test itself, independent of the code i
 
 ### P2
 * **Catalogs:** inject `CategoryCatalog` / `ServiceCatalog`. Use `requireActive(id)` for new incidents (404 unknown, 400
-  deactivated) and `findById` to display old ones. See "Category and service catalogs" in the integration guide.
+  deactivated) and `findById` to display old ones. Those 404/400 outcomes do not mark your transaction rollback-only, so you
+  may catch them and continue; any other exception (e.g. a database failure) keeps normal rollback behaviour. See "Category
+  and service catalogs" in the integration guide.
 * **Register `IncidentAccessPolicy`:** provide exactly one bean. Contract: throw `ResourceNotFound` if the incident does not
   exist; otherwise return whether the user may view it. P1 never re-implements it. Until it exists the incident trail is 503.
 * **Audit gate:** the endpoint validates the id shape, then calls your policy, then decides *what* an allowed caller sees
