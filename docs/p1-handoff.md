@@ -86,27 +86,22 @@ there must be re-read against `main`.
 | P4 | Confirm `SlaPolicyProvider.resolve` semantics (422 `MISSING_SLA_CONFIG`, inactive service still resolves), the cross-priority rule, and who owns `unassignedEscalationMinutes` | pending |
 | All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; use by P2/P3/P4 not verified here |
 
-## 8. PR #4 and merging with `main`
+## 8. PR #4 and merging with `main`: integration branch `feat/p1-b18-final-integration`
 
-PR #4 (`feat/p1-admin-backend` into `main`) is `CONFLICTING`. A trial merge of `main` into this branch, done in a throwaway worktree and discarded, shows:
-
-**Textual conflicts (6 files; 5 exist with P1 alone, `frontend/Dockerfile` is added by B16-A):**
-`README.md`, `docs/architecture/foundation.md`, `docs/architecture/integration-guide.md`, `frontend/e2e/README.md` (documentation: keep both sides),
-`frontend/Dockerfile` (keep both: main's IPv4 DNS `ENV NODE_OPTIONS` and P1's `ARG`/`ENV NEXT_PUBLIC_API_URL`), and
-`ApplicationStartupIntegrationTest.kt` (keep P1's stricter version, which also checks Hibernate `validate`).
+PR #4 (`feat/p1-admin-backend` into `main`) is `CONFLICTING`. The merge was done on `feat/p1-b18-final-integration` (local only, not pushed):
+the six textual conflicts are resolved by keeping both sides (docs, `frontend/Dockerfile`, P1's stricter `ApplicationStartupIntegrationTest`).
 No migration collision: `main` has V1, V30, V31; P1 has V1, V10 to V16.
 
-**After the textual resolution the merged backend build fails: 556 tests, 31 failed. No production code is involved; three test-fixture assumptions break:**
+**P1's side is fixed on that branch:** the assignment-settings tests now run against P3's real `RegisteredAssignmentStrategyCatalog`
+(no fake, nothing hidden), the V16 migration test pins Flyway to target 16, the real-stack assignment spec asserts the real catalog and the
+seeded `LOAD_BASED`, and the three workflows also trigger on the integration branch.
 
-| Failing tests | Cause | Fix belongs to |
+**Two P3-owned problems remain. P1 has not changed P3's code (needs P3's agreement):**
+
+| Problem | Evidence | Fix (P3) |
 |---|---|---|
-| `AssignmentSettingsIntegrationTest` (12), `AssignmentSettingsWithoutCatalogIntegrationTest` (3) | P1's tests register their own fake `AssignmentStrategyCatalog` or assume none exists; with P3's real catalog also present there are two beans (`NoUniqueBeanDefinitionException`, HTTP 500) or the catalog is no longer absent | P1 (make the fake `@Primary`; exclude P3's bean for the "absent" tests) |
-| `TechnicianProfilesMigrationIntegrationTest` (1) | asserts `migrationsExecuted == 1` assuming V16 is the last migration; `main` adds V30 and V31 (3 executed) | P1 (pin the Flyway target to 16 or count differently) |
-| `P3PersistenceIntegrationTest` (15) | P3's fixtures insert users with the legacy role `USER`; P1's V15 constraint `chk_users_role` allows only EMPLOYEE, TECHNICIAN, ADMIN | P3 (use `EMPLOYEE`) |
+| `P3PersistenceIntegrationTest` (15 tests) inserts users with the legacy role `USER`, which V15's `chk_users_role` rejects | backend suite on the merged branch: 559 tests, 15 failed, all in this class. With the one fixture line changed to `EMPLOYEE` (temporarily, reverted) the class passes | use `EMPLOYEE` in the fixture (`P3PersistenceIntegrationTest.kt` line 53) |
+| **The frontend does not compile after the merge.** P3's incident workspace (`frontend/src/features/incidents/data/seed.ts`, `services/incident-service.ts`) imports `@/features/admin/data/seed`, `@/features/admin/services/store` and the types `ManagedUser`/`TechnicianProfile`. P1's B8 deleted that mock data layer when it connected the admin area to the real API | `tsc` and `next build` fail on the merged branch; lint passes. No textual conflict, so git did not report it | P3 gives the incident workspace its own mock seed/store (or P1 and P3 agree to restore the old mock files, which would undo part of B8) |
 
-Also expected to need updating after the merge: the real-stack assignment spec asserts the strategy catalog is `ABSENT` (true only without P3), and the
-statements in `integration-guide.md` / `p1-contract-matrix.md` that no P3 code exists.
-
-Recommended path (nothing below has been done): resolve in a dedicated branch from this one (merge `main` in, keep both sides as above, fix the
-four test classes, update the real-stack spec and the two docs), re-run the full backend, fake and real-stack suites there, then update PR #4 or open a replacement.
-The P3 fixture change is a one-line test edit and should be agreed with P3's owner.
+Because the production build fails, the fake and real-stack Playwright suites cannot run on the merged branch until P3 fixes the frontend import.
+They were not run there. Last results before the merge: fake 206/206 and real-stack 64/64 on the B16 branch.

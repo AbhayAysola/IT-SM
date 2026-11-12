@@ -26,7 +26,7 @@ feedback loop. CI runs this one in `.github/workflows/real-stack.yml` ("Real sta
   backend, a persona or the web server is missing.
 * **Exclusions are documented, not skipped.** `manifest.json` lists what is deliberately not in this suite (each with the reason and
   where it *is* covered): accessibility, design-system, responsive, navigation, favicon, the admin-client unit tests, the fake-backed
-  admin specs, the register-per-IP limit, the AVAILABLE/FAILED catalog states and Secure-cookie/TLS behaviour.
+  admin specs, the register-per-IP limit, the ABSENT/FAILED catalog states and Secure-cookie/TLS behaviour.
 * `scripts/check-real-stack-results.mjs` fails the job on any skipped, flaky, failed or missing test, on a spec that is not in the
   manifest, on a manifest entry whose test count changed, and on any `.skip/.fixme/.fail/.only` in the source. It prints
   PASSED / SKIPPED / EXCLUDED separately. **Adding or removing a test means editing `manifest.json`** (deliberately).
