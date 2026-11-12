@@ -180,8 +180,9 @@ class IncidentFlowIntegrationTest {
     @Test fun `similar fixes need a recorded resolution, prefer the same service, then the newest`() {
         val r = user(Role.EMPLOYEE); val t = user(Role.TECHNICIAN)
         // V21 added FKs on category_id and service_id — seed real rows instead of using out-of-range IDs.
-        val uid = UUID.randomUUID().toString().take(8)
-        val category = jdbc.queryForObject("INSERT INTO incident_categories (code, name) VALUES (?, 'Test Cat') RETURNING id", Long::class.java, "TEST-$uid")!!
+        // code must match ^[A-Z][A-Z0-9_]*$ (chk_category_code); name must be unique case-insensitively.
+        val uid = UUID.randomUUID().toString().replace("-", "").take(8).uppercase()
+        val category = jdbc.queryForObject("INSERT INTO incident_categories (code, name) VALUES (?, ?) RETURNING id", Long::class.java, "TEST_$uid", "Test $uid")!!
         val svcSame  = jdbc.queryForObject("INSERT INTO it_services (name, business_criticality) VALUES (?, 3) RETURNING id", Long::class.java, "svc-same-$uid")!!
         val svcOther = jdbc.queryForObject("INSERT INTO it_services (name, business_criticality) VALUES (?, 3) RETURNING id", Long::class.java, "svc-other-$uid")!!
         fun resolved(service: Long, at: Instant, fix: String?): String {
