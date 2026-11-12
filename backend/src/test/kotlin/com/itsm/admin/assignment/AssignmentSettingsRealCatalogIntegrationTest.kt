@@ -5,10 +5,12 @@ import com.itsm.admin.Caller
 import com.itsm.auth.JwtService
 import com.itsm.common.model.Role
 import com.itsm.common.spi.AssignmentSettingsProvider
+import com.itsm.assignment.AssignmentEngine
+import com.itsm.assignment.RegisteredAssignmentStrategyCatalog
 import com.itsm.common.spi.AssignmentStrategyCatalog
 import com.itsm.user.UserRepository
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -34,14 +36,15 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
 /**
- * Assignment settings in the application's REAL current state: P3's [AssignmentStrategyCatalog] bean does not exist
- * yet. The application must start, reads must work, and every write must answer 503 instead of accepting a strategy
- * key nobody can verify. Required to execute in CI.
+ * Assignment settings in the application's REAL state with nothing replaced: P3's `RegisteredAssignmentStrategyCatalog` is
+ * the only catalog bean. The seeded default must be a strategy P3 registers, reads report the catalog as AVAILABLE, and
+ * writes validate against what the engine can run. (The ABSENT and FAILED catalog states are covered in
+ * `StrategyCatalogGatewayTest` and `ProviderFailureSemanticsIntegrationTest`.) Required to execute in CI.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
-class AssignmentSettingsWithoutCatalogIntegrationTest {
+class AssignmentSettingsRealCatalogIntegrationTest {
 
     companion object {
         @Container
@@ -58,6 +61,7 @@ class AssignmentSettingsWithoutCatalogIntegrationTest {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var provider: AssignmentSettingsProvider
     @Autowired lateinit var catalog: ObjectProvider<AssignmentStrategyCatalog>
+    @Autowired lateinit var engine: AssignmentEngine
 
     private lateinit var t: AdminApiTestSupport
     private lateinit var admin: Caller
@@ -65,6 +69,8 @@ class AssignmentSettingsWithoutCatalogIntegrationTest {
     @BeforeEach fun setUp() {
         t = AdminApiTestSupport(users, jwt, jdbc)
         admin = t.caller(Role.ADMIN)
+        jdbc.update("delete from assignment_category_overrides")
+        jdbc.update("update assignment_settings set active_strategy = 'LOAD_BASED', default_max_workload = 5, updated_by = null, version = 0")
     }
 
     private fun MockHttpServletRequestBuilder.json(body: Any) =
@@ -77,17 +83,20 @@ class AssignmentSettingsWithoutCatalogIntegrationTest {
         "activeStrategy" to strategy, "defaultMaxWorkload" to workload,
         "categoryOverrides" to emptyList<Any>(), "version" to version)
 
-    @Test fun `the application starts without P3's catalog`() {
-        assertNull(catalog.getIfAvailable())
+    @Test fun `the application starts with exactly one catalog, P3's real one`() {
+        assertInstanceOf(RegisteredAssignmentStrategyCatalog::class.java, catalog.getObject())
+        assertEquals(engine.registeredKeys(), catalog.getObject().registeredKeys())
     }
 
-    @Test fun `the seeded default is served and the catalog is reported as unavailable`() {
+    @Test fun `the seeded default is served, is registered by P3, and the catalog is reported as available`() {
+        val keys = engine.registeredKeys().sorted()
+        assertTrue("LOAD_BASED" in keys, "the strategy P1 seeds must be registered by P3")
         call(get(BASE)).andExpect(status().isOk)
             .andExpect(jsonPath("$.activeStrategy").value("LOAD_BASED"))
             .andExpect(jsonPath("$.defaultMaxWorkload").value(5))
             .andExpect(jsonPath("$.categoryOverrides").isEmpty)
-            .andExpect(jsonPath("$.availableStrategies").value(org.hamcrest.Matchers.nullValue()))
-            .andExpect(jsonPath("$.strategyCatalogStatus").value("ABSENT"))
+            .andExpect(jsonPath("$.availableStrategies", org.hamcrest.Matchers.contains(*keys.toTypedArray())))
+            .andExpect(jsonPath("$.strategyCatalogStatus").value("AVAILABLE"))
             .andExpect(jsonPath("$.version").value(0))
         val view = provider.current()
         assertEquals("LOAD_BASED", view.activeStrategy)
@@ -96,17 +105,21 @@ class AssignmentSettingsWithoutCatalogIntegrationTest {
         assertEquals("LOAD_BASED", view.strategyFor(123L))
     }
 
-    @Test fun `a write answers 503 with Retry-After semantics, persists nothing and writes no audit row`() {
+    @Test fun `every strategy P3 registers can be activated, an unregistered one is refused, and the audit row is written only on success`() {
         val auditBefore = t.auditCount()
-        call(put(BASE).json(putBody())).andExpect(status().isServiceUnavailable)
-            .andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"))
-            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("strategy catalog is not available")))
-        call(put(BASE).json(putBody(strategy = "LOAD_BASED", workload = 5))).andExpect(status().isServiceUnavailable)
+        var version = 0L
+        for (key in engine.registeredKeys().sorted()) {
+            call(put(BASE).json(putBody(strategy = key, workload = 8, version = version))).andExpect(status().isOk)
+                .andExpect(jsonPath("$.activeStrategy").value(key))
+            version++
+            assertEquals(key, provider.current().activeStrategy)
+        }
+        assertEquals(auditBefore + engine.registeredKeys().size, t.auditCount())
 
-        assertEquals("LOAD_BASED", provider.current().activeStrategy)
-        assertEquals(5, provider.current().defaultMaxWorkload)
-        assertEquals(0L, jdbc.queryForObject("select version from assignment_settings", Long::class.java))
-        assertEquals(auditBefore, t.auditCount())
+        call(put(BASE).json(putBody(strategy = "TELEPATHY", version = version))).andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.errors[0].field").value("activeStrategy"))
+        assertEquals(version, jdbc.queryForObject("select version from assignment_settings", Long::class.java))
+        assertEquals(auditBefore + engine.registeredKeys().size, t.auditCount())
     }
 
     @Test fun `malformed input is still a 400 and a stale version a 409, before the catalog is consulted`() {

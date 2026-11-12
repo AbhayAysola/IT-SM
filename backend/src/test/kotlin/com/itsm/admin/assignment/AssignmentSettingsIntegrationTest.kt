@@ -5,7 +5,7 @@ import com.itsm.admin.Caller
 import com.itsm.auth.JwtService
 import com.itsm.common.model.Role
 import com.itsm.common.spi.AssignmentSettingsProvider
-import com.itsm.common.spi.AssignmentStrategyCatalog
+import com.itsm.assignment.AssignmentEngine
 import com.itsm.user.UserRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,10 +15,7 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
@@ -33,22 +30,12 @@ import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
-/** A stand-in for P3's catalog. Test code only: the real implementation is P3's and must not be written in src/main. */
-@TestConfiguration
-class FakeStrategyCatalogConfig {
-    @Bean
-    fun fakeStrategyCatalog(): AssignmentStrategyCatalog = object : AssignmentStrategyCatalog {
-        override fun registeredKeys(): Set<String> = setOf("LOAD_BASED", "SKILL_BASED", "ROUND_ROBIN")
-    }
-}
-
 /**
- * Assignment settings with a registered-strategy catalog available, on a real PostgreSQL 16 (V14, Hibernate
+ * Assignment settings against P3's REAL strategy catalog (`RegisteredAssignmentStrategyCatalog`, backed by the engine), on a real PostgreSQL 16 (V14, Hibernate
  * validation). The configuration is a singleton, so every test resets it first. Required to execute in CI.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(FakeStrategyCatalogConfig::class)
 @Testcontainers(disabledWithoutDocker = true)
 class AssignmentSettingsIntegrationTest {
 
@@ -68,6 +55,7 @@ class AssignmentSettingsIntegrationTest {
     @Autowired lateinit var tx: TransactionTemplate
     @Autowired lateinit var service: AssignmentSettingsAdminService
     @Autowired lateinit var provider: AssignmentSettingsProvider
+    @Autowired lateinit var engine: AssignmentEngine
 
     private lateinit var t: AdminApiTestSupport
     private lateinit var admin: Caller
@@ -117,9 +105,11 @@ class AssignmentSettingsIntegrationTest {
             .andExpect(jsonPath("$.activeStrategy").value("LOAD_BASED"))
             .andExpect(jsonPath("$.defaultMaxWorkload").value(5))
             .andExpect(jsonPath("$.categoryOverrides").isEmpty)
-            .andExpect(jsonPath("$.availableStrategies[0]").value("LOAD_BASED"))
-            .andExpect(jsonPath("$.availableStrategies.length()").value(3))
             .andExpect(jsonPath("$.strategyCatalogStatus").value("AVAILABLE"))
+        // What P1 offers is exactly what P3's engine can run, and the strategy P1 seeds is one of them.
+        val keys = engine.registeredKeys().sorted()
+        assertTrue("LOAD_BASED" in keys, "P1's seeded default must be registered by P3")
+        call(get(BASE)).andExpect(jsonPath("$.availableStrategies", org.hamcrest.Matchers.contains(*keys.toTypedArray())))
     }
 
     // --- authorization ---------------------------------------------------------------------------------------------

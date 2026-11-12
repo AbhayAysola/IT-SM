@@ -45,14 +45,16 @@ class TechnicianProfilesMigrationIntegrationTest {
         val emp = user(jdbc, "emp@campus.example", "EMPLOYEE"); val adm = user(jdbc, "adm@campus.example", "ADMIN"); val tech = user(jdbc, "tech@campus.example", "TECHNICIAN")
         val before = jdbc.queryForList("select * from users order by id")
 
-        assertEquals(1, flyway.migrate().migrationsExecuted)
+        // This test is about V16 only: later migrations (other teams' V30+) must not change what it asserts.
+        val v16 = Flyway.configure().configuration(flyway.configuration).target("16").load()
+        assertEquals(1, v16.migrate().migrationsExecuted)
         assertEquals(before, jdbc.queryForList("select * from users order by id"), "users must be bit-for-bit unchanged")
         assertEquals(0L, jdbc.queryForObject("select count(*) from technician_profiles", Long::class.java), "no profile may be invented, even for the TECHNICIAN")
         assertEquals(0L, jdbc.queryForObject("select count(*) from technician_skills", Long::class.java))
         assertEquals(setOf(emp, adm, tech), jdbc.queryForList("select id from users", Long::class.java).toSet())
 
-        assertEquals(0, flyway.migrate().migrationsExecuted); flyway.validate()
-        assertEquals("16", flyway.info().current().version.version)
+        assertEquals(0, v16.migrate().migrationsExecuted); v16.validate()
+        assertEquals("16", v16.info().current().version.version)
     }
 
     @Test fun `the database refuses profiles for non-technicians, duplicates, bad values, self-reporting and non-leads as managers`() = withDatabase { flyway, jdbc ->
