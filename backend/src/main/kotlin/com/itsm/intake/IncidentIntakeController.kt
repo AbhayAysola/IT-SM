@@ -19,6 +19,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 @RequestMapping(ApiPaths.INCIDENTS)
 class IncidentIntakeController(
     private val service: IncidentIntakeService,
+    private val analysisService: IncidentAnalysisService,
     private val currentUser: CurrentUserProvider
 ) {
 
@@ -44,4 +45,10 @@ class IncidentIntakeController(
     @GetMapping("/catalog/services")
     @PreAuthorize("hasAuthority('INCIDENT_CREATE')")
     fun services(): List<CatalogServiceDto> = service.listServices()
+
+    /** AI-powered categorisation and duplicate detection before the incident is saved. */
+    @PostMapping("/analyze")
+    @PreAuthorize("hasAuthority('INCIDENT_CREATE')")
+    fun analyze(@Valid @RequestBody body: AnalyzeIncidentRequest): IncidentAnalysisDto =
+        analysisService.analyze(body.title, body.description)
 }

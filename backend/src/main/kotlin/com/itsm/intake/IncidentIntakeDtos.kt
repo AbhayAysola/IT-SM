@@ -34,3 +34,18 @@ data class IncidentIntakeDto(
 
 data class CatalogCategoryDto(val id: Long, val code: String, val name: String)
 data class CatalogServiceDto(val id: Long, val name: String)
+
+data class AnalyzeIncidentRequest(
+    @field:NotBlank @field:Size(max = 200) val title: String = "",
+    @field:NotBlank @field:Size(max = 4000) val description: String = ""
+)
+
+data class DuplicateCandidate(val id: String, val title: String, val reason: String)
+
+data class IncidentAnalysisDto(
+    val suggestedCategoryId: Long?,
+    val suggestedCategoryName: String?,
+    val confidence: String,
+    val reasoning: String,
+    val possibleDuplicates: List<DuplicateCandidate>
+)
