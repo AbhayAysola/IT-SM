@@ -88,6 +88,8 @@ services:
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       # Local plain-HTTP development only: the browser would drop a Secure cookie from http://localhost:3000. Needs the `dev` profile above.
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      # Optional: AI-powered incident categorisation and duplicate detection. Leave blank to disable.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
