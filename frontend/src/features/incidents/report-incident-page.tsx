@@ -206,51 +206,14 @@ export default function ReportIncidentPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>How many people are affected? <span aria-hidden="true" className="text-destructive">*</span></Label>
-                <div className="flex flex-wrap gap-2">
-                  {IMPACT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setImpact(opt.value)}
-                      className={cn(
-                        'rounded-md border px-3 py-2 text-left text-sm transition-colors',
-                        impact === opt.value
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
-                      )}
-                    >
-                      <span className="block font-medium">{opt.label}</span>
-                      <span className={cn('block text-xs', impact === opt.value ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.sub}</span>
-                    </button>
-                  ))}
-                </div>
-                {fieldErrors.impact && <p className="text-xs text-destructive">{fieldErrors.impact}</p>}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Can you still work? <span aria-hidden="true" className="text-destructive">*</span></Label>
-                <div className="flex flex-wrap gap-2">
-                  {URGENCY_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setUrgency(opt.value)}
-                      className={cn(
-                        'rounded-md border px-3 py-2 text-left text-sm transition-colors',
-                        urgency === opt.value
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
-                      )}
-                    >
-                      <span className="block font-medium">{opt.label}</span>
-                      <span className={cn('block text-xs', urgency === opt.value ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.sub}</span>
-                    </button>
-                  ))}
-                </div>
-                {fieldErrors.urgency && <p className="text-xs text-destructive">{fieldErrors.urgency}</p>}
-              </div>
+              <AnswerGroup
+                id="impact" question="How many people are affected?" options={IMPACT_OPTIONS}
+                value={impact} onChange={setImpact} error={fieldErrors.impact}
+              />
+              <AnswerGroup
+                id="urgency" question="Can you still work?" options={URGENCY_OPTIONS}
+                value={urgency} onChange={setUrgency} error={fieldErrors.urgency}
+              />
 
               {!reviewing && (
                 <div className="flex gap-3 pt-2">
@@ -341,5 +304,43 @@ export default function ReportIncidentPage() {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * One required question answered by picking a button. A labelled group of toggle buttons: the selected one says so to
+ * assistive technology (`aria-pressed`), not only by colour, and the error is linked to the group.
+ */
+function AnswerGroup<T extends string>({ id, question, options, value, onChange, error }: {
+  id: string; question: string; options: { value: T; label: string; sub: string }[];
+  value: T | ''; onChange: (v: T) => void; error?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p id={`${id}-label`} className="text-sm font-medium leading-none">
+        {question} <span aria-hidden="true" className="text-destructive">*</span>
+      </p>
+      <div role="group" aria-labelledby={`${id}-label`} aria-describedby={error ? `${id}-error` : undefined} className="flex flex-wrap gap-2">
+        {options.map((opt) => {
+          const selected = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(opt.value)}
+              className={cn(
+                'rounded-md border px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              <span className="block font-medium">{opt.label}</span>
+              <span className={cn('block text-xs', selected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.sub}</span>
+            </button>
+          );
+        })}
+      </div>
+      {error && <p id={`${id}-error`} className="text-xs text-destructive">{error}</p>}
+    </div>
   );
 }

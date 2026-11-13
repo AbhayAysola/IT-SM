@@ -56,6 +56,14 @@ So for now:
 classification, see "Priority" in the P4 section; `CurrentUserProvider` for the reporter (use `CurrentUser.id`, do not
 call `UserDirectory` for the caller).
 
+**Intake contract (implemented, `intake/`).** `POST /api/incidents` takes `title, description, categoryId, serviceId,
+impact, urgency` (`HIGH`/`MEDIUM`/`LOW`, case-insensitive) and **no priority**: the reporter answers "How many people are
+affected?" and "Can you still work?", and intake stores whatever P4's `PriorityPolicy` returns. A request with a `priority`
+instead of answers is a 400, so nobody can choose P1 directly. The answers are stored in `incidents.impact` / `urgency`
+(`V22`, nullable for older rows, both or neither) and returned in the DTO; `INCIDENT_CLASSIFIED` carries `impact`, `urgency`
+and P4's `priorityReasons`. Intake never computes a priority itself (the mock frontend service copies P4's matrix only
+for offline demos). Tests: `IncidentIntakePriorityIntegrationTest`.
+
 **Implement:** `IncidentAccessPolicy` (you are the sole owner). Contract: throw `ResourceNotFound` if
 the incident does not exist, otherwise return whether the user may see it (reporter, assigned
 technician, or admin). Nobody else re-implements these rules. P1's `GET /api/incidents/{id}/audit` (implemented in B7)

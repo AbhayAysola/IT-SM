@@ -31,7 +31,10 @@ data class IncidentIntakeDto(
     val priority: String,
     val reporterId: Long,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    /** The reporter's answers the priority was assessed from (V22); null for incidents created before they were stored. */
+    val impact: String? = null,
+    val urgency: String? = null
 )
 
 data class CatalogCategoryDto(val id: Long, val code: String, val name: String)

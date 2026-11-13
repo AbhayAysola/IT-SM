@@ -19,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional
 import java.sql.Statement
 import java.time.Clock
 import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 @Service
@@ -43,15 +45,17 @@ class IncidentIntakeService(
         val service = services.requireActive(request.serviceId!!)
         val impact = Impact.fromCode(request.impact)
         val urgency = Urgency.fromCode(request.urgency)
-        val priority = priorityPolicy.assess(service.id, impact, urgency).priority
+        // The priority is P4's decision (PriorityPolicy, docs/architecture/p4.md section 1); intake never computes it.
+        val assessment = priorityPolicy.assess(service.id, impact, urgency)
+        val priority = assessment.priority
 
         val now = now()
         val holder = GeneratedKeyHolder()
         jdbc.update({ con ->
             val ps = con.prepareStatement(
                 """
-                INSERT INTO incidents (title, description, state, reporter_id, category_id, service_id, priority, created_at, updated_at)
-                VALUES (?, ?, 'CLASSIFIED', ?, ?, ?, ?, ?, ?)
+                INSERT INTO incidents (title, description, state, reporter_id, category_id, service_id, priority, impact, urgency, created_at, updated_at)
+                VALUES (?, ?, 'CLASSIFIED', ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 Statement.RETURN_GENERATED_KEYS
             )
@@ -61,8 +65,10 @@ class IncidentIntakeService(
             ps.setLong(4, category.id)
             ps.setLong(5, service.id)
             ps.setString(6, priority.name)
-            ps.setObject(7, now)
-            ps.setObject(8, now)
+            ps.setString(7, impact.name)
+            ps.setString(8, urgency.name)
+            ps.setObject(9, sqlTime(now))
+            ps.setObject(10, sqlTime(now))
             ps
         }, holder)
 
@@ -81,10 +87,15 @@ class IncidentIntakeService(
             action = "INCIDENT_CLASSIFIED", entityType = "INCIDENT", entityId = id,
             incidentId = id, previousState = "NEW", newState = "CLASSIFIED",
             description = "Incident classified on creation",
-            metadata = mapOf("categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name, "impact" to impact.name, "urgency" to urgency.name)
+            metadata = mapOf(
+                "categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name,
+                "impact" to impact.name, "urgency" to urgency.name,
+                // Why this priority: plain-language, client-safe sentences from P4 (at most three).
+                "priorityReasons" to assessment.reasons.take(MAX_REASONS).map { it.take(MAX_REASON_LENGTH) }
+            )
         ))
 
-        return IncidentIntakeDto(id, title, description, "CLASSIFIED", category.id, service.id, priority.name, user.id, now, now)
+        return IncidentIntakeDto(id, title, description, "CLASSIFIED", category.id, service.id, priority.name, user.id, now, now, impact.name, urgency.name)
     }
 
     @Transactional
@@ -95,7 +106,7 @@ class IncidentIntakeService(
         if (description.isEmpty()) throw InvalidInput("Description must not be blank")
 
         val row = jdbc.query(
-            "SELECT reporter_id, state, category_id, service_id, priority, created_at FROM incidents WHERE id = ?",
+            "SELECT reporter_id, state, category_id, service_id, priority, created_at, impact, urgency FROM incidents WHERE id = ?",
             { rs, _ ->
                 listOf(
                     rs.getLong("reporter_id"),
@@ -103,7 +114,9 @@ class IncidentIntakeService(
                     rs.getLong("category_id"),
                     rs.getLong("service_id"),
                     rs.getString("priority"),
-                    rs.getObject("created_at", java.time.OffsetDateTime::class.java)?.toInstant()
+                    rs.getObject("created_at", java.time.OffsetDateTime::class.java)?.toInstant(),
+                    rs.getString("impact"),
+                    rs.getString("urgency")
                 )
             },
             incidentId
@@ -115,6 +128,8 @@ class IncidentIntakeService(
         val serviceId = row[3] as Long
         val priority = row[4] as String
         val createdAt = row[5] as Instant
+        val impact = row[6] as String?
+        val urgency = row[7] as String?
 
         if (state !in setOf("NEW", "CLASSIFIED")) {
             throw InvalidInput("Incident details can only be edited before it has been assigned")
@@ -124,7 +139,7 @@ class IncidentIntakeService(
         }
 
         val now = now()
-        jdbc.update("UPDATE incidents SET title = ?, description = ?, updated_at = ? WHERE id = ?", title, description, now, incidentId)
+        jdbc.update("UPDATE incidents SET title = ?, description = ?, updated_at = ? WHERE id = ?", title, description, sqlTime(now), incidentId)
 
         audit.publish(AuditableEvent(
             actor = AuditActor.of(user),
@@ -134,7 +149,7 @@ class IncidentIntakeService(
             metadata = mapOf("changedFields" to listOf("title", "description"))
         ))
 
-        return IncidentIntakeDto(incidentId, title, description, state, categoryId, serviceId, priority, reporterId, createdAt, now)
+        return IncidentIntakeDto(incidentId, title, description, state, categoryId, serviceId, priority, reporterId, createdAt, now, impact, urgency)
     }
 
     fun listCategories(): List<CatalogCategoryDto> =
@@ -143,5 +158,14 @@ class IncidentIntakeService(
     fun listServices(): List<CatalogServiceDto> =
         services.listActive().map { CatalogServiceDto(it.id, it.name) }
 
+    private companion object {
+        /** Audit metadata limits (foundation.md section 6): lists of at most 20 strings of at most 500 characters. */
+        const val MAX_REASONS = 20
+        const val MAX_REASON_LENGTH = 500
+    }
+
     private fun now(): Instant = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
+
+    /** The PostgreSQL driver cannot bind a java.time.Instant (it fails with "Can't infer the SQL type"); bind UTC instead. */
+    private fun sqlTime(i: Instant): OffsetDateTime = i.atOffset(ZoneOffset.UTC)
 }
