@@ -16,19 +16,33 @@ import { cn } from '@/lib/utils';
 import { CardHeading } from './components/card-heading';
 import { useActor } from './components/workspace-shell';
 import { type AnalysisResult, incidentService } from './services/incident-service';
-import { IncidentError } from './model/types';
+import { IncidentError, type Priority } from './model/types';
 
-const PRIORITIES = [
-  { value: 'P1', label: 'P1 — Critical' },
-  { value: 'P2', label: 'P2 — High' },
-  { value: 'P3', label: 'P3 — Medium' },
-  { value: 'P4', label: 'P4 — Low' },
-] as const;
-
-type Priority = 'P1' | 'P2' | 'P3' | 'P4';
+type Impact = 'just_me' | 'a_few' | 'a_team' | 'whole_company';
+type Urgency = 'blocked' | 'partial' | 'working';
 type FormState = 'filling' | 'analyzing' | 'reviewing' | 'creating';
 
 interface CatalogItem { id: number; name: string; code?: string }
+
+const IMPACT_OPTIONS: { value: Impact; label: string }[] = [
+  { value: 'just_me', label: 'Just me' },
+  { value: 'a_few', label: 'A few people' },
+  { value: 'a_team', label: 'My team / dept' },
+  { value: 'whole_company', label: 'The whole company' },
+];
+
+const URGENCY_OPTIONS: { value: Urgency; label: string }[] = [
+  { value: 'blocked', label: "No — I'm fully blocked" },
+  { value: 'partial', label: 'Partially' },
+  { value: 'working', label: 'Yes, still working' },
+];
+
+const PRIORITY_MATRIX: Record<Impact, Record<Urgency, Priority>> = {
+  whole_company: { blocked: 'P1', partial: 'P1', working: 'P2' },
+  a_team:        { blocked: 'P1', partial: 'P2', working: 'P2' },
+  a_few:         { blocked: 'P2', partial: 'P2', working: 'P3' },
+  just_me:       { blocked: 'P2', partial: 'P3', working: 'P4' },
+};
 
 const CONFIDENCE_STYLE: Record<string, string> = {
   HIGH: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
@@ -45,7 +59,8 @@ export default function ReportIncidentPage() {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [serviceId, setServiceId] = useState('');
-  const [priority, setPriority] = useState<Priority>('P3');
+  const [impact, setImpact] = useState<Impact | ''>('');
+  const [urgency, setUrgency] = useState<Urgency | ''>('');
   const [formState, setFormState] = useState<FormState>('filling');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -71,6 +86,8 @@ export default function ReportIncidentPage() {
     else if (description.trim().length > 4000) errs.description = 'At most 4000 characters.';
     if (!categoryId) errs.categoryId = 'Please select a category.';
     if (!serviceId) errs.serviceId = 'Please select a service.';
+    if (!impact) errs.impact = 'Please tell us how many people are affected.';
+    if (!urgency) errs.urgency = 'Please tell us if you can still work.';
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -78,6 +95,7 @@ export default function ReportIncidentPage() {
   const doCreate = async () => {
     setFormState('creating');
     try {
+      const priority = PRIORITY_MATRIX[impact as Impact][urgency as Urgency];
       const id = await incidentService.create(actor, {
         title: title.trim(),
         description: description.trim(),
@@ -198,15 +216,47 @@ export default function ReportIncidentPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="priority">Priority</Label>
-                <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-                  <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>How many people are affected? <span aria-hidden="true" className="text-destructive">*</span></Label>
+                <div className="flex flex-wrap gap-2">
+                  {IMPACT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setImpact(opt.value)}
+                      className={cn(
+                        'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                        impact === opt.value
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {fieldErrors.impact && <p className="text-xs text-destructive">{fieldErrors.impact}</p>}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Can you still work? <span aria-hidden="true" className="text-destructive">*</span></Label>
+                <div className="flex flex-wrap gap-2">
+                  {URGENCY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setUrgency(opt.value)}
+                      className={cn(
+                        'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                        urgency === opt.value
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {fieldErrors.urgency && <p className="text-xs text-destructive">{fieldErrors.urgency}</p>}
               </div>
 
               {!reviewing && (
