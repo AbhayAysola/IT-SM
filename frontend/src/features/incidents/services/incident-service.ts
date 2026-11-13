@@ -19,6 +19,18 @@ import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 
 export { TABS, defaultTab, INCIDENT_PAGE_SIZE, type TabId } from './tabs';
 
+/** Mirrors the backend com.itsm.common.model.Impact enum. */
+export type Impact = 'HIGH' | 'MEDIUM' | 'LOW';
+/** Mirrors the backend com.itsm.common.model.Urgency enum. */
+export type Urgency = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** ITIL impact × urgency matrix — mirrors PriorityCalculator.matrix() on the backend. */
+const MOCK_PRIORITY_MATRIX: Record<Impact, Record<Urgency, Priority>> = {
+  HIGH:   { HIGH: 'P1', MEDIUM: 'P2', LOW: 'P3' },
+  MEDIUM: { HIGH: 'P2', MEDIUM: 'P3', LOW: 'P4' },
+  LOW:    { HIGH: 'P3', MEDIUM: 'P4', LOW: 'P4' },
+};
+
 export interface AnalysisResult {
   suggestedCategoryId: number | null;
   suggestedCategoryName: string | null;
@@ -277,7 +289,7 @@ export const mockIncidentService = {
 
   async create(
     actor: Actor,
-    input: { title: string; description: string; categoryId: number; serviceId: number; priority: Priority }
+    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency }
   ): Promise<string> {
     return simulate(() => {
       const w = world(actor);
@@ -285,12 +297,13 @@ export const mockIncidentService = {
       const service = MOCK_SERVICES.find((s) => s.id === input.serviceId);
       if (!category) throw new IncidentError('VALIDATION', 'Unknown category.', { categoryId: 'Select a valid category.' });
       if (!service) throw new IncidentError('VALIDATION', 'Unknown service.', { serviceId: 'Select a valid service.' });
+      const priority = MOCK_PRIORITY_MATRIX[input.impact][input.urgency];
       const now = new Date().toISOString();
       const seq = w.incidents.length + 1001;
       const id = `INC${seq}`;
       w.incidents.push({
         id, title: input.title, description: input.description, category: category.name, service: service.name,
-        priority: input.priority, state: 'CLASSIFIED', reporterEmail: actor.email, reporterName: actor.name,
+        priority, state: 'CLASSIFIED', reporterEmail: actor.email, reporterName: actor.name,
         assigneeEmail: null, assigneeName: null, createdAt: now, updatedAt: now, resolvedAt: null,
       });
       saveWorld(actor.email, w);

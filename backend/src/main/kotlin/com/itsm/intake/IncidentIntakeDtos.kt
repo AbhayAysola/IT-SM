@@ -1,6 +1,5 @@
 package com.itsm.intake
 
-import com.itsm.common.model.Priority
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
@@ -11,7 +10,10 @@ data class CreateIncidentRequest(
     @field:NotBlank @field:Size(max = 4000) val description: String = "",
     @field:NotNull val categoryId: Long? = null,
     @field:NotNull val serviceId: Long? = null,
-    @field:NotNull val priority: Priority? = null
+    /** Reporter-supplied impact: HIGH | MEDIUM | LOW. The backend calls PriorityPolicy to derive the priority. */
+    @field:NotBlank val impact: String = "",
+    /** Reporter-supplied urgency: HIGH | MEDIUM | LOW. The backend calls PriorityPolicy to derive the priority. */
+    @field:NotBlank val urgency: String = ""
 )
 
 data class UpdateIncidentRequest(
@@ -29,7 +31,10 @@ data class IncidentIntakeDto(
     val priority: String,
     val reporterId: Long,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    /** The reporter's answers the priority was assessed from (V22); null for incidents created before they were stored. */
+    val impact: String? = null,
+    val urgency: String? = null
 )
 
 data class CatalogCategoryDto(val id: Long, val code: String, val name: String)

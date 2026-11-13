@@ -1,7 +1,7 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
-import { IncidentError, type Actor, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
-import type { AnalysisResult, IncidentDetail, IncidentListResult } from './incident-service';
+import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
+import type { AnalysisResult, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
 import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 import {
@@ -135,7 +135,7 @@ export const liveIncidentService = {
 
   async create(
     _actor: Actor,
-    input: { title: string; description: string; categoryId: number; serviceId: number; priority: Priority }
+    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency }
   ): Promise<string> {
     const dto = await call<{ id: string }>('POST', '', input);
     return dto.id;
