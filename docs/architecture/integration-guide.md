@@ -24,7 +24,8 @@ An SPI has exactly **one** implementing module. Everyone else injects the interf
 | `AssignmentSettingsProvider` | P1 (`JpaAssignmentSettingsProvider`, implemented) | P3 |
 | `AuditPublisher` | P1 (`SpringAuditPublisher`; events are persisted to `audit_events` in the caller's transaction; read API: [audit-retrieval.md](audit-retrieval.md)) | everyone |
 | `IncidentAccessPolicy` | **P2 only** | P1 (incident audit endpoint), P3, P4 |
-| `TechnicianWorkloadProvider` | **P3 only** (no bean exists yet) | P4 (SLA risk); P1 admin technician views are an intention only, no P1 code uses it today |
+| `TechnicianWorkloadProvider` | **P3 only** (`StoreTechnicianWorkloadProvider`, implemented) | P4 (SLA risk); P1 admin technician views are an intention only, no P1 code uses it today |
+| `PriorityPolicy` | **P4 only** (`CatalogPriorityPolicy`, implemented) | P2 (priority at classification) |
 | `AssignmentStrategyCatalog` | **P3 only** (implemented on `main`: `RegisteredAssignmentStrategyCatalog`) | P1 (validates the configured strategy key; looked up lazily, see "Assignment settings") |
 
 Do not write a second implementation of someone else's SPI "for testing" in `src/main`; mock it in tests.
@@ -51,7 +52,8 @@ So for now:
 
 **Consume:** `CategoryCatalog.requireActive(id)` to validate the reporter's choice;
 `CategoryCatalog.listActive()` and `CategoryView.keywords` for the keyword-based category suggestion;
-`ServiceCatalog.requireActive(id)`; `CurrentUserProvider` for the reporter (use `CurrentUser.id`, do not
+`ServiceCatalog.requireActive(id)`; `PriorityPolicy.assess(serviceId, impact, urgency)` (P4's) for the priority at
+classification, see "Priority" in the P4 section; `CurrentUserProvider` for the reporter (use `CurrentUser.id`, do not
 call `UserDirectory` for the caller).
 
 **Implement:** `IncidentAccessPolicy` (you are the sole owner). Contract: throw `ResourceNotFound` if
@@ -122,6 +124,25 @@ Use `UnauthorizedOperation` if a technician acts on an incident that is not thei
   Technician -> Team Lead -> System Admin -> IT Manager path. ADMIN covers both admin and IT manager.
 * `TechnicianWorkloadProvider` (P3's) for SLA-risk detection.
 * `Priority` (P1..P4) lives in `common`. **How** it is computed is yours; document the algorithm.
+
+**Design:** [p4.md](p4.md) (priority, SLA clock rules, escalation, notifications, analytics, open questions).
+
+**Priority (implemented, `priority/`).** P4 provides `PriorityPolicy` in `common/spi`; `CatalogPriorityPolicy` is the only
+implementation. `Impact` and `Urgency` (`HIGH`, `MEDIUM`, `LOW`, with `fromCode`) are shared vocabulary in `common/model`.
+
+```kotlin
+val assessment = priorityPolicy.assess(serviceId, Impact.MEDIUM, Urgency.HIGH)
+assessment.priority      // store this on the incident
+assessment.reasons       // plain-language explanation, safe for audit metadata (a flat List<String>) and the UI
+```
+
+* Algorithm: impact x urgency matrix; impact widened one level when 3+ active services depend on the service
+  (transitively); then one level more urgent for criticality 5, one less for criticality 1. Pure logic in
+  `PriorityCalculator`, every cell and threshold unit-tested. Full table and examples in [p4.md](p4.md) section 1.
+* `ServiceNotFound` for an unknown service; it does **not** mark the caller's transaction rollback-only. An inactive service
+  is still assessed: rejecting inactive services at intake is P2's `requireActive`.
+* Two catalog reads per call (`findById`, `listActive`), read-only, joining the caller's transaction.
+* P4 does not store priority: P2 stores it, plus `impact` and `urgency` so a later recalculation has its inputs.
 
 **Background jobs:** annotate the job method `@Transactional` so audit publishing works, and use
 `AuditActor.system("SLA_MONITOR")` (UPPER_SNAKE_CASE). Audit actions such as `SLA_WARNING_RAISED`,
