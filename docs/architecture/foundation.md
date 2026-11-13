@@ -16,7 +16,7 @@ boilerplate auth code; they move into `access/` during auth hardening.
 
 | Package | Contents |
 |---|---|
-| `model` | `Role` (EMPLOYEE, TECHNICIAN, ADMIN), `Priority` (P1..P4) |
+| `model` | `Role` (EMPLOYEE, TECHNICIAN, ADMIN), `Priority` (P1..P4), `Impact` and `Urgency` (HIGH, MEDIUM, LOW; inputs to P4's priority) |
 | `security` | `Permission` + `RolePermissions`, `CurrentUser`, `CurrentUserProvider`, `ItsmUserDetails`, JSON 401/403 handlers |
 | `error` | `ItsmException` hierarchy, `ErrorCode`, `GlobalExceptionHandler`, `Problems`, `DatabaseErrorClassifier` |
 | `api` | `ApiPaths`, `PageQuery`, `PageResponse` |
