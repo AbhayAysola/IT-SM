@@ -5,7 +5,9 @@ import com.itsm.common.error.ResourceNotFound
 import com.itsm.common.error.ServiceNotFound
 import com.itsm.common.error.UnauthorizedOperation
 import com.itsm.common.event.AuditableEvent
+import com.itsm.common.model.Impact
 import com.itsm.common.model.Priority
+import com.itsm.common.model.Urgency
 import com.itsm.common.security.CurrentUser
 
 /*
@@ -72,6 +74,20 @@ interface SlaPolicyProvider {
      * @throws com.itsm.common.error.MissingSlaConfiguration if no service-specific nor default policy exists
      */
     fun resolve(serviceId: Long, priority: Priority): SlaPolicyView
+}
+
+/**
+ * Provided by P4 (sole owner), consumed by P2 when an incident is classified. How a priority is calculated is P4's
+ * domain (documented in docs/architecture/p4.md); nobody else re-implements it.
+ *
+ * Pure with respect to its inputs: the same service configuration, impact and urgency always give the same result.
+ * Read-only; it joins the caller's transaction.
+ *
+ * @throws com.itsm.common.error.ServiceNotFound if [serviceId] is unknown. It is an answer, not a failure: it does not mark
+ *   the caller's transaction rollback-only. An INACTIVE service is still assessed (P2 decides whether to accept it).
+ */
+interface PriorityPolicy {
+    fun assess(serviceId: Long, impact: Impact, urgency: Urgency): PriorityAssessment
 }
 
 /** Provided by P1 (admin), consumed by P3. */

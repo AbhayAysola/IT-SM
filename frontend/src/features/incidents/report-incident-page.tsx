@@ -15,34 +15,25 @@ import { useToast } from '@/features/admin/components/toast';
 import { cn } from '@/lib/utils';
 import { CardHeading } from './components/card-heading';
 import { useActor } from './components/workspace-shell';
-import { type AnalysisResult, incidentService } from './services/incident-service';
-import { IncidentError, type Priority } from './model/types';
+import { type AnalysisResult, type Impact, type Urgency, incidentService } from './services/incident-service';
+import { IncidentError } from './model/types';
 
-type Impact = 'just_me' | 'a_few' | 'a_team' | 'whole_company';
-type Urgency = 'blocked' | 'partial' | 'working';
 type FormState = 'filling' | 'analyzing' | 'reviewing' | 'creating';
 
 interface CatalogItem { id: number; name: string; code?: string }
 
-const IMPACT_OPTIONS: { value: Impact; label: string }[] = [
-  { value: 'just_me', label: 'Just me' },
-  { value: 'a_few', label: 'A few people' },
-  { value: 'a_team', label: 'My team / dept' },
-  { value: 'whole_company', label: 'The whole company' },
+const IMPACT_OPTIONS: { value: Impact; label: string; sub: string }[] = [
+  { value: 'HIGH',   label: 'Many people',          sub: 'The whole org or a large group' },
+  { value: 'MEDIUM', label: 'My team or department', sub: 'A group I work with' },
+  { value: 'LOW',    label: 'Just me',               sub: 'Only affects my work' },
 ];
 
-const URGENCY_OPTIONS: { value: Urgency; label: string }[] = [
-  { value: 'blocked', label: "No — I'm fully blocked" },
-  { value: 'partial', label: 'Partially' },
-  { value: 'working', label: 'Yes, still working' },
+const URGENCY_OPTIONS: { value: Urgency; label: string; sub: string }[] = [
+  { value: 'HIGH',   label: "No — work has stopped",   sub: 'No workaround available' },
+  { value: 'MEDIUM', label: 'Partially',                sub: 'I have a workaround' },
+  { value: 'LOW',    label: 'Yes, I can still work',    sub: "It's just inconvenient" },
 ];
 
-const PRIORITY_MATRIX: Record<Impact, Record<Urgency, Priority>> = {
-  whole_company: { blocked: 'P1', partial: 'P1', working: 'P2' },
-  a_team:        { blocked: 'P1', partial: 'P2', working: 'P2' },
-  a_few:         { blocked: 'P2', partial: 'P2', working: 'P3' },
-  just_me:       { blocked: 'P2', partial: 'P3', working: 'P4' },
-};
 
 const CONFIDENCE_STYLE: Record<string, string> = {
   HIGH: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
@@ -95,13 +86,13 @@ export default function ReportIncidentPage() {
   const doCreate = async () => {
     setFormState('creating');
     try {
-      const priority = PRIORITY_MATRIX[impact as Impact][urgency as Urgency];
       const id = await incidentService.create(actor, {
         title: title.trim(),
         description: description.trim(),
         categoryId: Number(categoryId),
         serviceId: Number(serviceId),
-        priority,
+        impact: impact as Impact,
+        urgency: urgency as Urgency,
       });
       toast.success('Incident reported.');
       router.push(`/incidents/${id}`);
@@ -224,13 +215,14 @@ export default function ReportIncidentPage() {
                       type="button"
                       onClick={() => setImpact(opt.value)}
                       className={cn(
-                        'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                        'rounded-md border px-3 py-2 text-left text-sm transition-colors',
                         impact === opt.value
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
                       )}
                     >
-                      {opt.label}
+                      <span className="block font-medium">{opt.label}</span>
+                      <span className={cn('block text-xs', impact === opt.value ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.sub}</span>
                     </button>
                   ))}
                 </div>
@@ -246,13 +238,14 @@ export default function ReportIncidentPage() {
                       type="button"
                       onClick={() => setUrgency(opt.value)}
                       className={cn(
-                        'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                        'rounded-md border px-3 py-2 text-left text-sm transition-colors',
                         urgency === opt.value
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
                       )}
                     >
-                      {opt.label}
+                      <span className="block font-medium">{opt.label}</span>
+                      <span className={cn('block text-xs', urgency === opt.value ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.sub}</span>
                     </button>
                   ))}
                 </div>

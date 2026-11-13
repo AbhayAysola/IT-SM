@@ -5,9 +5,12 @@ import com.itsm.common.error.ResourceNotFound
 import com.itsm.common.error.UnauthorizedOperation
 import com.itsm.common.event.AuditActor
 import com.itsm.common.event.AuditableEvent
+import com.itsm.common.model.Impact
+import com.itsm.common.model.Urgency
 import com.itsm.common.security.CurrentUser
 import com.itsm.common.spi.AuditPublisher
 import com.itsm.common.spi.CategoryCatalog
+import com.itsm.common.spi.PriorityPolicy
 import com.itsm.common.spi.ServiceCatalog
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.support.GeneratedKeyHolder
@@ -23,6 +26,7 @@ class IncidentIntakeService(
     private val jdbc: JdbcTemplate,
     private val categories: CategoryCatalog,
     private val services: ServiceCatalog,
+    private val priorityPolicy: PriorityPolicy,
     private val audit: AuditPublisher,
     private val clock: Clock
 ) {
@@ -37,7 +41,9 @@ class IncidentIntakeService(
         // Validate category and service exist and are active
         val category = categories.requireActive(request.categoryId!!)
         val service = services.requireActive(request.serviceId!!)
-        val priority = request.priority!!
+        val impact = Impact.fromCode(request.impact)
+        val urgency = Urgency.fromCode(request.urgency)
+        val priority = priorityPolicy.assess(service.id, impact, urgency).priority
 
         val now = now()
         val holder = GeneratedKeyHolder()
@@ -68,14 +74,14 @@ class IncidentIntakeService(
             action = "INCIDENT_CREATED", entityType = "INCIDENT", entityId = id,
             incidentId = id,
             description = "Incident created: $title",
-            metadata = mapOf("categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name)
+            metadata = mapOf("categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name, "impact" to impact.name, "urgency" to urgency.name)
         ))
         audit.publish(AuditableEvent(
             actor = AuditActor.of(user),
             action = "INCIDENT_CLASSIFIED", entityType = "INCIDENT", entityId = id,
             incidentId = id, previousState = "NEW", newState = "CLASSIFIED",
             description = "Incident classified on creation",
-            metadata = mapOf("categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name)
+            metadata = mapOf("categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name, "impact" to impact.name, "urgency" to urgency.name)
         ))
 
         return IncidentIntakeDto(id, title, description, "CLASSIFIED", category.id, service.id, priority.name, user.id, now, now)
