@@ -12,6 +12,7 @@
 | [DESIGN.md](DESIGN.md) | Design system: tokens, typography, components |
 | [docs/architecture/foundation.md](docs/architecture/foundation.md) | Shared `common` module: security, errors, API conventions, auditing |
 | [docs/architecture/integration-guide.md](docs/architecture/integration-guide.md) | Module ownership (P1–P4), SPI map, per-person recipes |
+| [docs/architecture/p4.md](docs/architecture/p4.md) | P4 design: priority, SLA, escalation, notifications, analytics |
 | [docs/migrations.md](docs/migrations.md) | Flyway version blocks and P1 draft migrations |
 | [frontend/e2e/README.md](frontend/e2e/README.md) | Playwright suite (hermetic and live modes) |
 | [frontend/src/features/admin/README.md](frontend/src/features/admin/README.md) | Admin workspace, mock persistence, access control |
