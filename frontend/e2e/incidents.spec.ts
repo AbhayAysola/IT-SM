@@ -215,6 +215,19 @@ test.describe('incidents: technician', () => {
     await expect(page.getByRole('button', { name: 'Mark as resolved' })).toHaveCount(0);
   });
 
+  test('sees the service level in words, and asking a question pauses the resolution clock', async ({ page, api }) => {
+    await open(page, api, 'TECHNICIAN', '/incidents/INC1002');
+    const sla = page.getByTestId('sla-panel');
+    await expect(sla.getByRole('heading', { name: 'Service level' })).toBeVisible();
+    await expect(sla).toContainText('Response');
+    await expect(sla).toContainText('Resolution');
+    await page.getByRole('button', { name: 'Ask the reporter a question' }).click();
+    await page.getByLabel('Your question').fill('Which building are you in?');
+    await page.getByRole('dialog').getByRole('button', { name: 'Ask the reporter a question' }).click();
+    await expect(status(page)).toContainText('Waiting for reporter');
+    await expect(sla).toContainText('Paused while waiting on the reporter');
+  });
+
   test('sees how similar past incidents were fixed, but only while working one', async ({ page, api }) => {
     await open(page, api, 'TECHNICIAN', '/incidents/INC1001');
     const panel = page.getByRole('heading', { name: 'Past fixes for similar incidents' });

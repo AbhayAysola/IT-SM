@@ -52,6 +52,14 @@ app:
     trusted-proxies: ${TRUSTED_PROXIES:}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
+  sla:
+    monitor:
+      # P4's SLA monitor (docs/architecture/p4.md section 2). Safe to run on every instance: an advisory lock lets only one
+      # evaluate at a time. Turn it off with SLA_MONITOR_ENABLED=false.
+      enabled: ${SLA_MONITOR_ENABLED:true}
+      interval-ms: ${SLA_MONITOR_INTERVAL_MS:60000}
+      initial-delay-ms: ${SLA_MONITOR_INITIAL_DELAY_MS:30000}
+      batch-size: ${SLA_MONITOR_BATCH_SIZE:500}
 
 management:
   endpoints:
