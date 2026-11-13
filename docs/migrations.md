@@ -12,7 +12,7 @@ Each person writes only inside their block, so two people can never create the s
 | `V10-V19` | P1 | users evolution, categories, services, technician profiles, SLA policies, assignment settings, audit |
 | `V20-V29` | P2 | incident intake |
 | `V30-V39` | P3 | lifecycle, assignment, investigation, feedback |
-| `V40-V49` | P4 | SLA tracking, escalation, notifications, analytics |
+| `V40-V49` | P4 | SLA tracking (`V40 incident_sla`), escalation, notifications, analytics |
 
 Rules
 1. Name files `V<n>__<owner>_<description>.sql` (e.g. `V21__p2_incidents.sql`). Never edit a merged migration; add a new one.

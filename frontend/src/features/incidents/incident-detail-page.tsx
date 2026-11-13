@@ -17,6 +17,7 @@ import { FeedbackCard } from './components/feedback-card';
 import { NoteForm } from './components/note-form';
 import { ReasonDialog } from './components/reason-dialog';
 import { SimilarPanel } from './components/similar-panel';
+import { SlaPanel } from './components/sla-panel';
 import { Timeline } from './components/timeline';
 import { useActor } from './components/workspace-shell';
 import { TRANSITION_LABEL, WORKLOAD_STATES as WORK_IN_PROGRESS } from './model/lifecycle';
@@ -82,7 +83,7 @@ export default function IncidentDetailPage() {
     );
   }
 
-  const { incident: i, audience, timeline, feedback, actions, canAddNote, canGiveFeedback, similar } = data;
+  const { incident: i, audience, timeline, feedback, actions, canAddNote, canGiveFeedback, similar, sla } = data;
   const label = (t: TransitionName) => TRANSITION_LABEL[t][audience];
   const perform = async (t: TransitionName, reason = '') => {
     await incidentService.perform(actor, i.id, t, reason);
@@ -156,6 +157,8 @@ export default function IncidentDetailPage() {
               </dl>
             </CardContent>
           </Card>
+
+          {sla && <SlaPanel sla={sla} />}
 
           {(actions.length > 0) && (
             <Card>

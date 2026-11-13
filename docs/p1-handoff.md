@@ -74,19 +74,21 @@ started. **Production deployment is blocked until C and D are done** (the MVP on
 
 ## 7. What the other teams must do
 
-Details per team: [p1-contract-matrix.md](architecture/p1-contract-matrix.md) section 5. That page predates P3 landing on `main`; items marked "not implemented"
-there must be re-read against `main`.
+Details per team: [p1-contract-matrix.md](architecture/p1-contract-matrix.md) section 5 (written before P2 and P3 landed; re-read its "not implemented" rows
+against this table).
 
-| Team | Dependency | State on `main` (2026-11-12) |
+| Team | Dependency | State on `main` (2026-11-13) |
 |---|---|---|
-| P2 | Register one `IncidentAccessPolicy`. Until then the incident audit trail answers 503. Use `CategoryCatalog.requireActive` for new incidents | not implemented on `main` |
-| P3 | `AssignmentStrategyCatalog` | **implemented** (`RegisteredAssignmentStrategyCatalog`, registers `LOAD_BASED`, the key P1 seeds, plus `SKILL_BASED`, `ROUND_ROBIN`, `MANUAL`). Settings writes stop returning 503 |
-| P3 | `TechnicianWorkloadProvider` | not implemented; P1 does not call it |
+| P2 | Register one `IncidentAccessPolicy` (the incident audit trail answers 503 without it) | **implemented** (`SpringIncidentAccessPolicy`); P1 has not re-tested the incident trail against it end to end |
+| P2 | Use `CategoryCatalog.requireActive` for new incidents | not checked by P1 |
+| P3 | `AssignmentStrategyCatalog` | **implemented** (`RegisteredAssignmentStrategyCatalog`: `LOAD_BASED` (the key P1 seeds), `SKILL_BASED`, `ROUND_ROBIN`, `MANUAL`) |
+| P3 | `TechnicianWorkloadProvider` | **implemented** (`StoreTechnicianWorkloadProvider`); P1 does not call it |
 | P3 | Confirm the technician contract (`available` is an admin flag, not workload; `maxWorkload` is a ceiling; `escalationChain` nearest-first) and the `defaultMaxWorkload` cap of 100 | pending |
-| P4 | Confirm `SlaPolicyProvider.resolve` semantics (422 `MISSING_SLA_CONFIG`, inactive service still resolves), the cross-priority rule, and who owns `unassignedEscalationMinutes` | pending |
+| P4 | Everything: SLA timers, breach detection, escalation, notifications. Confirm `SlaPolicyProvider.resolve` semantics (422 `MISSING_SLA_CONFIG`, inactive service still resolves), the cross-priority rule, and who owns `unassignedEscalationMinutes` | **not built** |
 | All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; use by P2/P3/P4 not verified here |
+| P2 | Incident AI analysis sends the incident text to the Anthropic API when `anthropic.api-key` is set | confirm this is acceptable for the deployment's data policy |
 
-## 8. Integration: `feat/p1-b18-final-integration` (P1 + `main` + P3's PR #10)
+## 8. Integration: `feat/p1-b18-final-integration` (P1 + `main` + P3's PR #10), merged to `main` as PR #11
 
 PR #4 (P1) conflicted with `main`. The integration branch merges `main` and P3's PR #10 (`feat/p3-persistence-stores`) into P1, keeping both
 sides in every conflict (docs, `frontend/Dockerfile`, P1's stricter `ApplicationStartupIntegrationTest`, P1's `PageQuery` fix with the B13 overflow

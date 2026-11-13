@@ -61,6 +61,9 @@ tasks.withType<Test> {
     // Most integration tests create many accounts and log in from the single MockMvc address; the throttles have their own
     // dedicated tests (which set realistic limits) and must not interfere with the rest. Registration is enabled for tests.
     systemProperty("app.registration.enabled", "true")
+    // P4's SLA monitor would otherwise run every minute in each test context and write audit rows other tests count;
+    // the SLA tests call the monitor directly instead.
+    systemProperty("app.sla.monitor.enabled", "false")
     systemProperty("app.rate-limit.login-pair.max-failures", "100000")
     systemProperty("app.rate-limit.login-ip.max-failures", "100000")
     systemProperty("app.rate-limit.register-ip.max-attempts", "100000")

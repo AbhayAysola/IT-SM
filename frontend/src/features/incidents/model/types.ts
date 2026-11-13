@@ -110,3 +110,26 @@ export interface SimilarResolution {
   /** Whole days from report to resolution. */
   daysToResolve: number | null;
 }
+
+/** SLA status of one clock or of the whole incident (backend: `sla/SlaModels.kt`). `PENDING`: not evaluated yet. */
+export type SlaStatus = 'PENDING' | 'NO_POLICY' | 'RUNNING' | 'WARNING' | 'PAUSED' | 'MET' | 'BREACHED';
+
+export interface SlaClockView {
+  status: SlaStatus;
+  targetMinutes: number | null;
+  /** ISO instants; null when unknown (no policy) or not happened. */
+  dueAt: string | null;
+  metAt: string | null;
+  breachedAt: string | null;
+}
+
+/** The response and resolution clocks of one incident (P4, docs/architecture/p4.md section 2). */
+export interface SlaSummary {
+  status: SlaStatus;
+  response: SlaClockView | null;
+  resolution: SlaClockView | null;
+  /** Set while the resolution clock is paused (waiting on the reporter). */
+  pausedSince: string | null;
+  /** When the backend last evaluated it (statuses can lag by up to a minute); null for mock data. */
+  evaluatedAt: string | null;
+}

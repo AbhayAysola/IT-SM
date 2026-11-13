@@ -129,6 +129,7 @@ jobs:
               'com.itsm.integration.SlaProviderCallerTransactionIntegrationTest': 1,
               'com.itsm.integration.CatalogCallerTransactionIntegrationTest': 1,
               'com.itsm.integration.PaginationOffsetIntegrationTest': 1,
+              'com.itsm.sla.SlaMonitorIntegrationTest': 6,
           }
           total = skipped = 0
           executed = {}

@@ -67,9 +67,7 @@ There is deliberately no development bypass. The hermetic Playwright suite reach
 personas and a stateful fake of the admin API (`e2e/fixtures.ts`, `e2e/admin-fake.ts`); in live mode, tests that need a
 non-`USER` role are skipped.
 
-## Token storage (backend dependency)
+## Session
 
-The token is still kept in localStorage plus a readable `SameSite=Lax` cookie (`Secure` over HTTPS only, so plain
-`http://localhost` keeps working). Moving to HttpOnly cookies needs coordinated backend work: HttpOnly `Secure`
-`SameSite` refresh cookies, refresh-token rotation, CSRF protection, and a short-lived access token. It is out of
-scope for the frontend alone.
+The session is an HttpOnly, `Secure` (outside the dev profile), `SameSite=Strict` cookie set by the backend; the frontend holds no token and sends
+`credentials: 'include'` and `X-ITSM-Client: web` on every call (`src/lib/api.ts`). See [security.md](../../../../docs/architecture/security.md).
