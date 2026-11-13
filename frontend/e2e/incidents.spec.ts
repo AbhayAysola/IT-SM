@@ -76,6 +76,36 @@ test.describe('incidents: paging', () => {
 });
 
 test.describe('incidents: employee (reporter)', () => {
+  test('reports an incident by answering two questions; the priority is derived, never picked', async ({ page, api }) => {
+    await open(page, api, 'EMPLOYEE', '/incidents/new');
+    await page.getByLabel('Title').fill('VPN drops for the whole team');
+    await page.getByLabel('Description').fill('Since this morning the VPN disconnects every few minutes for everyone in finance.');
+    await page.getByRole('combobox', { name: 'Category' }).click();
+    await page.getByRole('option', { name: 'Network' }).click();
+    await page.getByRole('combobox', { name: 'Service' }).click();
+    await page.getByRole('option', { name: 'VPN' }).click();
+    await expect(page.getByRole('combobox', { name: /priority/i })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Submit incident' }).click();
+    await expect(page.getByText('Please tell us how many people are affected.')).toBeVisible();
+    await expect(page.getByText('Please tell us if you can still work.')).toBeVisible();
+
+    const impact = page.getByRole('group', { name: 'How many people are affected?' });
+    const urgency = page.getByRole('group', { name: 'Can you still work?' });
+    const team = impact.getByRole('button', { name: /My team or department/ });
+    await expect(team).toHaveAttribute('aria-pressed', 'false');
+    await team.click();
+    await expect(team).toHaveAttribute('aria-pressed', 'true');
+    await urgency.getByRole('button', { name: /work has stopped/ }).click();
+    expect(await axeViolations(page)).toEqual([]);
+
+    await page.getByRole('button', { name: 'Submit incident' }).click();
+    await page.getByRole('button', { name: 'Create incident' }).click();
+    await expect(page).toHaveURL(/\/incidents\/INC\d+$/);
+    // MEDIUM impact and HIGH urgency: P2 (the mock applies P4's matrix; the live backend asks P4's PriorityPolicy).
+    await expect(status(page)).toContainText('P2');
+  });
+
   test('sees plain-language statuses and what needs them', async ({ page, api }) => {
     await open(page, api, 'EMPLOYEE');
     await expect(tab(page, /^Open \(4\)/)).toBeVisible();
@@ -213,6 +243,19 @@ test.describe('incidents: technician', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Ask the reporter a question' }).click();
     await expect(status(page)).toContainText('Waiting for reporter');
     await expect(page.getByRole('button', { name: 'Mark as resolved' })).toHaveCount(0);
+  });
+
+  test('sees the service level in words, and asking a question pauses the resolution clock', async ({ page, api }) => {
+    await open(page, api, 'TECHNICIAN', '/incidents/INC1002');
+    const sla = page.getByTestId('sla-panel');
+    await expect(sla.getByRole('heading', { name: 'Service level' })).toBeVisible();
+    await expect(sla).toContainText('Response');
+    await expect(sla).toContainText('Resolution');
+    await page.getByRole('button', { name: 'Ask the reporter a question' }).click();
+    await page.getByLabel('Your question').fill('Which building are you in?');
+    await page.getByRole('dialog').getByRole('button', { name: 'Ask the reporter a question' }).click();
+    await expect(status(page)).toContainText('Waiting for reporter');
+    await expect(sla).toContainText('Paused while waiting on the reporter');
   });
 
   test('sees how similar past incidents were fixed, but only while working one', async ({ page, api }) => {

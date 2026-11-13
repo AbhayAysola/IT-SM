@@ -15,20 +15,25 @@ import { useToast } from '@/features/admin/components/toast';
 import { cn } from '@/lib/utils';
 import { CardHeading } from './components/card-heading';
 import { useActor } from './components/workspace-shell';
-import { type AnalysisResult, incidentService } from './services/incident-service';
+import { type AnalysisResult, type Impact, type Urgency, incidentService } from './services/incident-service';
 import { IncidentError } from './model/types';
 
-const PRIORITIES = [
-  { value: 'P1', label: 'P1 — Critical' },
-  { value: 'P2', label: 'P2 — High' },
-  { value: 'P3', label: 'P3 — Medium' },
-  { value: 'P4', label: 'P4 — Low' },
-] as const;
-
-type Priority = 'P1' | 'P2' | 'P3' | 'P4';
 type FormState = 'filling' | 'analyzing' | 'reviewing' | 'creating';
 
 interface CatalogItem { id: number; name: string; code?: string }
+
+const IMPACT_OPTIONS: { value: Impact; label: string; sub: string }[] = [
+  { value: 'HIGH',   label: 'Many people',          sub: 'The whole org or a large group' },
+  { value: 'MEDIUM', label: 'My team or department', sub: 'A group I work with' },
+  { value: 'LOW',    label: 'Just me',               sub: 'Only affects my work' },
+];
+
+const URGENCY_OPTIONS: { value: Urgency; label: string; sub: string }[] = [
+  { value: 'HIGH',   label: "No — work has stopped",   sub: 'No workaround available' },
+  { value: 'MEDIUM', label: 'Partially',                sub: 'I have a workaround' },
+  { value: 'LOW',    label: 'Yes, I can still work',    sub: "It's just inconvenient" },
+];
+
 
 const CONFIDENCE_STYLE: Record<string, string> = {
   HIGH: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
@@ -45,7 +50,8 @@ export default function ReportIncidentPage() {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [serviceId, setServiceId] = useState('');
-  const [priority, setPriority] = useState<Priority>('P3');
+  const [impact, setImpact] = useState<Impact | ''>('');
+  const [urgency, setUrgency] = useState<Urgency | ''>('');
   const [formState, setFormState] = useState<FormState>('filling');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -71,6 +77,8 @@ export default function ReportIncidentPage() {
     else if (description.trim().length > 4000) errs.description = 'At most 4000 characters.';
     if (!categoryId) errs.categoryId = 'Please select a category.';
     if (!serviceId) errs.serviceId = 'Please select a service.';
+    if (!impact) errs.impact = 'Please tell us how many people are affected.';
+    if (!urgency) errs.urgency = 'Please tell us if you can still work.';
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -83,7 +91,8 @@ export default function ReportIncidentPage() {
         description: description.trim(),
         categoryId: Number(categoryId),
         serviceId: Number(serviceId),
-        priority,
+        impact: impact as Impact,
+        urgency: urgency as Urgency,
       });
       toast.success('Incident reported.');
       router.push(`/incidents/${id}`);
@@ -197,17 +206,14 @@ export default function ReportIncidentPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="priority">Priority</Label>
-                <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-                  <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <AnswerGroup
+                id="impact" question="How many people are affected?" options={IMPACT_OPTIONS}
+                value={impact} onChange={setImpact} error={fieldErrors.impact}
+              />
+              <AnswerGroup
+                id="urgency" question="Can you still work?" options={URGENCY_OPTIONS}
+                value={urgency} onChange={setUrgency} error={fieldErrors.urgency}
+              />
 
               {!reviewing && (
                 <div className="flex gap-3 pt-2">
@@ -298,5 +304,43 @@ export default function ReportIncidentPage() {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * One required question answered by picking a button. A labelled group of toggle buttons: the selected one says so to
+ * assistive technology (`aria-pressed`), not only by colour, and the error is linked to the group.
+ */
+function AnswerGroup<T extends string>({ id, question, options, value, onChange, error }: {
+  id: string; question: string; options: { value: T; label: string; sub: string }[];
+  value: T | ''; onChange: (v: T) => void; error?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p id={`${id}-label`} className="text-sm font-medium leading-none">
+        {question} <span aria-hidden="true" className="text-destructive">*</span>
+      </p>
+      <div role="group" aria-labelledby={`${id}-label`} aria-describedby={error ? `${id}-error` : undefined} className="flex flex-wrap gap-2">
+        {options.map((opt) => {
+          const selected = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(opt.value)}
+              className={cn(
+                'rounded-md border px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              <span className="block font-medium">{opt.label}</span>
+              <span className={cn('block text-xs', selected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.sub}</span>
+            </button>
+          );
+        })}
+      </div>
+      {error && <p id={`${id}-error`} className="text-xs text-destructive">{error}</p>}
+    </div>
   );
 }

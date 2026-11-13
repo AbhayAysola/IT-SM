@@ -1,7 +1,9 @@
 package com.itsm.common.spi
 
+import com.itsm.common.model.Impact
 import com.itsm.common.model.Priority
 import com.itsm.common.model.Role
+import com.itsm.common.model.Urgency
 import java.time.Duration
 
 /*
@@ -86,3 +88,22 @@ data class AssignmentSettingsView(
 ) {
     fun strategyFor(categoryId: Long?): String = categoryOverrides[categoryId] ?: activeStrategy
 }
+
+/**
+ * The result of [PriorityPolicy.assess]: the priority plus everything needed to explain it. [reasons] are plain-language,
+ * client-safe sentences (service names and counts, no personal data) for the audit trail and the UI.
+ */
+data class PriorityAssessment(
+    val priority: Priority,
+    /** The impact x urgency matrix result for the reporter's own impact, before any adjustment. */
+    val basePriority: Priority,
+    val impact: Impact,
+    /** [impact], raised one level when the service has many dependents. */
+    val effectiveImpact: Impact,
+    val urgency: Urgency,
+    /** 1 (low) .. 5 (mission critical), as configured when the assessment was made. */
+    val businessCriticality: Int,
+    /** Active services that depend on the incident's service, directly or transitively. */
+    val dependentServiceCount: Int,
+    val reasons: List<String>
+)

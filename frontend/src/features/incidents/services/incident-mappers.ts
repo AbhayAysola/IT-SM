@@ -1,4 +1,4 @@
-import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type SimilarResolution, type TimelineEntry } from '../model/types';
+import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type SimilarResolution, type SlaClockView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
 
 /**
  * Pure translation between the backend's JSON (`IncidentController` DTOs) and the UI model. No network, so it is
@@ -22,6 +22,9 @@ export interface ApiIncidentList {
 export interface ApiTimelineEntry { type: TimelineEntry['type']; authorId: number; visibility: TimelineEntry['visibility']; body: string; incidentState: IncidentState; createdAt: string }
 export interface ApiFeedback { rating: number; comment: string | null; submittedAt: string }
 export interface ApiRecommendation { technicianId: number; name: string; score: number; reasons: string[] }
+/** GET /api/incidents/{id}/sla (P4's `SlaDto`). Only the fields the UI uses are listed. */
+export interface ApiSlaClock { status: SlaStatus; targetMinutes: number | null; dueAt: string | null; metAt: string | null; breachedAt: string | null }
+export interface ApiSla { status: SlaStatus; response: ApiSlaClock | null; resolution: ApiSlaClock | null; pausedSince: string | null; evaluatedAt: string | null }
 export interface ApiResolved { incidentId: string; title: string; resolution: string; resolvedAt: string; sameService: boolean }
 
 /** The signed-in user, from GET /api/users/me. */
@@ -75,6 +78,12 @@ export const toRecommendation = (d: ApiRecommendation): Recommendation =>
 /** The API does not say who fixed it, its priority or how long it took (yet), so the UI shows only what it knows. */
 export const toSimilar = (d: ApiResolved): SimilarResolution =>
   ({ incidentId: d.incidentId, title: d.title, priority: null, sameService: d.sameService, resolution: d.resolution, resolvedBy: null, daysToResolve: null });
+
+const toClock = (c: ApiSlaClock | null): SlaClockView | null =>
+  c ? { status: c.status, targetMinutes: c.targetMinutes, dueAt: c.dueAt, metAt: c.metAt, breachedAt: c.breachedAt } : null;
+
+export const toSla = (d: ApiSla): SlaSummary =>
+  ({ status: d.status, response: toClock(d.response), resolution: toClock(d.resolution), pausedSince: d.pausedSince, evaluatedAt: d.evaluatedAt });
 
 // ---- errors -------------------------------------------------------------------------------------------------------
 
