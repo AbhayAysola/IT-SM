@@ -2,7 +2,7 @@
 
 > An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
 
-> **Status:** early. Today the backend has authentication and user profile only; the admin workspace in the frontend runs on mock data. See [Current status](#-current-status).
+> **Status:** P1 (access and administration) is complete and merged, with P2 intake, P3 lifecycle/assignment and the incident workspace on `main` too. P4 (SLA timers, notifications) is not built. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
 
 ## 📚 Documentation
 
@@ -10,12 +10,19 @@
 |---|---|
 | [PRODUCT.md](PRODUCT.md) | Users, purpose, principles, accessibility requirements |
 | [DESIGN.md](DESIGN.md) | Design system: tokens, typography, components |
+| [docs/p1-handoff.md](docs/p1-handoff.md) | **Start here for P1**: what it delivers, how it was verified, deferred hardening and its owners, what other teams must do |
 | [docs/architecture/foundation.md](docs/architecture/foundation.md) | Shared `common` module: security, errors, API conventions, auditing |
 | [docs/architecture/integration-guide.md](docs/architecture/integration-guide.md) | Module ownership (P1–P4), SPI map, per-person recipes |
-| [docs/architecture/p4.md](docs/architecture/p4.md) | P4 design: priority, SLA, escalation, notifications, analytics |
-| [docs/migrations.md](docs/migrations.md) | Flyway version blocks and P1 draft migrations |
-| [frontend/e2e/README.md](frontend/e2e/README.md) | Playwright suite (hermetic and live modes) |
-| [frontend/src/features/admin/README.md](frontend/src/features/admin/README.md) | Admin workspace, mock persistence, access control |
+| [docs/architecture/security.md](docs/architecture/security.md) | Sessions and cookies, CSRF, rate limits, trusted proxies, actuator, probes, HTTPS-only Kubernetes |
+| [docs/architecture/p1-contract-matrix.md](docs/architecture/p1-contract-matrix.md) | Every shared SPI and P1 HTTP surface: owner, state, behaviour when absent or failing |
+| [docs/architecture/audit-retrieval.md](docs/architecture/audit-retrieval.md) | Audit retrieval API and its privacy rules |
+| [docs/architecture/admin-frontend-contract.md](docs/architecture/admin-frontend-contract.md) | The admin frontend's contract with the backend |
+| [docs/architecture/p3.md](docs/architecture/p3.md) | P3: lifecycle, assignment, investigation, feedback |
+| [docs/architecture/p4.md](docs/architecture/p4.md) | P4: priority, SLA, escalation, notifications, analytics (design) |
+| [docs/migrations.md](docs/migrations.md) | Flyway version blocks |
+| [frontend/e2e/README.md](frontend/e2e/README.md) | Fake-API Playwright suite (hermetic and live modes) |
+| [frontend/e2e-real/README.md](frontend/e2e-real/README.md) | Real frontend + backend + PostgreSQL 16 Playwright suite |
+| [frontend/src/features/admin/README.md](frontend/src/features/admin/README.md) | Admin workspace and its backend integration |
 
 ---
 
@@ -23,14 +30,17 @@
 
 | Area | State |
 |---|---|
-| Auth (`/api/auth/*`, `/api/users/me`) | Implemented (boilerplate; hardening planned) |
-| Shared `common` module (roles, permissions, errors, SPIs, audit events) | Implemented |
-| Audit persistence (`audit_events`) | **Not yet**: events are published, not stored |
-| P1 SPI providers (users, categories, services, SLA, assignment settings) | **Not yet** (draft migrations in `docs/migrations/drafts/`) |
-| Incident intake, lifecycle/assignment, SLA/notifications (P2–P4) | **Not yet** |
-| Admin workspace (frontend) | Built on `localStorage` mock data, no backend endpoints |
-| Redis / RabbitMQ | Configured in `config/` and the compose stack; no feature uses them yet |
-| Roles | Registration still assigns `USER` (treated as `EMPLOYEE`); no admin bootstrap, so `/admin` shows "Access denied" against the real backend |
+| Auth, sessions (HttpOnly cookie for the web app, Bearer for scripts), first-admin bootstrap | **Done** (P1): [security.md](docs/architecture/security.md) |
+| Users and roles, technician profiles, categories, IT services, SLA policies, assignment settings | **Done** (P1), served by the real admin API and connected to the admin workspace |
+| Audit trail (`audit_events`, append-only trigger) and admin retrieval API | **Done** (P1) |
+| Incident intake (`/api/incidents`, catalog, AI analysis) | On `main` (P2) |
+| Incident lifecycle, assignment, investigation timeline, feedback | On `main` (P3), including the strategy catalog and workload provider P1 consumes |
+| SLA timers, breach detection, escalation, notifications | **Not built** (P4); P1 only stores the SLA policies |
+| Kubernetes / Helm | HTTPS only, build-time API origin, separate liveness/readiness probes. Production hardening is assigned to the deployment owners: [handoff section 5](docs/p1-handoff.md) |
+| Redis / RabbitMQ | In the compose stack and config; no P1 feature uses them (health groups account for that) |
+| CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |
+
+The incident AI analysis calls the Anthropic API with the incident text when `anthropic.api-key` is set; without a key it is off.
 
 ---
 
@@ -260,24 +270,27 @@ Authenticated endpoints need `Authorization: Bearer <token>` for scripts and ser
 | GET | `/actuator/health` | public | Health check |
 | GET | `/actuator/prometheus` | admin | Prometheus metrics |
 
-The administration endpoints (users, technicians, catalogs, SLA, assignment settings, audit) are listed in the [integration guide](docs/architecture/integration-guide.md); conventions are in [foundation.md](docs/architecture/foundation.md#5-api-conventions).
+The administration endpoints (users, technicians, catalogs, SLA, assignment settings, audit) are listed in the [integration guide](docs/architecture/integration-guide.md); the incident endpoints (`/api/incidents/**`: intake, transitions, assignment, timeline, feedback) are in [p3.md](docs/architecture/p3.md); conventions are in [foundation.md](docs/architecture/foundation.md#5-api-conventions).
 
-### Example: Register + Login
+### Example: sign in as the first administrator
+
+There is no default account. Create the first admin with the command-mode bootstrap, then use the API:
 
 ```bash
-# Register
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"password123","name":"John Doe"}'
+# Once, with the backend jar and an empty or existing database:
+ITSM_BOOTSTRAP_ADMIN_EMAIL=admin@example.com ITSM_BOOTSTRAP_ADMIN_PASSWORD='<a strong password>' \
+  java -jar backend/build/libs/it-sm-0.0.1-SNAPSHOT.jar --itsm.bootstrap-admin=true
 
-# Login
+# Login for scripts (Bearer token)
 curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"password123"}'
+  -d '{"email":"admin@example.com","password":"<the password>"}'
 
 # Current user
 curl http://localhost:8080/api/users/me -H "Authorization: Bearer <token>"
 ```
+
+Self-registration is off unless `REGISTRATION_ENABLED=true` (then `POST /api/auth/register` answers `202` with no token, and you sign in).
 
 ---
 
@@ -297,7 +310,7 @@ curl http://localhost:8080/api/users/me -H "Authorization: Bearer <token>"
 
 | Variable | Default | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Backend API base URL |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Backend origin the **browser** calls: the bare origin, no `/api`. Compiled in by `next build` (a runtime variable has no effect), so a deployed image must be built with it: [HTTPS and the public origin](#https-and-the-public-origin-read-before-deploying) |
 
 ### Helm (`infra/helm/values.yaml`)
 
@@ -344,19 +357,21 @@ Import Grafana dashboards:
 ## 🧪 Running Tests
 
 ```bash
-# Backend (JDK 17; see foundation.md section 10 for a container recipe)
+# Backend (JDK 17, Docker running: the integration tests use PostgreSQL 16 Testcontainers)
 cd backend
-./gradlew test
+ITSM_REQUIRE_DOCKER=true ./gradlew clean build   # fails instead of skipping when Docker is missing
 
 # Frontend
 cd frontend
 npm run lint
 npm run typecheck
 npm run check:contrast
-npm run test:e2e        # Playwright, hermetic by default: see frontend/e2e/README.md
+npm run test:e2e        # fake-API Playwright suite: see frontend/e2e/README.md
+npm run test:real-stack # real frontend + backend + PostgreSQL 16: see frontend/e2e-real/README.md
 ```
 
-CI (`.github/workflows/frontend.yml`) runs the frontend checks on PRs to `main`.
+CI: `backend.yml` (unit and Testcontainers tests, Flyway on a clean PostgreSQL 16), `frontend.yml` (lint, typecheck, contrast, fake-API e2e) and
+`real-stack.yml` (the real-stack suite) run on pull requests to `main`; `backend.yml` and `real-stack.yml` also run on pushes to `main`.
 
 ---
 
