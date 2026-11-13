@@ -133,6 +133,47 @@ is a new class.
 
 **Migrations:** block `V40-V49`.
 
+### SLA tracking (implemented, `sla/`, `V40`)
+
+Rules (all on a 24x7 calendar, from the incident's `created_at`):
+
+| Clock | Stops at | Pauses |
+|---|---|---|
+| Response | `first_response_at` (never cleared, so a reassignment does not restart it) | never |
+| Resolution | `resolved_at` | while `PENDING_INFO`; on a reopen it resumes and the time spent in `RESOLVED` counts as paused |
+
+* A clock **warns** once `warningThresholdPct` of its target has elapsed while running, and is **breached** once its
+  deadline passes before it stops. A breach is recorded once, dated at the deadline, and never removed.
+* Targets are **copied** from the policy when tracking starts, so editing a policy does not move existing deadlines. A
+  priority change (none is possible after creation today) re-resolves them from `created_at`.
+* No applicable policy (`MISSING_SLA_CONFIG`, or `SERVICE_NOT_FOUND`): the SLA is `NO_POLICY`, `SLA_POLICY_MISSING` is
+  published once, and the lookup is retried every run. No duration is invented.
+
+**Monitor.** `SlaMonitor` runs every 60 s (`app.sla.monitor.*`, env `SLA_MONITOR_ENABLED`, `SLA_MONITOR_INTERVAL_MS`). One
+run is one `@Transactional` pass holding a PostgreSQL advisory lock (`pg_try_advisory_xact_lock`), so a second instance skips
+instead of publishing everything twice. Audit, as `AuditActor.system("SLA_MONITOR")`, entity type `INCIDENT_SLA`, entity id =
+incident id: `SLA_STARTED`, `SLA_RECALCULATED`, `SLA_POLICY_MISSING`, `SLA_PAUSED`, `SLA_RESUMED`, `SLA_WARNING_RAISED`,
+`SLA_BREACHED`, `SLA_MET`. The test suite turns the schedule off (`build.gradle.kts`) and calls `runAt(time)` directly.
+
+**Polling until there are domain events.** P2 and P3 publish no domain events yet, so the monitor reads the `incidents`
+table read-only through `IncidentSnapshotReader` (plus one join in `SlaStore.list` for the assignee filter). Pause and reopen
+times are taken from `updated_at` at the first run that sees them, so they are accurate to one polling interval. When P2/P3
+publish events, only that adapter changes.
+
+**API** (no admin routes, so no `SecurityConfig` change):
+
+| Method and path | Who | Result |
+|---|---|---|
+| `GET /api/incidents/{incidentId}/sla` | anyone P2's `IncidentAccessPolicy` lets see the incident | 200 `SlaDto`; `status: PENDING` until the first evaluation; 404 unknown, 403 not allowed, 503 if the access policy is not deployed |
+| `GET /api/sla/incidents?status&open&page&size` | `INCIDENT_VIEW_ALL` (everything) or `INCIDENT_VIEW_ASSIGNED` (own assigned incidents) | 200 `PageResponse<SlaDto>`, breached first then nearest resolution deadline; `status` repeatable (`BREACHED`, `WARNING`, `PAUSED`, `RUNNING`, `MET`, `NO_POLICY`); `open=true` by default hides verified/closed |
+
+`SlaDto` = `incidentId, status, priority, policy{id, scope}, noPolicyReason, response{status, targetMinutes, dueAt, warningAt,
+metAt, breachedAt}, resolution{...same}, pausedSince, pausedSeconds, evaluatedAt`. Clock statuses: `NO_POLICY`, `RUNNING`,
+`WARNING`, `PAUSED`, `MET`, `BREACHED`; the overall `status` is the most serious of the two.
+
+**Frontend.** The incident page shows a "Service level" card (`components/sla-panel.tsx`) to everyone who can open the
+incident; the mock service computes an approximate SLA from the seeded global targets (`model/sla.ts`).
+
 ## Category and service catalogs (P1, `V11`/`V12`)
 
 ### SPI semantics
