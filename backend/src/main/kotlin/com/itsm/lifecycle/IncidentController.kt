@@ -47,13 +47,22 @@ data class IncidentSummaryDto(
     val categoryId: Long?, val serviceId: Long?, val createdAt: Instant, val updatedAt: Instant, val resolvedAt: Instant?,
     /** True once the reporter has rated it; lets a UI decide whether feedback is still due. */
     val hasFeedback: Boolean,
-    val reporterName: String? = null, val assigneeName: String? = null, val categoryName: String? = null, val serviceName: String? = null
+    val reporterName: String? = null, val assigneeName: String? = null, val categoryName: String? = null, val serviceName: String? = null,
+    /** P4's SLA facts; null until SLA tracking has reached the incident. */
+    val sla: IncidentSlaSummaryDto? = null
 )
+
+/** `status` is the overall SLA status; `predictedMiss` is P4's predicted miss of the resolution deadline (still open). */
+data class IncidentSlaSummaryDto(val status: String, val resolutionStatus: String, val resolutionDueAt: Instant?, val predictedMiss: Boolean)
+
+/** How many incidents of this list need attention (see [SlaAttentionCounts]): what each SLA filter would show. */
+data class SlaAttentionDto(val breached: Long, val atRisk: Long, val predictedMiss: Long)
 
 data class IncidentListDto(
     val items: List<IncidentSummaryDto>, val page: Int, val size: Int, val totalItems: Long, val totalPages: Int,
     /** Incidents per state across everything the caller may see, ignoring the filters. */
-    val stateCounts: Map<String, Int>
+    val stateCounts: Map<String, Int>,
+    val slaAttention: SlaAttentionDto? = null
 )
 
 data class TimelineEntryDto(
@@ -94,8 +103,10 @@ class IncidentController(
     /**
      * The caller's incidents (an admin's: all). `states` is a comma-separated list of states; `q` matches id or title.
      * Optional filters, combined with AND: `priority` (P1..P4, repeatable or comma-separated), `categoryId`, `serviceId`,
-     * `assigneeId`, `createdFrom` / `createdTo` (ISO dates, both inclusive, UTC days), `slaStatus` (the SLA record's status).
-     * `stateCounts` ignores every filter and `q`.
+     * `assigneeId`, `createdFrom` / `createdTo` (ISO dates, both inclusive, UTC days), `slaStatus` (the SLA record's status),
+     * `predictedMiss=true` (P4's predicted miss of the resolution deadline). `sort` is `URGENCY` (default) or `DEADLINE`
+     * (nearest resolution deadline first). `stateCounts` ignores every filter and `q`; `slaAttention` counts breached, at-risk
+     * and predicted-miss incidents under every filter except the two SLA ones.
      */
     @GetMapping
     fun list(
@@ -108,6 +119,8 @@ class IncidentController(
         @RequestParam(required = false) createdFrom: String?,
         @RequestParam(required = false) createdTo: String?,
         @RequestParam(required = false) slaStatus: String?,
+        @RequestParam(defaultValue = "false") predictedMiss: Boolean,
+        @RequestParam(required = false) sort: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): IncidentListDto {
@@ -115,18 +128,24 @@ class IncidentController(
         val wanted = states.orEmpty().filter { it.isNotBlank() }.map {
             IncidentState.entries.firstOrNull { s -> s.name == it.trim().uppercase() } ?: throw InvalidInput("Unknown state '${it.take(30)}'")
         }.toSet()
-        val filters = parseFilters(priority, categoryId, serviceId, assigneeId, createdFrom, createdTo, slaStatus)
-        val result = lifecycle.list(currentUser.current(), wanted, q, paging.page, paging.size, filters)
+        val filters = parseFilters(priority, categoryId, serviceId, assigneeId, createdFrom, createdTo, slaStatus).copy(predictedMiss = predictedMiss)
+        val order = sort?.trim()?.takeIf { it.isNotEmpty() }?.let { v ->
+            IncidentSort.entries.firstOrNull { it.name.equals(v, ignoreCase = true) }
+                ?: throw InvalidInput("Unknown sort. Expected one of ${IncidentSort.entries.joinToString(", ")}.")
+        } ?: IncidentSort.URGENCY
+        val result = lifecycle.list(currentUser.current(), wanted, q, paging.page, paging.size, filters, order)
         val names = Names()
         return IncidentListDto(
-            result.rows.map { (r, fb) ->
+            result.rows.map { (r, fb, sla) ->
                 IncidentSummaryDto(
                     r.id, r.title, r.state.name, r.priority, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.createdAt, r.updatedAt, r.resolvedAt, fb,
-                    names.user(r.reporterId), names.user(r.assigneeId), names.category(r.categoryId), names.service(r.serviceId)
+                    names.user(r.reporterId), names.user(r.assigneeId), names.category(r.categoryId), names.service(r.serviceId),
+                    sla?.let { IncidentSlaSummaryDto(it.status, it.resolutionStatus, it.resolutionDueAt, it.predictedMiss) }
                 )
             },
             paging.page, paging.size, result.total, ((result.total + paging.size - 1) / paging.size).toInt(),
-            result.stateCounts.mapKeys { it.key.name }
+            result.stateCounts.mapKeys { it.key.name },
+            result.slaAttention.let { SlaAttentionDto(it.breached, it.atRisk, it.predictedMiss) }
         )
     }
 

@@ -21,7 +21,12 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 
-data class IncidentListResult(val rows: List<IncidentListRow>, val total: Long, val stateCounts: Map<IncidentState, Int>)
+data class IncidentListResult(
+    val rows: List<IncidentListRow>,
+    val total: Long,
+    val stateCounts: Map<IncidentState, Int>,
+    val slaAttention: SlaAttentionCounts = SlaAttentionCounts()
+)
 
 /**
  * Applies the lifecycle after the technician starts work: acknowledge, investigate, ask, resolve, verify, reopen,
@@ -57,17 +62,18 @@ class IncidentLifecycleService(
         IncidentAccess.requireVisible(incidents.find(incidentId), incidentId, user)
 
     /**
-     * One page of the caller's incidents (an admin's: all), filtered by [states] and [search], most urgent first, with
-     * the count per state for the whole scope. Nothing here reveals an incident the caller could not open.
+     * One page of the caller's incidents (an admin's: all), filtered by [states] and [search], in [sort] order, with
+     * the count per state for the whole scope and the SLA attention counts for this list. Nothing here reveals an incident the caller could not open.
      */
     @Transactional(readOnly = true)
     fun list(
         user: CurrentUser, states: Set<IncidentState>, search: String?, page: Int, size: Int,
-        filters: IncidentFilters = IncidentFilters()
+        filters: IncidentFilters = IncidentFilters(), sort: IncidentSort = IncidentSort.URGENCY
     ): IncidentListResult {
         val scope = IncidentScope(user.id, user.isAdmin)
-        val result = incidents.list(IncidentListQuery(scope, states, search?.take(MAX_SEARCH), page.toLong() * size, size, filters))
-        return IncidentListResult(result.rows, result.total, incidents.stateCounts(scope))
+        val query = IncidentListQuery(scope, states, search?.take(MAX_SEARCH), page.toLong() * size, size, filters, sort)
+        val result = incidents.list(query)
+        return IncidentListResult(result.rows, result.total, incidents.stateCounts(scope), incidents.slaAttention(query))
     }
 
     /** What [user] can do right now: the state machine's moves narrowed by ownership. Drives which buttons a UI shows. */

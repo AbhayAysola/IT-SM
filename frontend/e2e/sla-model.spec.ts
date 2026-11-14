@@ -1,8 +1,8 @@
 /** Pure checks of the SLA display rules, the mock SLA and the live mapper (no browser, no backend). */
 import { test, expect } from '@playwright/test';
-import { clockLine, escalationAudience, mockSla, overallSla, relativeTo, riskLine, riskReason, showRisk, SLA_LABEL } from '../src/features/incidents/model/sla';
-import type { Incident, SlaRiskView, SlaStatus, SlaSummary } from '../src/features/incidents/model/types';
-import { toEscalation, toSla } from '../src/features/incidents/services/incident-mappers';
+import { clockLine, escalationAudience, listDeadline, mockRowSla, mockSla, overallSla, relativeTo, riskLine, riskReason, showRisk, SLA_LABEL } from '../src/features/incidents/model/sla';
+import type { Incident, RowSla, SlaRiskView, SlaStatus, SlaSummary } from '../src/features/incidents/model/types';
+import { toEscalation, toRowSla, toSla } from '../src/features/incidents/services/incident-mappers';
 
 const NOW = Date.parse('2026-11-13T10:00:00Z');
 const minutes = (m: number) => new Date(NOW + m * 60_000).toISOString();
@@ -109,6 +109,38 @@ test.describe('predicted misses', () => {
     for (const s of ['MET', 'BREACHED', 'PAUSED'] as SlaStatus[]) expect(showRisk(sla(s))).toBeNull();
     expect(showRisk(sla('RUNNING', null))).toBeNull();
     expect(mockSla(incident({}), NOW).risk, 'the mock never predicts').toBeNull();
+  });
+});
+
+test.describe('incident list deadline', () => {
+  const sla = (over: Partial<RowSla>): RowSla => ({ status: 'RUNNING', resolutionStatus: 'RUNNING', resolutionDueAt: minutes(65), predictedMiss: false, ...over });
+
+  test('says how long is left, and flags a warned or predicted miss in words', () => {
+    expect(listDeadline(sla({}), NOW)).toEqual({ text: 'Due in 1 h 5 min', badge: null });
+    expect(listDeadline(sla({ resolutionStatus: 'WARNING', status: 'WARNING' }), NOW).badge).toEqual({ label: 'At risk', variant: 'warning' });
+    expect(listDeadline(sla({ predictedMiss: true }), NOW).badge).toEqual({ label: 'Likely to miss', variant: 'warning' });
+    expect(listDeadline(sla({ resolutionStatus: 'WARNING', predictedMiss: true }), NOW).badge?.label, 'the forecast says more than the warning').toBe('Likely to miss');
+  });
+
+  test('a passed, met, paused, untracked or policy-less clock says so', () => {
+    expect(listDeadline(sla({ resolutionStatus: 'BREACHED', status: 'BREACHED', resolutionDueAt: minutes(-12) }), NOW)).toEqual({ text: 'Due 12 min ago', badge: { label: 'Breached', variant: 'destructive' } });
+    expect(listDeadline(sla({ resolutionStatus: 'MET', resolutionDueAt: null }), NOW)).toEqual({ text: 'Met', badge: null });
+    expect(listDeadline(sla({ resolutionStatus: 'PAUSED' }), NOW).text).toBe('Paused');
+    expect(listDeadline(sla({ resolutionStatus: 'NO_POLICY', status: 'NO_POLICY', resolutionDueAt: null }), NOW).text).toBe('No SLA policy');
+    expect(listDeadline(null, NOW)).toEqual({ text: 'Not tracked yet', badge: null });
+  });
+
+  test('the mock reports the same clocks as the detail page, never a prediction, and nothing for a new incident', () => {
+    const working = mockRowSla(incident({ state: 'IN_PROGRESS', priority: 'P3', createdAt: minutes(-10) }), NOW)!;
+    expect(working).toEqual({ status: 'RUNNING', resolutionStatus: 'RUNNING', resolutionDueAt: minutes(470), predictedMiss: false });
+    expect(mockRowSla(incident({ state: 'NEW' }), NOW)).toBeNull();
+    expect(mockRowSla(incident({ state: 'CLOSED', resolvedAt: minutes(-5) }), NOW)!.resolutionDueAt, 'finished: no open deadline').toBeNull();
+  });
+
+  test('the live mapper keeps the row facts', () => {
+    expect(toRowSla({ status: 'WARNING', resolutionStatus: 'WARNING', resolutionDueAt: minutes(3), predictedMiss: true }))
+      .toEqual({ status: 'WARNING', resolutionStatus: 'WARNING', resolutionDueAt: minutes(3), predictedMiss: true });
+    expect(toRowSla(undefined)).toBeNull();
   });
 });
 

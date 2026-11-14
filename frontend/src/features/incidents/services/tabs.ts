@@ -42,8 +42,13 @@ export interface IncidentFilters {
   /** The technician the incident is assigned to (a user id on the backend). Offered to admins only. */
   assigneeId?: number;
   slaStatus?: FilterSlaStatus;
+  /** Only incidents P4 predicts will miss their resolution deadline (`predictedMiss=true`). */
+  predictedMiss?: true;
   from?: string;
   to?: string;
 }
+
+/** List order (`sort` on `GET /api/incidents`): most urgent first (the default), or nearest resolution deadline first. */
+export type IncidentSort = 'URGENCY' | 'DEADLINE';
 
 export const activeFilterCount = (f: IncidentFilters): number => Object.values(f).filter((v) => v !== undefined && v !== '').length;

@@ -131,13 +131,41 @@ class JpaIncidentStore(
     override fun list(query: IncidentListQuery): IncidentPage {
         val (where, args) = filter(query)
         val total = jdbc.queryForObject("SELECT count(*) FROM incidents i WHERE $where", Long::class.java, *args.toTypedArray()) ?: 0L
+        val order = when (query.sort) {
+            IncidentSort.URGENCY -> "i.priority NULLS LAST, i.updated_at DESC, i.id"
+            IncidentSort.DEADLINE -> "(CASE WHEN sla.complete THEN NULL ELSE sla.resolution_due_at END) NULLS LAST, i.priority NULLS LAST, i.updated_at DESC, i.id"
+        }
         val rows = jdbc.query(
-            "SELECT i.*, EXISTS (SELECT 1 FROM incident_feedback f WHERE f.incident_id = i.id) AS has_feedback FROM incidents i " +
-                "WHERE $where ORDER BY i.priority NULLS LAST, i.updated_at DESC, i.id LIMIT ? OFFSET ?",
-            { rs, _ -> IncidentListRow(rs.toRecord(), rs.getBoolean("has_feedback")) },
+            "SELECT i.*, EXISTS (SELECT 1 FROM incident_feedback f WHERE f.incident_id = i.id) AS has_feedback, " +
+                "sla.status AS sla_status, sla.resolution_status AS sla_resolution_status, sla.resolution_due_at AS sla_resolution_due_at, " +
+                "($PREDICTED_MISS) AS sla_predicted_miss " +
+                "FROM incidents i LEFT JOIN incident_sla sla ON sla.incident_id = i.id " +
+                "WHERE $where ORDER BY $order LIMIT ? OFFSET ?",
+            { rs, _ -> IncidentListRow(rs.toRecord(), rs.getBoolean("has_feedback"), rs.toSlaFacts()) },
             *(args + query.limit + query.offset).toTypedArray()
         )
         return IncidentPage(rows, total)
+    }
+
+    @Transactional(readOnly = true)
+    override fun slaAttention(query: IncidentListQuery): SlaAttentionCounts {
+        val (where, args) = filter(query.copy(filters = query.filters.copy(slaStatus = null, predictedMiss = false)))
+        return jdbc.queryForObject(
+            "SELECT count(*) FILTER (WHERE sla.status = 'BREACHED'), count(*) FILTER (WHERE sla.status = 'WARNING'), " +
+                "count(*) FILTER (WHERE $PREDICTED_MISS) " +
+                "FROM incidents i LEFT JOIN incident_sla sla ON sla.incident_id = i.id WHERE $where",
+            { rs, _ -> SlaAttentionCounts(rs.getLong(1), rs.getLong(2), rs.getLong(3)) },
+            *args.toTypedArray()
+        ) ?: SlaAttentionCounts()
+    }
+
+    private fun java.sql.ResultSet.toSlaFacts(): IncidentSlaFacts? = getString("sla_status")?.let {
+        IncidentSlaFacts(
+            status = it,
+            resolutionStatus = getString("sla_resolution_status"),
+            resolutionDueAt = getObject("sla_resolution_due_at", java.time.OffsetDateTime::class.java)?.toInstant(),
+            predictedMiss = getBoolean("sla_predicted_miss")
+        )
     }
 
     @Transactional(readOnly = true)
@@ -170,6 +198,7 @@ class JpaIncidentStore(
         f.createdFrom?.let { clauses += "i.created_at >= ?"; args += java.sql.Timestamp.from(it) }
         f.createdBefore?.let { clauses += "i.created_at < ?"; args += java.sql.Timestamp.from(it) }
         f.slaStatus?.let { clauses += "EXISTS (SELECT 1 FROM incident_sla s WHERE s.incident_id = i.id AND s.status = ?)"; args += it }
+        if (f.predictedMiss) clauses += "EXISTS (SELECT 1 FROM incident_sla s WHERE s.incident_id = i.id AND $PREDICTED_MISS_OF_S)"
         return (clauses.joinToString(" AND ").ifEmpty { "TRUE" }) to args
     }
 
@@ -197,5 +226,15 @@ class JpaIncidentStore(
 
         /** First key of the advisory lock pair; the second is the technician id. Distinct from P1's 7310002/7310004. */
         const val TECHNICIAN_LOCK_NAMESPACE = 7310030
+
+        /**
+         * P4's predicted miss (V43) while the resolution clock is still running or warned, for an SLA row aliased `s`.
+         * Only fixed SQL, never user text.
+         */
+        const val PREDICTED_MISS_OF_S = "s.resolution_status IN ('RUNNING', 'WARNING') " +
+            "AND EXISTS (SELECT 1 FROM incident_sla_risk r WHERE r.incident_id = s.incident_id)"
+        /** The same, for the list's joined SLA row (aliased `sla`, possibly absent). */
+        const val PREDICTED_MISS = "COALESCE(sla.resolution_status IN ('RUNNING', 'WARNING') " +
+            "AND EXISTS (SELECT 1 FROM incident_sla_risk r WHERE r.incident_id = sla.incident_id), FALSE)"
     }
 }
