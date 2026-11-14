@@ -17,7 +17,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /** What one run did. */
-data class SlaRunResult(val skipped: Boolean, val evaluated: Int = 0, val written: Int = 0, val events: Int = 0) {
+data class SlaRunResult(val skipped: Boolean, val evaluated: Int = 0, val written: Int = 0, val events: Int = 0, val risks: Int = 0) {
     companion object {
         val SKIPPED = SlaRunResult(skipped = true)
     }
@@ -33,6 +33,8 @@ data class SlaRunResult(val skipped: Boolean, val evaluated: Int = 0, val writte
  * from P1's provider (recorded as `NO_POLICY`, retried on the next run); any other failure rolls the run back and the
  * next run retries everything.
  *
+ * Each sweep then runs [SlaRiskDetector], which warns early about incidents predicted to miss their resolution deadline.
+ *
  * Scheduled by [SlaMonitorSchedule] as a sweep: deadlines pass with no event, so warnings and breaches need it, and it
  * catches any change an event listener missed. Incident changes are evaluated at once by [evaluateIncident]. Tests call
  * [runAt] directly with a chosen time.
@@ -45,6 +47,7 @@ class SlaMonitor(
     private val audit: AuditPublisher,
     private val clock: Clock,
     private val events: ApplicationEventPublisher,
+    private val risk: SlaRiskDetector,
     @Value("\${app.sla.monitor.batch-size:500}") private val batchSize: Int
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -56,7 +59,9 @@ class SlaMonitor(
         if (!store.tryMonitorLock()) return SlaRunResult.SKIPPED
         val result = evaluate(incidents.findTracked(batchSize), time)
         if (result.evaluated == batchSize) log.info("SLA monitor reached its batch size ({}); the rest is evaluated next run", batchSize)
-        return result
+        // After the clocks: one that has just reached its fixed warning is no longer a risk candidate.
+        val risks = risk.detect(time.truncatedTo(ChronoUnit.MICROS))
+        return result.copy(events = result.events + risks, risks = risks)
     }
 
     /**

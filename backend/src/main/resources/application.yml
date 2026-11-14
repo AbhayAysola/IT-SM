@@ -63,6 +63,11 @@ app:
       interval-ms: ${SLA_MONITOR_INTERVAL_MS:60000}
       initial-delay-ms: ${SLA_MONITOR_INITIAL_DELAY_MS:30000}
       batch-size: ${SLA_MONITOR_BATCH_SIZE:500}
+    risk:
+      # Predictive risk, part of every SLA sweep (docs/architecture/p4.md section 2): forecasts are based on incidents
+      # resolved in the last history-days days.
+      history-days: ${SLA_RISK_HISTORY_DAYS:180}
+      batch-size: ${SLA_RISK_BATCH_SIZE:500}
   p4:
     event-listeners:
       # P4 reacts to P2/P3's incident domain events (docs/architecture/p4.md section 6): SLA evaluation, lifecycle

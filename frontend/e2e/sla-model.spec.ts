@@ -1,7 +1,7 @@
 /** Pure checks of the SLA display rules, the mock SLA and the live mapper (no browser, no backend). */
 import { test, expect } from '@playwright/test';
-import { clockLine, escalationAudience, mockSla, overallSla, relativeTo, SLA_LABEL } from '../src/features/incidents/model/sla';
-import type { Incident, SlaStatus } from '../src/features/incidents/model/types';
+import { clockLine, escalationAudience, mockSla, overallSla, relativeTo, riskLine, riskReason, showRisk, SLA_LABEL } from '../src/features/incidents/model/sla';
+import type { Incident, SlaRiskView, SlaStatus, SlaSummary } from '../src/features/incidents/model/types';
 import { toEscalation, toSla } from '../src/features/incidents/services/incident-mappers';
 
 const NOW = Date.parse('2026-11-13T10:00:00Z');
@@ -76,8 +76,39 @@ test.describe('live SLA mapper', () => {
   test('keeps the statuses and instants the backend sends', () => {
     const clock = { status: 'WARNING' as const, targetMinutes: 15, dueAt: minutes(3), metAt: null, breachedAt: null };
     const s = toSla({ status: 'WARNING', response: clock, resolution: null, pausedSince: null, evaluatedAt: minutes(-1) });
-    expect(s).toEqual({ status: 'WARNING', response: clock, resolution: null, pausedSince: null, evaluatedAt: minutes(-1) });
+    expect(s).toEqual({ status: 'WARNING', response: clock, resolution: null, pausedSince: null, evaluatedAt: minutes(-1), risk: null });
     expect(toSla({ status: 'PENDING', response: null, resolution: null, pausedSince: null, evaluatedAt: null }).status).toBe('PENDING');
+  });
+
+  test('keeps a predicted miss, without the numbers the page does not show', () => {
+    const risk = { raisedAt: minutes(-1), dueAt: minutes(60), predictedFinishAt: minutes(150), basis: 'CATEGORY' as const, sampleSize: 7, typicalRemainingMinutes: 150, loadFactor: 1 };
+    const s = toSla({ status: 'RUNNING', response: null, resolution: null, pausedSince: null, evaluatedAt: null, risk });
+    expect(s.risk).toEqual({ raisedAt: minutes(-1), dueAt: minutes(60), predictedFinishAt: minutes(150), basis: 'CATEGORY', sampleSize: 7, loadFactor: 1 });
+  });
+});
+
+test.describe('predicted misses', () => {
+  const risk: SlaRiskView = { raisedAt: minutes(0), dueAt: minutes(60), predictedFinishAt: minutes(150), basis: 'CATEGORY', sampleSize: 7, loadFactor: 1 };
+  const clock = (status: SlaStatus) => ({ status, targetMinutes: 240, dueAt: minutes(60), metAt: null, breachedAt: null });
+  const sla = (status: SlaStatus, r: SlaRiskView | null = risk): SlaSummary =>
+    ({ status, response: null, resolution: clock(status), pausedSince: null, evaluatedAt: null, risk: r });
+
+  test('say when it will probably be done and how late that is', () => {
+    expect(riskLine(risk, when)).toBe(`Likely to be resolved around ${minutes(150)}, 1 h 30 min after the deadline.`);
+  });
+
+  test('say what the forecast is based on, and the assignee load only when it mattered', () => {
+    expect(riskReason(risk)).toBe('Based on 7 similar resolved incidents (same category and priority).');
+    expect(riskReason({ ...risk, basis: 'PRIORITY', sampleSize: 12, loadFactor: 2 })).toBe('Based on 12 similar resolved incidents (same priority). The assignee has twice their usual workload.');
+    expect(riskReason({ ...risk, loadFactor: 1.5 })).toContain('1.5 times their usual workload');
+  });
+
+  test('are shown only while the resolution clock is still running', () => {
+    expect(showRisk(sla('RUNNING'))).toEqual(risk);
+    expect(showRisk(sla('WARNING'))).toEqual(risk);
+    for (const s of ['MET', 'BREACHED', 'PAUSED'] as SlaStatus[]) expect(showRisk(sla(s))).toBeNull();
+    expect(showRisk(sla('RUNNING', null))).toBeNull();
+    expect(mockSla(incident({}), NOW).risk, 'the mock never predicts').toBeNull();
   });
 });
 

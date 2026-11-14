@@ -80,6 +80,20 @@ class NotificationMessagesTest {
         assertEquals(emptyList<Notification>(), NotificationMessages.forSla(SlaNotice("INC1001", SlaNotice.Kind.WARNING, SlaClock.RESPONSE, now), incident.copy(assigneeId = null)) { listOf(90) })
     }
 
+    @Test fun `a predicted miss tells the assignee when it is due and when it will probably be done`() {
+        val notice = SlaNotice("INC1001", SlaNotice.Kind.AT_RISK, SlaClock.RESOLUTION, Instant.parse("2026-11-14T14:00:00Z"), Instant.parse("2026-11-14T15:30:00Z"))
+        val n = NotificationMessages.forSla(notice, incident) { error("not needed") }
+        assertEquals(listOf(NotificationType.SLA_AT_RISK to 7L), n.summary())
+        assertEquals("INC1001 is likely to miss its resolution SLA", n[0].title)
+        assertTrue(n[0].body.contains("Due 14 Nov, 14:00 UTC") && n[0].body.contains("around 14 Nov, 15:30 UTC"), n[0].body)
+    }
+
+    @Test fun `a predicted miss with nobody assigned tells each admin once`() {
+        val notice = SlaNotice("INC1001", SlaNotice.Kind.AT_RISK, SlaClock.RESOLUTION, now, now)
+        val n = NotificationMessages.forSla(notice, incident.copy(assigneeId = null)) { listOf(90, 91, 90) }
+        assertEquals(listOf(NotificationType.SLA_AT_RISK to 90L, NotificationType.SLA_AT_RISK to 91L), n.summary())
+    }
+
     @Test fun `a missing policy tells each admin once`() {
         val n = NotificationMessages.forSla(SlaNotice("INC1001", SlaNotice.Kind.POLICY_MISSING, null, null), incident) { listOf(90, 91, 90) }
         assertEquals(listOf(NotificationType.SLA_POLICY_MISSING to 90L, NotificationType.SLA_POLICY_MISSING to 91L), n.summary())
