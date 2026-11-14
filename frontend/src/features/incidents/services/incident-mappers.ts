@@ -1,4 +1,4 @@
-import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type SimilarResolution, type SlaClockView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
+import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type SimilarResolution, type EscalationView, type SlaClockView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
 
 /**
  * Pure translation between the backend's JSON (`IncidentController` DTOs) and the UI model. No network, so it is
@@ -25,6 +25,8 @@ export interface ApiRecommendation { technicianId: number; name: string; score: 
 /** GET /api/incidents/{id}/sla (P4's `SlaDto`). Only the fields the UI uses are listed. */
 export interface ApiSlaClock { status: SlaStatus; targetMinutes: number | null; dueAt: string | null; metAt: string | null; breachedAt: string | null }
 export interface ApiSla { status: SlaStatus; response: ApiSlaClock | null; resolution: ApiSlaClock | null; pausedSince: string | null; evaluatedAt: string | null }
+/** GET /api/incidents/{id}/escalations (P4's `EscalationDto`). */
+export interface ApiEscalation { trigger: string; tier: EscalationView['tier']; description: string; targets: { id: number; name: string }[]; assigneeId: number | null; createdAt: string }
 export interface ApiResolved { incidentId: string; title: string; resolution: string; resolvedAt: string; sameService: boolean }
 
 /** The signed-in user, from GET /api/users/me. */
@@ -84,6 +86,9 @@ const toClock = (c: ApiSlaClock | null): SlaClockView | null =>
 
 export const toSla = (d: ApiSla): SlaSummary =>
   ({ status: d.status, response: toClock(d.response), resolution: toClock(d.resolution), pausedSince: d.pausedSince, evaluatedAt: d.evaluatedAt });
+
+export const toEscalation = (d: ApiEscalation): EscalationView =>
+  ({ description: d.description, tier: d.tier, targets: d.targets.map((t) => t.name), createdAt: d.createdAt });
 
 // ---- errors -------------------------------------------------------------------------------------------------------
 

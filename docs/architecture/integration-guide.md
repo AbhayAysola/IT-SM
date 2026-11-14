@@ -200,8 +200,22 @@ publish events, only that adapter changes.
 metAt, breachedAt}, resolution{...same}, pausedSince, pausedSeconds, evaluatedAt`. Clock statuses: `NO_POLICY`, `RUNNING`,
 `WARNING`, `PAUSED`, `MET`, `BREACHED`; the overall `status` is the most serious of the two.
 
+**Escalation (implemented, `escalation/`, `V41`).** Rules in [p4.md](p4.md) section 3. An `EscalationMonitor` runs after the
+SLA monitor (`app.escalation.monitor.*`, env `ESCALATION_MONITOR_ENABLED`) and escalates open incidents once per trigger:
+recorded response or resolution breach to the assignee's team lead (`UserDirectory.escalationChain`), 150 % / 200 % of the
+resolution target to the next manager / the admins (`listAdmins`), and nobody assigned after 30 minutes to the admins. It
+records (append-only `incident_escalations`) and audits `INCIDENT_ESCALATED` as `AuditActor.system("ESCALATION_MONITOR")`;
+it never reassigns.
+
+| Method and path | Who | Result |
+|---|---|---|
+| `GET /api/admin/escalation-settings` | `SLA_CONFIGURE` | 200 `{unassignedMinutes, secondLevelPct, adminLevelPct, version, updatedAt, updatedByUserId}` |
+| `PUT /api/admin/escalation-settings` `{unassignedMinutes, secondLevelPct, adminLevelPct, version}` | `SLA_CONFIGURE` | 200; 400 field errors (minutes 1-10080, percentages 101-1000, admin above next level); 409 stale version; audited `ESCALATION_SETTINGS_UPDATED`, an unchanged request is a no-op |
+| `GET /api/incidents/{incidentId}/escalations` | IT staff (technicians, admins) whom P2's `IncidentAccessPolicy` lets see the incident | 200 `[{trigger, tier, description, targets[{id, name}], assigneeId, createdAt}]`; reporters 403; 503 without the access policy |
+
 **Frontend.** The incident page shows a "Service level" card (`components/sla-panel.tsx`) to everyone who can open the
-incident; the mock service computes an approximate SLA from the seeded global targets (`model/sla.ts`).
+incident, with its escalations for staff; the mock service computes an approximate SLA from the seeded global targets
+(`model/sla.ts`) and has no escalations. Admins edit the escalation settings on the admin workspace's "Escalation" page.
 
 ## Category and service catalogs (P1, `V11`/`V12`)
 

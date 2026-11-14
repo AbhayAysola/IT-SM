@@ -1,4 +1,4 @@
-import type { Incident, IncidentState, Priority, SlaClockView, SlaStatus, SlaSummary } from './types';
+import type { EscalationView, Incident, IncidentState, Priority, SlaClockView, SlaStatus, SlaSummary } from './types';
 
 /**
  * SLA display rules and the mock service's SLA. The real rules are P4's backend (`sla/SlaEvaluator.kt`, documented in
@@ -79,4 +79,13 @@ export function mockSla(i: Incident, now: number): SlaSummary {
 export function overallSla(response: SlaStatus, resolution: SlaStatus): SlaStatus {
   const order: SlaStatus[] = ['NO_POLICY', 'BREACHED', 'WARNING', 'PAUSED', 'RUNNING', 'MET'];
   return order.find((s) => s === response || s === resolution) ?? 'MET';
+}
+
+const TIER_LABEL: Record<EscalationView['tier'], string> = { TEAM_LEAD: 'team lead', NEXT_LEVEL: 'next manager', ADMINS: 'administrators' };
+
+/** "sent to Priya (team lead)", or who should have received it when nobody qualified. */
+export function escalationAudience(e: EscalationView): string {
+  if (e.targets.length === 0) return `no ${TIER_LABEL[e.tier]} to send it to`;
+  if (e.tier === 'ADMINS') return `sent to the administrators (${e.targets.join(', ')})`;
+  return `sent to ${e.targets.join(', ')} (${TIER_LABEL[e.tier]})`;
 }

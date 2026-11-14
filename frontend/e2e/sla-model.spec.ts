@@ -1,8 +1,8 @@
 /** Pure checks of the SLA display rules, the mock SLA and the live mapper (no browser, no backend). */
 import { test, expect } from '@playwright/test';
-import { clockLine, mockSla, overallSla, relativeTo, SLA_LABEL } from '../src/features/incidents/model/sla';
+import { clockLine, escalationAudience, mockSla, overallSla, relativeTo, SLA_LABEL } from '../src/features/incidents/model/sla';
 import type { Incident, SlaStatus } from '../src/features/incidents/model/types';
-import { toSla } from '../src/features/incidents/services/incident-mappers';
+import { toEscalation, toSla } from '../src/features/incidents/services/incident-mappers';
 
 const NOW = Date.parse('2026-11-13T10:00:00Z');
 const minutes = (m: number) => new Date(NOW + m * 60_000).toISOString();
@@ -78,5 +78,20 @@ test.describe('live SLA mapper', () => {
     const s = toSla({ status: 'WARNING', response: clock, resolution: null, pausedSince: null, evaluatedAt: minutes(-1) });
     expect(s).toEqual({ status: 'WARNING', response: clock, resolution: null, pausedSince: null, evaluatedAt: minutes(-1) });
     expect(toSla({ status: 'PENDING', response: null, resolution: null, pausedSince: null, evaluatedAt: null }).status).toBe('PENDING');
+  });
+});
+
+test.describe('escalations', () => {
+  test('the live mapper keeps what the page shows and drops ids', () => {
+    const e = toEscalation({ trigger: 'RESPONSE_BREACHED', tier: 'TEAM_LEAD', description: 'Response SLA breached', targets: [{ id: 4, name: 'Priya' }], assigneeId: 9, createdAt: minutes(-3) });
+    expect(e).toEqual({ description: 'Response SLA breached', tier: 'TEAM_LEAD', targets: ['Priya'], createdAt: minutes(-3) });
+  });
+
+  test('who it went to is said in words, including when nobody qualified', () => {
+    const base = { description: 'x', createdAt: minutes(0) };
+    expect(escalationAudience({ ...base, tier: 'TEAM_LEAD', targets: ['Priya'] })).toBe('sent to Priya (team lead)');
+    expect(escalationAudience({ ...base, tier: 'NEXT_LEVEL', targets: ['Omar'] })).toBe('sent to Omar (next manager)');
+    expect(escalationAudience({ ...base, tier: 'ADMINS', targets: ['Ada', 'Grace'] })).toBe('sent to the administrators (Ada, Grace)');
+    expect(escalationAudience({ ...base, tier: 'TEAM_LEAD', targets: [] })).toBe('no team lead to send it to');
   });
 });

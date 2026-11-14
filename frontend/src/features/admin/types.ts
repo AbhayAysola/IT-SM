@@ -154,6 +154,19 @@ export interface AssignmentOverride {
  */
 export type StrategyCatalogStatus = 'AVAILABLE' | 'ABSENT' | 'FAILED';
 
+/** When SLA escalation fires (P4, GET/PUT /api/admin/escalation-settings). */
+export interface EscalationSettings {
+  /** An incident nobody picked up goes to the admins this many minutes after it was reported. */
+  unassignedMinutes: number;
+  /** An open incident goes one level up the reporting line at this % of its resolution target... */
+  secondLevelPct: number;
+  /** ...and to the admins at this %. Always greater than `secondLevelPct`. */
+  adminLevelPct: number;
+  version: number;
+  updatedAt: string | null;
+  updatedByUserId: number | null;
+}
+
 export interface AssignmentSettings {
   activeStrategy: string;
   defaultMaxWorkload: number;

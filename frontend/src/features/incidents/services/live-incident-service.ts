@@ -5,8 +5,8 @@ import type { AnalysisResult, Impact, IncidentDetail, IncidentListResult, Urgenc
 import { needsAttention } from './attention';
 import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toSimilar, toSla, toTimelineEntry,
-  type ApiFeedback, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
+  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toSimilar, toSla, toTimelineEntry,
+  type ApiEscalation, type ApiFeedback, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
 /**
@@ -71,7 +71,7 @@ export const liveIncidentService = {
     const incident = toIncident(dto, who);
     const staff = hasPermission(actor.role, 'INCIDENT_WORK');
     const wantsSimilar = staff && ACTIVE.includes(dto.state);
-    const [timeline, feedback, similar, sla] = await Promise.all([
+    const [timeline, feedback, similar, sla, escalations] = await Promise.all([
       call<ApiTimelineEntry[]>('GET', `/${enc(id)}/timeline`),
       call<ApiFeedback>('GET', `/${enc(id)}/feedback`).catch((e: unknown) => {
         if (e instanceof IncidentError && e.code === 'NOT_FOUND') return null; // no feedback yet is normal
@@ -80,6 +80,8 @@ export const liveIncidentService = {
       wantsSimilar ? call<ApiResolved[]>('GET', `/${enc(id)}/similar?limit=3`) : Promise.resolve([] as ApiResolved[]),
       // P4's SLA is extra information: if it cannot be loaded the page still works, without the panel.
       call<ApiSla>('GET', `/${enc(id)}/sla`).then(toSla, () => null),
+      // Escalations name the people involved, so the backend shows them to staff only; also extra information.
+      staff ? call<ApiEscalation[]>('GET', `/${enc(id)}/escalations`).then((l) => l.map(toEscalation), () => []) : Promise.resolve([]),
     ]);
 
     // The backend lists the moves it accepts on /transitions; assignment is a separate call, offered to admins here.
@@ -99,6 +101,7 @@ export const liveIncidentService = {
       canGiveFeedback: dto.reporterId === who.id && hasPermission(actor.role, 'INCIDENT_VERIFY_OWN') && FEEDBACK_STATES.includes(dto.state) && !feedback,
       similar: similar.map(toSimilar),
       sla,
+      escalations,
     };
   },
 

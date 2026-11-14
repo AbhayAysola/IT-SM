@@ -6,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { CardHeading } from './card-heading';
 import { formatWhen } from './badges';
-import { clockLine, SLA_LABEL, SLA_VARIANT } from '../model/sla';
-import type { SlaClockView, SlaStatus, SlaSummary } from '../model/types';
+import { clockLine, escalationAudience, SLA_LABEL, SLA_VARIANT } from '../model/sla';
+import type { EscalationView, SlaClockView, SlaStatus, SlaSummary } from '../model/types';
 
 function SlaBadge({ status }: { status: SlaStatus }) {
   return <Badge variant={SLA_VARIANT[status]}>{SLA_LABEL[status]}</Badge>;
@@ -33,7 +33,7 @@ const formatTarget = (minutes: number) =>
  * The incident's response and resolution clocks. Deadlines are absolute, so the "in 23 min" text is refreshed every
  * 30 seconds without asking the server again; statuses come from the server, which re-evaluates them every minute.
  */
-export function SlaPanel({ sla }: { sla: SlaSummary }) {
+export function SlaPanel({ sla, escalations = [] }: { sla: SlaSummary; escalations?: EscalationView[] }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -60,6 +60,19 @@ export function SlaPanel({ sla }: { sla: SlaSummary }) {
             <ClockRow name="Resolution" clock={sla.resolution} now={now} />
           </dl>
           {sla.evaluatedAt && <p className="mt-3 text-xs text-muted-foreground">Checked {formatWhen(sla.evaluatedAt)}</p>}
+        </CardContent>
+      )}
+      {escalations.length > 0 && (
+        <CardContent className="border-t pt-4">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Escalated</h3>
+          <ul className="mt-2 space-y-2 text-sm" aria-label="Escalations">
+            {escalations.map((e) => (
+              <li key={`${e.description}-${e.createdAt}`}>
+                <span className="font-medium">{e.description}</span>: {escalationAudience(e)}
+                <span className="block text-xs text-muted-foreground">{formatWhen(e.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
         </CardContent>
       )}
     </Card>
