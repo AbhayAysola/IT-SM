@@ -8,7 +8,8 @@ import java.time.Instant
  *
  * Only open incidents escalate (an incident waiting on the reporter to confirm a fix, or finished, does not). For an open
  * incident:
- * * **UNASSIGNED**: still `CLASSIFIED` `unassignedMinutes` after it was reported;
+ * * **UNASSIGNED**: still `CLASSIFIED` `unassignedMinutes` after it was reported, or at once when automatic assignment
+ *   just found nobody eligible (`assignmentFailed`, from P3's `IncidentAssignmentFailed` event): waiting cannot help;
  * * **RESPONSE_BREACHED** / **RESOLUTION_BREACHED**: the SLA monitor recorded that clock's breach;
  * * **RESOLUTION_OVERDUE** / **RESOLUTION_CRITICAL**: the resolution clock has used `secondLevelPct` / `adminLevelPct` of
  *   its target. Paused time does not count, exactly as for the SLA deadline, and a paused clock is judged at the start
@@ -19,14 +20,20 @@ import java.time.Instant
  */
 object EscalationPolicy {
 
-    fun due(c: EscalationCandidate, settings: EscalationSettings, alreadyFired: Set<EscalationTrigger>, now: Instant): List<EscalationTrigger> {
+    fun due(
+        c: EscalationCandidate,
+        settings: EscalationSettings,
+        alreadyFired: Set<EscalationTrigger>,
+        now: Instant,
+        assignmentFailed: Boolean = false
+    ): List<EscalationTrigger> {
         if (!c.open) return emptyList()
         val due = buildList {
             if (c.responseBreachedAt != null) add(EscalationTrigger.RESPONSE_BREACHED)
             if (c.resolutionBreachedAt != null && c.resolutionMetAt == null) add(EscalationTrigger.RESOLUTION_BREACHED)
             if (reached(c, settings.secondLevelPct, now)) add(EscalationTrigger.RESOLUTION_OVERDUE)
             if (reached(c, settings.adminLevelPct, now)) add(EscalationTrigger.RESOLUTION_CRITICAL)
-            if (c.state == "CLASSIFIED" && !c.createdAt.plus(Duration.ofMinutes(settings.unassignedMinutes.toLong())).isAfter(now)) {
+            if (c.state == "CLASSIFIED" && (assignmentFailed || !c.createdAt.plus(Duration.ofMinutes(settings.unassignedMinutes.toLong())).isAfter(now))) {
                 add(EscalationTrigger.UNASSIGNED)
             }
         }

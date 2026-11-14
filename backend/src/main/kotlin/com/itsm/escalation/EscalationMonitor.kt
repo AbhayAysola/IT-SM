@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
@@ -32,7 +33,8 @@ data class EscalationRunResult(val skipped: Boolean, val evaluated: Int = 0, val
  * come with P4's notifications feature, which reads this log.
  *
  * One run is one transaction under its own advisory lock, so two instances never escalate the same incident twice (the
- * UNIQUE constraint on (incident, trigger) backs this up). Tests call [runAt] directly.
+ * UNIQUE constraint on (incident, trigger) backs this up). Escalation is mostly time-driven, so the sweep stays; P3's
+ * `IncidentAssignmentFailed` event escalates at once through [evaluateIncident]. Tests call [runAt] directly.
  */
 @Component
 class EscalationMonitor(
@@ -50,13 +52,30 @@ class EscalationMonitor(
     @Transactional
     fun runAt(time: Instant): EscalationRunResult {
         if (!store.tryMonitorLock()) return EscalationRunResult.SKIPPED
+        val result = escalate(store.openCandidates(batchSize), time, assignmentFailed = false)
+        if (result.evaluated == batchSize) log.info("Escalation monitor reached its batch size ({}); the rest is evaluated next run", batchSize)
+        return result
+    }
+
+    /**
+     * Evaluates one incident now, in its own transaction: P4's reaction to an incident domain event (see
+     * [EscalationEventListener]). With [assignmentFailed] (P3 found nobody eligible) an incident still `CLASSIFIED` is
+     * escalated as UNASSIGNED at once instead of after `unassignedMinutes`. Waits for a running sweep instead of skipping;
+     * a trigger never fires twice either way.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun evaluateIncident(incidentId: String, time: Instant, assignmentFailed: Boolean): EscalationRunResult {
+        store.waitForMonitorLock()
+        return escalate(listOfNotNull(store.openCandidate(incidentId)), time, assignmentFailed)
+    }
+
+    private fun escalate(candidates: List<EscalationCandidate>, time: Instant, assignmentFailed: Boolean): EscalationRunResult {
         val now = time.truncatedTo(ChronoUnit.MICROS)
         val settings = store.settings()
-        val candidates = store.openCandidates(batchSize)
         val fired = store.firedTriggers(candidates.map { it.incidentId })
         var escalated = 0
         for (c in candidates) {
-            for (trigger in EscalationPolicy.due(c, settings, fired[c.incidentId].orEmpty(), now)) {
+            for (trigger in EscalationPolicy.due(c, settings, fired[c.incidentId].orEmpty(), now, assignmentFailed)) {
                 val people = targets.resolve(trigger.tier, c.assigneeId).map { it.id }
                 if (people.isEmpty()) log.warn("Escalation {} of {} has nobody to go to (no team lead and no active admin)", trigger, c.incidentId)
                 store.record(c.incidentId, trigger, people, c.assigneeId, now)
@@ -71,6 +90,7 @@ class EscalationMonitor(
                             put("targetUserIds", people.take(MAX_METADATA_LIST))
                             put("targetCount", people.size)
                             c.assigneeId?.let { put("assigneeId", it) }
+                            if (assignmentFailed && trigger == EscalationTrigger.UNASSIGNED) put("reason", "NO_ELIGIBLE_TECHNICIAN")
                         }
                     )
                 )
@@ -78,7 +98,6 @@ class EscalationMonitor(
                 escalated++
             }
         }
-        if (candidates.size == batchSize) log.info("Escalation monitor reached its batch size ({}); the rest is evaluated next run", batchSize)
         return EscalationRunResult(skipped = false, evaluated = candidates.size, escalated = escalated)
     }
 

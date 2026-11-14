@@ -184,10 +184,10 @@ instead of publishing everything twice. Audit, as `AuditActor.system("SLA_MONITO
 incident id: `SLA_STARTED`, `SLA_RECALCULATED`, `SLA_POLICY_MISSING`, `SLA_PAUSED`, `SLA_RESUMED`, `SLA_WARNING_RAISED`,
 `SLA_BREACHED`, `SLA_MET`. The test suite turns the schedule off (`build.gradle.kts`) and calls `runAt(time)` directly.
 
-**Polling for now.** The monitor reads the `incidents` table read-only through `IncidentSnapshotReader` (plus one join in
-`SlaStore.list` for the assignee filter). Pause and reopen times are taken from `updated_at` at the first run that sees
-them, so they are accurate to one polling interval. P2 and P3 now publish the domain events of [p4.md](p4.md) section 6;
-P4's listeners (next PR) will evaluate an incident as soon as it changes, keeping the poll as a safety net.
+**Events, plus a sweep.** `SlaEventListener` evaluates an incident right after P2/P3's `IncidentClassified` or
+`IncidentStateChanged` commits ([p4.md](p4.md) section 6), so pause and reopen times are exact. The every-minute run stays
+for warnings and breaches (time passes with no event) and for any reaction that failed. Both read the `incidents` table
+read-only through `IncidentSnapshotReader` (plus one join in `SlaStore.list` for the assignee filter).
 
 **API** (no admin routes, so no `SecurityConfig` change):
 
@@ -215,9 +215,10 @@ it never reassigns.
 
 **Notifications (implemented, `notification/`, `V42`).** Rules in [p4.md](p4.md) section 4. In-app inbox for everyone, plus
 simulated email (P1, P2) and SMS (P1) by priority. Lifecycle changes (assigned, question asked, resolved, reopened) are
-noticed by `NotificationMonitor` polling (`app.notification.monitor.*`, env `NOTIFICATION_MONITOR_ENABLED`); SLA warnings,
-breaches, missing policies and escalations are sent by the SLA and escalation monitors' events. P2/P3 publish the
-section 6 events; P4's next PR sends from them and slows the poll to a safety net.
+sent right after P2/P3's domain events commit; `NotificationMonitor` re-checks every 5 minutes as a safety net
+(`app.notification.monitor.*`, env `NOTIFICATION_MONITOR_ENABLED`, `NOTIFICATION_MONITOR_INTERVAL_MS`). SLA warnings,
+breaches, missing policies and escalations are sent by the SLA and escalation monitors' events. All of P4's reactions to
+P2/P3 events can be turned off with `P4_EVENT_LISTENERS_ENABLED=false` (the sweeps then do the work, later).
 
 | Method and path | Who | Result |
 |---|---|---|

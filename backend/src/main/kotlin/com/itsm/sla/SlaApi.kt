@@ -32,8 +32,8 @@ data class SlaClockDto(
 data class SlaPolicyRefDto(val id: Long, val scope: String)
 
 /**
- * The SLA of one incident. `status` is `PENDING` until the monitor has evaluated the incident once (within one polling
- * interval of its classification), then the overall [SlaStatus]. Deadlines are absolute instants, so a client can count
+ * The SLA of one incident. `status` is `PENDING` until the monitor has evaluated the incident once (right after its
+ * classification, or at the next sweep if that failed), then the overall [SlaStatus]. Deadlines are absolute instants, so a client can count
  * down without asking again; `evaluatedAt` says how fresh the statuses are.
  */
 data class SlaDto(

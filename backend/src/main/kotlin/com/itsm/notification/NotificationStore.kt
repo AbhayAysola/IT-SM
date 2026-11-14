@@ -24,8 +24,8 @@ data class IncidentChange(
 
 /**
  * Persistence for notifications (V42): the inbox, and the per-incident watch used to notice lifecycle changes. The
- * incident reads join P2's `incidents` table read-only, like the SLA and escalation monitors, until P2/P3 publish
- * domain events (docs/architecture/p4.md section 6).
+ * incident reads join P2's `incidents` table read-only, like the SLA and escalation monitors; domain events
+ * (docs/architecture/p4.md section 6) only name the incident.
  */
 @Repository
 class NotificationStore(private val jdbc: JdbcTemplate) {
@@ -71,25 +71,19 @@ class NotificationStore(private val jdbc: JdbcTemplate) {
     ).firstOrNull()
 
     /** Incidents whose state or assignee differs from what P4 last saw (or that it never saw), oldest first. */
-    fun changes(limit: Int): List<IncidentChange> = jdbc.query(
-        """
-        SELECT i.id, i.title, i.priority, i.reporter_id, i.assignee_id, i.state, i.assigned_at,
-               w.state AS previous_state, w.assignee_id AS previous_assignee_id
-        FROM incidents i LEFT JOIN notification_watch w ON w.incident_id = i.id
-        WHERE w.incident_id IS NULL OR w.state <> i.state OR w.assignee_id IS DISTINCT FROM i.assignee_id
-        ORDER BY i.updated_at, i.id
-        LIMIT ?
-        """.trimIndent(),
-        { rs, _ ->
-            IncidentChange(
-                context = rs.toContext(),
-                state = rs.getString("state"),
-                assignedAt = rs.instant("assigned_at"),
-                previousState = rs.getString("previous_state"),
-                previousAssigneeId = rs.getObject("previous_assignee_id") as Long?
-            )
-        },
-        limit
+    fun changes(limit: Int): List<IncidentChange> =
+        jdbc.query("$CHANGES ORDER BY i.updated_at, i.id LIMIT ?", { rs, _ -> rs.toChange() }, limit)
+
+    /** The same, for one incident; null when nothing changed since P4 last looked. */
+    fun change(incidentId: String): IncidentChange? =
+        jdbc.query("$CHANGES AND i.id = ?", { rs, _ -> rs.toChange() }, incidentId).firstOrNull()
+
+    private fun ResultSet.toChange() = IncidentChange(
+        context = toContext(),
+        state = getString("state"),
+        assignedAt = instant("assigned_at"),
+        previousState = getString("previous_state"),
+        previousAssigneeId = getObject("previous_assignee_id") as Long?
     )
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -104,6 +98,12 @@ class NotificationStore(private val jdbc: JdbcTemplate) {
     /** The lifecycle monitor's advisory lock (see the SLA monitor). */
     @Transactional(propagation = Propagation.MANDATORY)
     fun tryMonitorLock(): Boolean = jdbc.queryForObject("SELECT pg_try_advisory_xact_lock(?)", Boolean::class.java, MONITOR_LOCK_KEY)!!
+
+    /** The same lock, waiting for it: a single-incident run waits for a running sweep instead of skipping. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun waitForMonitorLock() {
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", { _, _ -> }, MONITOR_LOCK_KEY)
+    }
 
     private fun ResultSet.toContext() = IncidentContext(
         incidentId = getString("id"),
@@ -134,6 +134,13 @@ class NotificationStore(private val jdbc: JdbcTemplate) {
     private fun ts(i: Instant) = i.atOffset(ZoneOffset.UTC)
 
     companion object {
+        private val CHANGES = """
+            SELECT i.id, i.title, i.priority, i.reporter_id, i.assignee_id, i.state, i.assigned_at,
+                   w.state AS previous_state, w.assignee_id AS previous_assignee_id
+            FROM incidents i LEFT JOIN notification_watch w ON w.incident_id = i.id
+            WHERE (w.incident_id IS NULL OR w.state <> i.state OR w.assignee_id IS DISTINCT FROM i.assignee_id)
+        """.trimIndent().replace('\n', ' ')
+
         const val MONITOR_LOCK_KEY = 0x5034_4E4F_54L
     }
 }

@@ -14,8 +14,8 @@ import java.time.ZoneOffset
 
 /**
  * Persistence for escalation (V41): the settings singleton, the append-only escalation log, and the read of open
- * incidents with their SLA facts. That read joins P2's `incidents` table read-only, like the SLA monitor's adapter, until
- * P2/P3 publish domain events (docs/architecture/p4.md section 6).
+ * incidents with their SLA facts. That read joins P2's `incidents` table read-only, like the SLA monitor's adapter; domain
+ * events (docs/architecture/p4.md section 6) only name the incident.
  */
 @Repository
 class EscalationStore(private val jdbc: JdbcTemplate, private val named: NamedParameterJdbcTemplate) {
@@ -79,36 +79,36 @@ class EscalationStore(private val jdbc: JdbcTemplate, private val named: NamedPa
      * first, at most [limit].
      */
     fun openCandidates(limit: Int): List<EscalationCandidate> = jdbc.query(
-        """
-        SELECT i.id, i.state, i.assignee_id, i.created_at,
-               s.response_breached_at, s.resolution_breached_at, s.clock_start, s.resolution_minutes,
-               COALESCE(s.paused_seconds, 0) AS paused_seconds, s.paused_since, s.resolution_met_at
-        FROM incidents i LEFT JOIN incident_sla s ON s.incident_id = i.id
-        WHERE i.state IN ('CLASSIFIED', 'ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO')
-        ORDER BY i.created_at, i.id
-        LIMIT ?
-        """.trimIndent(),
-        { rs, _ ->
-            EscalationCandidate(
-                incidentId = rs.getString("id"),
-                state = rs.getString("state"),
-                assigneeId = rs.getObject("assignee_id") as Long?,
-                createdAt = rs.instant("created_at")!!,
-                responseBreachedAt = rs.instant("response_breached_at"),
-                resolutionBreachedAt = rs.instant("resolution_breached_at"),
-                clockStart = rs.instant("clock_start"),
-                resolutionMinutes = rs.getObject("resolution_minutes") as Int?,
-                pausedSeconds = rs.getLong("paused_seconds"),
-                pausedSince = rs.instant("paused_since"),
-                resolutionMetAt = rs.instant("resolution_met_at")
-            )
-        },
-        limit
+        "$CANDIDATES ORDER BY i.created_at, i.id LIMIT ?", { rs, _ -> rs.toCandidate() }, limit
+    )
+
+    /** The same, for one incident; null when it is not open. */
+    fun openCandidate(incidentId: String): EscalationCandidate? =
+        jdbc.query("$CANDIDATES AND i.id = ?", { rs, _ -> rs.toCandidate() }, incidentId).firstOrNull()
+
+    private fun ResultSet.toCandidate() = EscalationCandidate(
+        incidentId = getString("id"),
+        state = getString("state"),
+        assigneeId = getObject("assignee_id") as Long?,
+        createdAt = instant("created_at")!!,
+        responseBreachedAt = instant("response_breached_at"),
+        resolutionBreachedAt = instant("resolution_breached_at"),
+        clockStart = instant("clock_start"),
+        resolutionMinutes = getObject("resolution_minutes") as Int?,
+        pausedSeconds = getLong("paused_seconds"),
+        pausedSince = instant("paused_since"),
+        resolutionMetAt = instant("resolution_met_at")
     )
 
     /** The monitor's transaction-scoped advisory lock (see the SLA monitor): one evaluating instance at a time. */
     @Transactional(propagation = Propagation.MANDATORY)
     fun tryMonitorLock(): Boolean = jdbc.queryForObject("SELECT pg_try_advisory_xact_lock(?)", Boolean::class.java, MONITOR_LOCK_KEY)!!
+
+    /** The same lock, waiting for it: a single-incident run waits for a running sweep instead of skipping. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun waitForMonitorLock() {
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", { _, _ -> }, MONITOR_LOCK_KEY)
+    }
 
     private fun ResultSet.toEscalation(): Escalation {
         @Suppress("UNCHECKED_CAST")
@@ -128,6 +128,15 @@ class EscalationStore(private val jdbc: JdbcTemplate, private val named: NamedPa
     private fun ts(i: Instant) = i.atOffset(ZoneOffset.UTC)
 
     companion object {
+        /** Open incidents with their SLA facts (left join: an incident may not have an SLA row yet, or have no policy). */
+        private val CANDIDATES = """
+            SELECT i.id, i.state, i.assignee_id, i.created_at,
+                   s.response_breached_at, s.resolution_breached_at, s.clock_start, s.resolution_minutes,
+                   COALESCE(s.paused_seconds, 0) AS paused_seconds, s.paused_since, s.resolution_met_at
+            FROM incidents i LEFT JOIN incident_sla s ON s.incident_id = i.id
+            WHERE i.state IN ('CLASSIFIED', 'ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'PENDING_INFO')
+        """.trimIndent().replace('\n', ' ')
+
         /** Different from the SLA monitor's key, so the two jobs do not block each other. */
         const val MONITOR_LOCK_KEY = 0x5034_4553_43L
     }
