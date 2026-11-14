@@ -39,6 +39,25 @@ export interface AnalysisResult {
   possibleDuplicates: { id: string; title: string; reason: string }[];
 }
 
+export interface ChatMessage { role: 'user' | 'assistant'; content: string }
+
+export interface ExtractedIncidentFields {
+  title: string | null;
+  description: string | null;
+  suggestedCategoryId: number | null;
+  suggestedCategoryName: string | null;
+  suggestedServiceId: number | null;
+  suggestedServiceName: string | null;
+  impact: Impact | null;
+  urgency: Urgency | null;
+  ready: boolean;
+}
+
+export interface ChatTurn {
+  reply: string;
+  extracted: ExtractedIncidentFields | null;
+}
+
 // ---- Visibility and access ----------------------------------------------------------------------------------------
 
 
@@ -292,7 +311,7 @@ export const mockIncidentService = {
 
   async create(
     actor: Actor,
-    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency }
+    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency; aiSuggestedCategoryId?: number | null; aiDuplicateIds?: string[] }
   ): Promise<string> {
     return simulate(() => {
       const w = world(actor);
@@ -354,6 +373,35 @@ export const mockIncidentService = {
         reasoning: `The description contains terms related to ${suggestedCategoryName}.`,
         possibleDuplicates: [],
       };
+    });
+  },
+
+  async chat(messages: ChatMessage[]): Promise<ChatTurn> {
+    return simulate(() => {
+      const last = messages.at(-1);
+      if (!last || last.role !== 'user') return { reply: "Hi! What's the problem you're experiencing?", extracted: null };
+      const text = last.content.toLowerCase();
+      const turns = messages.filter((m) => m.role === 'user').length;
+
+      // After a few turns, pretend we have enough info and return a filled extraction.
+      if (turns >= 3) {
+        return {
+          reply: "Got it — I have everything I need. I've pre-filled the form for you. Review it and hit Create when you're ready.",
+          extracted: {
+            title: last.content.slice(0, 80),
+            description: messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n\n'),
+            suggestedCategoryId: /network|wifi|internet/.test(text) ? 1 : /hardware|device/.test(text) ? 2 : 3,
+            suggestedCategoryName: /network|wifi|internet/.test(text) ? 'Network' : /hardware|device/.test(text) ? 'Hardware' : 'Software',
+            suggestedServiceId: /email|mail/.test(text) ? 1 : /vpn/.test(text) ? 2 : 3,
+            suggestedServiceName: /email|mail/.test(text) ? 'Email' : /vpn/.test(text) ? 'VPN' : 'General IT',
+            impact: 'LOW',
+            urgency: /stop|broken|urgent|can.?t work/.test(text) ? 'HIGH' : 'MEDIUM',
+            ready: true,
+          },
+        };
+      }
+      if (turns === 1) return { reply: "Thanks. How many people are affected — just you, your team, or the whole org?", extracted: null };
+      return { reply: "Understood. Can you still work around it, or has it completely blocked you?", extracted: null };
     });
   },
 };

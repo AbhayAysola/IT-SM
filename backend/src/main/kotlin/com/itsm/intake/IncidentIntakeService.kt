@@ -86,6 +86,31 @@ class IncidentIntakeService(
             description = "Incident created: $title",
             metadata = mapOf("categoryId" to category.id, "serviceId" to service.id, "priority" to priority.name, "impact" to impact.name, "urgency" to urgency.name)
         ))
+        if (request.aiSuggestedCategoryId != null) {
+            audit.publish(AuditableEvent(
+                actor = AuditActor.of(user),
+                action = "INCIDENT_CATEGORY_SUGGESTED", entityType = "INCIDENT", entityId = id,
+                incidentId = id,
+                description = "AI suggested category ${request.aiSuggestedCategoryId} for incident",
+                metadata = mapOf(
+                    "suggestedCategoryId" to request.aiSuggestedCategoryId,
+                    "acceptedCategoryId" to category.id,
+                    "suggestionAccepted" to (request.aiSuggestedCategoryId == category.id)
+                )
+            ))
+        }
+        val validDuplicateIds = request.aiDuplicateIds
+            ?.filter { it.matches(Regex("^[A-Za-z0-9_-]{1,30}$")) }
+            ?.take(20)
+        if (!validDuplicateIds.isNullOrEmpty()) {
+            audit.publish(AuditableEvent(
+                actor = AuditActor.of(user),
+                action = "INCIDENT_DUPLICATE_FLAGGED", entityType = "INCIDENT", entityId = id,
+                incidentId = id,
+                description = "AI flagged ${validDuplicateIds.size} possible duplicate(s) for incident",
+                metadata = mapOf("duplicateIds" to validDuplicateIds, "count" to validDuplicateIds.size)
+            ))
+        }
         audit.publish(AuditableEvent(
             actor = AuditActor.of(user),
             action = "INCIDENT_CLASSIFIED", entityType = "INCIDENT", entityId = id,

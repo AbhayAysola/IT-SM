@@ -24,23 +24,28 @@ test.describe('admin: technicians', () => {
   test('filters and search go to the API as the supported query parameters', async ({ page, api }) => {
     await openAdmin(page, api, PATH);
     await search(page, 'hamilton');
+    await expect(rowFor(page, 'Margaret Hamilton')).toBeVisible();
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/technicians')!.query.get('search')).toBe('hamilton');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/technicians')?.query.get('search')).toBe('hamilton');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
     await pick(page, 'Filter by team lead', 'Team leads');
+    // Each filter here leaves a single row, so wait for the row this filter returns rather than the
+    // row count alone, which the previous filter's stale row would also satisfy.
+    await expect(rowFor(page, 'Linus Torvalds')).toBeVisible();
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/technicians')!.query.get('teamLead')).toBe('true');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/technicians')?.query.get('teamLead')).toBe('true');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
     await pick(page, 'Filter by skill', 'Hardware');
+    await expect(rowFor(page, 'Margaret Hamilton')).toBeVisible();
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/technicians')!.query.get('categoryId')).toBe('2');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/technicians')?.query.get('categoryId')).toBe('2');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
     await pick(page, 'Filter by availability', 'Not available');
     await expect(page.getByText('No technicians match your filters')).toBeVisible();
-    expect(api.admin.last('GET', '/api/admin/technicians')!.query.get('available')).toBe('false');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/technicians')?.query.get('available')).toBe('false');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
     await page.getByRole('button', { name: 'Max workload' }).click();
-    expect(api.admin.last('GET', '/api/admin/technicians')!.query.get('sort')).toBe('maxWorkload');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/technicians')?.query.get('sort')).toBe('maxWorkload');
   });
 
   test('a profile is created for an existing TECHNICIAN user with skills, validated before sending', async ({ page, api }) => {

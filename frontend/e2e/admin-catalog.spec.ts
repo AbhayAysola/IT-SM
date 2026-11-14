@@ -20,14 +20,16 @@ test.describe('admin: categories', () => {
     await openAdmin(page, api, PATH);
     await search(page, 'outlook');
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/categories')!.query.get('search')).toBe('outlook');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/categories')?.query.get('search')).toBe('outlook');
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await pick(page, 'Filter by status', 'Inactive');
     await expect(page.getByText('No categories match your filters')).toBeVisible();
-    expect(api.admin.last('GET', '/api/admin/categories')!.query.get('active')).toBe('false');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/categories')?.query.get('active')).toBe('false');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
     await page.getByRole('button', { name: 'Code', exact: true }).click();
-    expect(api.admin.last('GET', '/api/admin/categories')!.query.get('sort')).toBe('code');
+    // Nothing on screen changes until the re-sorted response lands, so poll the recorded requests
+    // instead of reading the latest one immediately after the click.
+    await expect.poll(() => api.admin.last('GET', '/api/admin/categories')?.query.get('sort')).toBe('code');
   });
 
   test('creating validates the code and keywords before sending, then sends normalised keywords', async ({ page, api }) => {
@@ -132,14 +134,18 @@ test.describe('admin: IT services', () => {
     await openAdmin(page, api, PATH);
     await pick(page, 'Filter by criticality', '5 · Mission critical');
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/services')!.query.get('criticality')).toBe('5');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/services')?.query.get('criticality')).toBe('5');
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await search(page, 'messag');
+    // The criticality filter also left exactly one row (VPN), so a row count alone would pass before the
+    // debounced search lands; wait for the row that only the search returns.
+    await expect(rowFor(page, 'Email')).toBeVisible();
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/services')!.query.get('search')).toBe('messag');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/services')?.query.get('search')).toBe('messag');
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await page.getByRole('button', { name: 'Criticality' }).click();
-    expect(api.admin.last('GET', '/api/admin/services')!.query.get('sort')).toBe('businessCriticality');
+    // See the categories test: the sort request is sent asynchronously after the click.
+    await expect.poll(() => api.admin.last('GET', '/api/admin/services')?.query.get('sort')).toBe('businessCriticality');
   });
 
   test('creating sends businessCriticality as a number and the chosen dependency ids', async ({ page, api }) => {

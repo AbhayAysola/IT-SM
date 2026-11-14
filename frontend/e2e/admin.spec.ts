@@ -113,21 +113,21 @@ test.describe('admin: users', () => {
     await openAdmin(page, api, '/admin/users');
     await search(page, 'turing');
     await expect(rows(page)).toHaveCount(1);
-    expect(api.admin.last('GET', '/api/admin/users')!.query.get('search')).toBe('turing');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/users')?.query.get('search')).toBe('turing');
     await page.waitForURL('**/admin/users?q=turing');
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await pick(page, 'Filter by role', 'Administrator');
     await expect(rows(page)).toHaveCount(2);
-    expect(api.admin.last('GET', '/api/admin/users')!.query.get('role')).toBe('ADMIN');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/users')?.query.get('role')).toBe('ADMIN');
     await pick(page, 'Filter by status', 'Inactive');
     await expect(page.getByText('No users match your filters')).toBeVisible();
-    expect(api.admin.last('GET', '/api/admin/users')!.query.get('active')).toBe('false');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/users')?.query.get('active')).toBe('false');
     await page.getByRole('button', { name: 'Clear filters' }).first().click();
     await page.getByRole('button', { name: 'Role', exact: true }).click();
     await expect(page.getByRole('columnheader', { name: 'Role' })).toHaveAttribute('aria-sort', 'ascending');
-    expect(api.admin.last('GET', '/api/admin/users')!.query.get('sort')).toBe('role');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/users')?.query.get('sort')).toBe('role');
     await page.getByRole('button', { name: 'Role', exact: true }).click();
-    expect(api.admin.last('GET', '/api/admin/users')!.query.get('dir')).toBe('desc');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/users')?.query.get('dir')).toBe('desc');
   });
 
   test('pages through the API 10 at a time', async ({ page, api }) => {
@@ -136,7 +136,7 @@ test.describe('admin: users', () => {
     await expect(summary(page)).toHaveText('Showing 1–10 of 15 users');
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(summary(page)).toHaveText('Showing 11–15 of 15 users');
-    expect(api.admin.last('GET', '/api/admin/users')!.query.get('page')).toBe('1');
+    await expect.poll(() => api.admin.last('GET', '/api/admin/users')?.query.get('page')).toBe('1');
   });
 
   test('adding a user validates first, sends only the contract fields, and never keeps the password', async ({ page, api }) => {

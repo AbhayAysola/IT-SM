@@ -1,7 +1,7 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
 import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
-import type { AnalysisResult, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
+import type { AnalysisResult, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
 import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
 import {
@@ -138,7 +138,7 @@ export const liveIncidentService = {
 
   async create(
     _actor: Actor,
-    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency }
+    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency; aiSuggestedCategoryId?: number | null; aiDuplicateIds?: string[] }
   ): Promise<string> {
     const dto = await call<{ id: string }>('POST', '', input);
     return dto.id;
@@ -150,5 +150,9 @@ export const liveIncidentService = {
 
   async analyze(input: { title: string; description: string }): Promise<AnalysisResult> {
     return call<AnalysisResult>('POST', '/analyze', input);
+  },
+
+  async chat(messages: ChatMessage[]): Promise<ChatTurn> {
+    return call<ChatTurn>('POST', '/chat', { messages });
   },
 };

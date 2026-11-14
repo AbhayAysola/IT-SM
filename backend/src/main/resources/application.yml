@@ -29,6 +29,9 @@ spring:
     password: rabbitmq_password
     virtual-host: /
 
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
+
 app:
   jwt:
     # No default on purpose: startup fails unless JWT_SECRET holds >= 32 bytes of real secret material.

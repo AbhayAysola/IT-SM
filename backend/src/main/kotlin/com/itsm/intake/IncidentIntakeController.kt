@@ -20,6 +20,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 class IncidentIntakeController(
     private val service: IncidentIntakeService,
     private val analysisService: IncidentAnalysisService,
+    private val chatService: IncidentChatService,
     private val currentUser: CurrentUserProvider
 ) {
 
@@ -51,4 +52,10 @@ class IncidentIntakeController(
     @PreAuthorize("hasAuthority('INCIDENT_CREATE')")
     fun analyze(@Valid @RequestBody body: AnalyzeIncidentRequest): IncidentAnalysisDto =
         analysisService.analyze(body.title, body.description)
+
+    /** Conversational incident reporting — send the full message history, receive the next reply and any extracted fields. */
+    @PostMapping("/chat")
+    @PreAuthorize("hasAuthority('INCIDENT_CREATE')")
+    fun chat(@Valid @RequestBody body: ChatRequest): ChatResponse =
+        chatService.chat(body.messages)
 }
