@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Loader2, Send, Sparkles } from 'lucide-react';
+import { Bot, Loader2, Mic, MicOff, Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -19,7 +19,18 @@ export function ChatIntake({ onReady }: Props) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedIncidentFields | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    // SpeechRecognition is browser-only; check after mount to avoid SSR issues.
+    setVoiceSupported(
+      typeof window !== 'undefined' &&
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    );
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,6 +62,28 @@ export function ChatIntake({ onReady }: Props) {
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  };
+
+  const startVoice = () => {
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognitionAPI();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.onresult = (e: any) => {
+      const transcript: string = e.results[0][0].transcript;
+      setInput(prev => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
   };
 
   return (
@@ -100,18 +133,31 @@ export function ChatIntake({ onReady }: Props) {
         </div>
       )}
 
-      {/* Input */}
+      {/* Input row */}
       <div className="flex gap-2">
         <Textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Describe your problem… (Enter to send)"
+          placeholder={isListening ? 'Listening…' : 'Describe your problem… (Enter to send)'}
           rows={2}
-          className="resize-none"
+          className={cn('resize-none', isListening && 'ring-2 ring-red-400')}
           disabled={sending}
           aria-label="Chat message"
         />
+        {voiceSupported && (
+          <Button
+            type="button"
+            size="icon"
+            variant={isListening ? 'destructive' : 'outline'}
+            onClick={isListening ? stopVoice : startVoice}
+            disabled={sending}
+            aria-label={isListening ? 'Stop recording' : 'Voice input'}
+            className="self-end"
+          >
+            {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </Button>
+        )}
         <Button
           type="button"
           size="icon"

@@ -15,7 +15,7 @@ private const val MAX_MESSAGES = 20
 
 @Service
 class IncidentChatService(
-    @Value("\${anthropic.api-key:}") private val apiKey: String,
+    @Value("\${gemini.api-key:}") private val apiKey: String,
     private val categories: CategoryCatalog,
     private val services: ServiceCatalog,
     private val mapper: ObjectMapper,
@@ -23,8 +23,8 @@ class IncidentChatService(
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(IncidentChatService::class.java)
-        private const val ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-        private const val MODEL = "claude-haiku-4-5-20251001"
+        private const val GEMINI_BASE_URL =
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
         private val VALID_IMPACT = setOf("HIGH", "MEDIUM", "LOW")
         private val VALID_URGENCY = setOf("HIGH", "MEDIUM", "LOW")
@@ -73,34 +73,36 @@ class IncidentChatService(
             - Set ready=true only when ALL six fields (title, description, suggestedCategoryId, suggestedServiceId, impact, urgency) are non-null.
         """.trimIndent()
 
-        // Cap history and enforce Anthropic's rule: first message must be user role.
+        // Cap history and enforce Gemini's rule: first message must be user role.
         // The frontend includes a hardcoded assistant greeting in the initial state; drop it here.
         val cappedMessages = messages.takeLast(MAX_MESSAGES)
             .dropWhile { it.role == "assistant" }
         if (cappedMessages.isEmpty()) throw InvalidInput("Please describe your issue first.")
-        val apiMessages = cappedMessages.map { mapOf("role" to it.role, "content" to it.content) }
+
+        // Gemini uses "model" instead of "assistant" for AI turns
+        val contents = cappedMessages.map { m ->
+            val role = if (m.role == "assistant") "model" else m.role
+            mapOf("role" to role, "parts" to listOf(mapOf("text" to m.content)))
+        }
 
         val body = mapper.writeValueAsString(
             mapOf(
-                "model" to MODEL,
-                "max_tokens" to 1024,
-                "system" to systemPrompt,
-                "messages" to apiMessages
+                "system_instruction" to mapOf("parts" to listOf(mapOf("text" to systemPrompt))),
+                "contents" to contents,
+                "generationConfig" to mapOf("maxOutputTokens" to 1024)
             )
         )
 
         val responseText = try {
             client.post()
-                .uri(ANTHROPIC_URL)
-                .header("x-api-key", apiKey)
-                .header("anthropic-version", "2023-06-01")
+                .uri("$GEMINI_BASE_URL?key=$apiKey")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()
                 .body(String::class.java)
                 ?: throw InvalidInput("Empty response from AI service.")
         } catch (e: RestClientException) {
-            log.warn("Anthropic chat API call failed: ${e.message}")
+            log.warn("Gemini chat API call failed: ${e.message}")
             throw InvalidInput("AI service is unavailable. Please try again later.")
         }
 
@@ -111,11 +113,12 @@ class IncidentChatService(
         val root = try {
             mapper.readTree(responseText)
         } catch (e: Exception) {
-            log.warn("Failed to parse Anthropic envelope: ${responseText.take(200)}")
+            log.warn("Failed to parse Gemini envelope: ${responseText.take(200)}")
             throw InvalidInput("AI returned an unexpected response.")
         }
 
-        val fullText = root.path("content").get(0)?.path("text")?.asText()
+        val fullText = root.path("candidates").get(0)
+            ?.path("content")?.path("parts")?.get(0)?.path("text")?.asText()
             ?: throw InvalidInput("AI response had no text content.")
 
         // Extract the <extracted>...</extracted> block; everything outside is the conversational reply.

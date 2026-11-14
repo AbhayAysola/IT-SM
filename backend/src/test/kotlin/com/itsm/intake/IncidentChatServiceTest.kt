@@ -49,8 +49,8 @@ class IncidentChatServiceTest {
         `when`(services.listActive()).thenReturn(listOf(svc))
     }
 
-    private fun claudeEnvelope(text: String) =
-        """{"content":[{"type":"text","text":${mapper.writeValueAsString(text)}}]}"""
+    private fun geminiEnvelope(text: String) =
+        """{"candidates":[{"content":{"parts":[{"text":${mapper.writeValueAsString(text)}}]}}]}"""
 
     private fun extracted(
         title: String? = null, description: String? = null,
@@ -84,14 +84,14 @@ class IncidentChatServiceTest {
     @Test fun `parseResponse strips extracted tag and returns reply text`() {
         val (svc, _) = service()
         val text = "Sure, what's the problem?\n${extracted()}"
-        val result = svc.parseResponse(claudeEnvelope(text))
+        val result = svc.parseResponse(geminiEnvelope(text))
         assertEquals("Sure, what's the problem?", result.reply)
     }
 
     @Test fun `parseResponse returns null extracted when no tag present`() {
         val (svc, _) = service()
         val text = "Hi there, how can I help you today?"
-        val result = svc.parseResponse(claudeEnvelope(text))
+        val result = svc.parseResponse(geminiEnvelope(text))
         assertEquals(text, result.reply)
         assertNull(result.extracted)
     }
@@ -99,7 +99,7 @@ class IncidentChatServiceTest {
     @Test fun `parseResponse fills all fields from a complete extracted block`() {
         val (svc, _) = service()
         val text = "Got it!\n${extracted("VPN broken","Cannot connect since 9am",1L,"Network",10L,"Email","HIGH","HIGH",true)}"
-        val result = svc.parseResponse(claudeEnvelope(text))
+        val result = svc.parseResponse(geminiEnvelope(text))
         val e = result.extracted!!
         assertEquals("VPN broken", e.title)
         assertEquals("Cannot connect since 9am", e.description)
@@ -116,14 +116,14 @@ class IncidentChatServiceTest {
         val (svc, _) = service()
         // title is null — ready must be false even if the JSON says true
         val text = "Almost there!\n${extracted(null,"desc",1L,"Network",10L,"Email","HIGH","HIGH",true)}"
-        val result = svc.parseResponse(claudeEnvelope(text))
+        val result = svc.parseResponse(geminiEnvelope(text))
         assertFalse(result.extracted!!.ready)
     }
 
     @Test fun `parseResponse returns null extracted when JSON inside tag is malformed`() {
         val (svc, _) = service()
         val text = "Hmm\n<extracted>not valid json</extracted>"
-        val result = svc.parseResponse(claudeEnvelope(text))
+        val result = svc.parseResponse(geminiEnvelope(text))
         // reply still has the conversational text; extracted is null (not an exception)
         assertEquals("Hmm", result.reply)
         assertNull(result.extracted)
@@ -132,7 +132,7 @@ class IncidentChatServiceTest {
     @Test fun `parseResponse ignores invalid impact and urgency values`() {
         val (svc, _) = service()
         val text = "OK\n${extracted("Title","Desc",1L,"Net",10L,"Email","EXTREME","CRITICAL",false)}"
-        val result = svc.parseResponse(claudeEnvelope(text))
+        val result = svc.parseResponse(geminiEnvelope(text))
         assertNull(result.extracted!!.impact)
         assertNull(result.extracted!!.urgency)
     }
@@ -148,9 +148,9 @@ class IncidentChatServiceTest {
             ChatMessageRequest("user", "my laptop won't turn on"),
         )
         val replyText = "Sorry to hear that!\n${extracted()}"
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
-            .andRespond(withSuccess(claudeEnvelope(replyText), MediaType.APPLICATION_JSON))
+            .andRespond(withSuccess(geminiEnvelope(replyText), MediaType.APPLICATION_JSON))
 
         svc.chat(msgs)
         server.verify() // server was called (dropWhile correctly stripped the leading assistant)
@@ -167,9 +167,9 @@ class IncidentChatServiceTest {
         val (svc, server) = service()
         stubCatalog()
         val replyText = "What service are you having trouble with?\n${extracted()}"
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
-            .andRespond(withSuccess(claudeEnvelope(replyText), MediaType.APPLICATION_JSON))
+            .andRespond(withSuccess(geminiEnvelope(replyText), MediaType.APPLICATION_JSON))
 
         val result = svc.chat(listOf(ChatMessageRequest("user", "my email is broken")))
         assertEquals("What service are you having trouble with?", result.reply)
@@ -179,7 +179,7 @@ class IncidentChatServiceTest {
     @Test fun `chat throws InvalidInput when API returns a server error`() {
         val (svc, server) = service()
         stubCatalog()
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
             .andRespond(withServerError())
 
         assertThrows<InvalidInput> { svc.chat(listOf(ChatMessageRequest("user", "help"))) }
@@ -193,9 +193,9 @@ class IncidentChatServiceTest {
         val msgs = (1..25).map { ChatMessageRequest(if (it % 2 == 1) "user" else "assistant", "msg $it") }
         val replyText = "Got it\n${extracted()}"
 
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
-            .andRespond(withSuccess(claudeEnvelope(replyText), MediaType.APPLICATION_JSON))
+            .andRespond(withSuccess(geminiEnvelope(replyText), MediaType.APPLICATION_JSON))
 
         svc.chat(msgs)
         server.verify()
