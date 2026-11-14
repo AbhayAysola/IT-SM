@@ -23,6 +23,10 @@ import com.itsm.common.spi.UserDirectory
 import com.itsm.investigation.InvestigationLog
 import com.itsm.investigation.InvestigationPolicy
 import org.springframework.beans.factory.ObjectProvider
+import com.itsm.common.event.IncidentAssigned
+import com.itsm.common.event.IncidentAssignmentFailed
+import com.itsm.common.event.IncidentStateChanged
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -47,7 +51,9 @@ class IncidentAssignmentService(
     private val engine: AssignmentEngine,
     private val directory: ObjectProvider<UserDirectory>,
     private val settingsProvider: ObjectProvider<AssignmentSettingsProvider>,
-    private val clock: Clock
+    private val clock: Clock,
+    /** Domain events for modules that react to changes (P4); a no-op where none is wanted (unit tests). */
+    private val events: ApplicationEventPublisher = ApplicationEventPublisher {}
 ) {
     /**
      * Lets the configured strategy choose. From `CLASSIFIED` it assigns; from an active state it reassigns (a [reason]
@@ -60,7 +66,12 @@ class IncidentAssignmentService(
         val transition = transitionFor(record)
         val result = IncidentStateMachine.apply(record.state, transition, user, reason)
         val decision = decide(record)
-        if (decision.outcome != AssignmentOutcome.ASSIGNED) return AutoAssignment(record, decision)
+        if (decision.outcome != AssignmentOutcome.ASSIGNED) {
+            if (decision.outcome == AssignmentOutcome.NO_ELIGIBLE_TECHNICIAN) {
+                events.publishEvent(IncidentAssignmentFailed(record.id, decision.outcome.name, IncidentAccess.now(clock)))
+            }
+            return AutoAssignment(record, decision)
+        }
 
         val chosen = decision.chosen!!
         requireCapacity(chosen)
@@ -131,6 +142,8 @@ class IncidentAssignmentService(
                 description = "Incident assigned to technician $technicianId", metadata = audited
             )
         )
+        events.publishEvent(IncidentStateChanged(record.id, result.previousState.name, result.newState.name, result.transition.name, user.id, now))
+        events.publishEvent(IncidentAssigned(record.id, technicianId, record.assigneeId, user.id, now))
         return updated
     }
 

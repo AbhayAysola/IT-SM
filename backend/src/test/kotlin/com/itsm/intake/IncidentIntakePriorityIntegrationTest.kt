@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.itsm.admin.AdminApiTestSupport
 import com.itsm.admin.Caller
 import com.itsm.auth.JwtService
+import com.itsm.common.event.IncidentClassified
+import com.itsm.common.model.Priority
 import com.itsm.common.model.Role
 import com.itsm.common.spi.PriorityPolicy
 import com.itsm.priority.CatalogPriorityPolicy
@@ -19,6 +21,8 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.ApplicationContext
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.event.ApplicationEvents
+import org.springframework.test.context.event.RecordApplicationEvents
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -35,6 +39,7 @@ import java.util.UUID
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
+@RecordApplicationEvents
 class IncidentIntakePriorityIntegrationTest {
 
     companion object {
@@ -49,6 +54,7 @@ class IncidentIntakePriorityIntegrationTest {
     @Autowired lateinit var users: UserRepository
     @Autowired lateinit var jwt: JwtService
     @Autowired lateinit var context: ApplicationContext
+    @Autowired lateinit var events: ApplicationEvents
 
     private lateinit var t: AdminApiTestSupport
     private lateinit var reporter: Caller
@@ -105,6 +111,18 @@ class IncidentIntakePriorityIntegrationTest {
         // The same answers on an ordinary service stay P2.
         assertEquals("P2", create(report(service(criticality = 3), "MEDIUM", "HIGH"), 201)["priority"].asText())
         assertEquals("P4", create(report(service(criticality = 3), "low", "Low"), 201)["priority"].asText(), "codes are case-insensitive")
+    }
+
+    @Test fun `a new incident publishes IncidentClassified once, with ids and the priority only`() {
+        val serviceId = service(criticality = 3)
+        val id = create(report(serviceId, "MEDIUM", "HIGH"), 201)["id"].asText()
+        val published = events.stream(IncidentClassified::class.java).toList()
+        assertEquals(1, published.size, published.toString())
+        val e = published.single()
+        assertEquals(listOf(id, reporter.id, serviceId, category, Priority.P2), listOf(e.incidentId, e.reporterId, e.serviceId, e.categoryId, e.priority))
+
+        create(report(serviceId, "MEDIUM", null), 400)
+        assertEquals(1, events.stream(IncidentClassified::class.java).count(), "a refused report publishes nothing")
     }
 
     @Test fun `the reporter cannot choose the priority, and answers are validated`() {

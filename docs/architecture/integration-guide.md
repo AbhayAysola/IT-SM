@@ -156,8 +156,8 @@ assessment.reasons       // plain-language explanation, safe for audit metadata 
 `AuditActor.system("SLA_MONITOR")` (UPPER_SNAKE_CASE). Audit actions such as `SLA_WARNING_RAISED`,
 `SLA_BREACHED`, `INCIDENT_ESCALATED`, `INCIDENT_PRIORITY_CHANGED`.
 
-**Notifications:** react to your own/P2/P3 domain events, not to `AuditableEvent` (audit is a record,
-not a message bus). Notification channels (in-app, email, ...) should be an interface so a new channel
+**Notifications:** react to the incident domain events in `common/event` (see "Incident domain events"), not to
+`AuditableEvent` (audit is a record, not a message bus). Notification channels (in-app, email, ...) should be an interface so a new channel
 is a new class.
 
 **Migrations:** block `V40-V49`.
@@ -184,10 +184,10 @@ instead of publishing everything twice. Audit, as `AuditActor.system("SLA_MONITO
 incident id: `SLA_STARTED`, `SLA_RECALCULATED`, `SLA_POLICY_MISSING`, `SLA_PAUSED`, `SLA_RESUMED`, `SLA_WARNING_RAISED`,
 `SLA_BREACHED`, `SLA_MET`. The test suite turns the schedule off (`build.gradle.kts`) and calls `runAt(time)` directly.
 
-**Polling until there are domain events.** P2 and P3 publish no domain events yet, so the monitor reads the `incidents`
-table read-only through `IncidentSnapshotReader` (plus one join in `SlaStore.list` for the assignee filter). Pause and reopen
-times are taken from `updated_at` at the first run that sees them, so they are accurate to one polling interval. When P2/P3
-publish events, only that adapter changes.
+**Polling for now.** The monitor reads the `incidents` table read-only through `IncidentSnapshotReader` (plus one join in
+`SlaStore.list` for the assignee filter). Pause and reopen times are taken from `updated_at` at the first run that sees
+them, so they are accurate to one polling interval. P2 and P3 now publish the domain events of [p4.md](p4.md) section 6;
+P4's listeners (next PR) will evaluate an incident as soon as it changes, keeping the poll as a safety net.
 
 **API** (no admin routes, so no `SecurityConfig` change):
 
@@ -216,8 +216,8 @@ it never reassigns.
 **Notifications (implemented, `notification/`, `V42`).** Rules in [p4.md](p4.md) section 4. In-app inbox for everyone, plus
 simulated email (P1, P2) and SMS (P1) by priority. Lifecycle changes (assigned, question asked, resolved, reopened) are
 noticed by `NotificationMonitor` polling (`app.notification.monitor.*`, env `NOTIFICATION_MONITOR_ENABLED`); SLA warnings,
-breaches, missing policies and escalations are sent by the SLA and escalation monitors' events. **For P2/P3:** publishing
-the section 6 events would replace the polling; nothing else needs to change.
+breaches, missing policies and escalations are sent by the SLA and escalation monitors' events. P2/P3 publish the
+section 6 events; P4's next PR sends from them and slows the poll to a safety net.
 
 | Method and path | Who | Result |
 |---|---|---|
@@ -567,7 +567,19 @@ class ThingController(private val service: ThingService) {
 
 Testing an endpoint's error contract without a database: see `GlobalExceptionHandlerTest` (standalone
 MockMvc) and `MethodSecurityTest` (full filter chain + `@PreAuthorize`) for copy-paste setups.
+
 Testing code that publishes audit events: mock `AuditPublisher`, or see `SpringAuditPublisherTest`.
+
+## Incident domain events (`common/event`)
+
+When an incident changes, the owning service publishes an event with Spring's `ApplicationEventPublisher`, inside its
+transaction, after the change and its audit event are written: P2's intake publishes `IncidentClassified`; P3's lifecycle
+and assignment services publish `IncidentStateChanged`, `IncidentAssigned` and `IncidentAssignmentFailed`. Fields and rules:
+[p4.md](p4.md) section 6. **If you add a new way to change an incident** (a new transition path, a priority override),
+publish the matching event there too, or other modules will not hear about it. **If you listen**, use
+`@TransactionalEventListener(phase = AFTER_COMMIT)` with your own transaction (`REQUIRES_NEW`) and catch your own errors:
+never let a listener fail or undo the publisher's change. Tests: P3's `IncidentDomainEventsTest` (unit, with a recording
+publisher) and P2's `IncidentIntakePriorityIntegrationTest` (`@RecordApplicationEvents`).
 
 ## Change process
 
