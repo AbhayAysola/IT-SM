@@ -17,6 +17,7 @@ class IncidentAnalysisService(
     private val jdbc: JdbcTemplate,
     private val categories: CategoryCatalog,
     private val mapper: ObjectMapper,
+    restClientBuilder: RestClient.Builder,
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(IncidentAnalysisService::class.java)
@@ -24,7 +25,7 @@ class IncidentAnalysisService(
         private const val MODEL = "claude-haiku-4-5-20251001"
     }
 
-    private val client = RestClient.create()
+    private val client = restClientBuilder.build()
 
     fun analyze(title: String, description: String): IncidentAnalysisDto {
         if (apiKey.isBlank()) throw InvalidInput("AI analysis is not configured on this server.")
@@ -94,7 +95,7 @@ class IncidentAnalysisService(
         return parseResponse(responseText)
     }
 
-    private fun parseResponse(responseText: String): IncidentAnalysisDto {
+    internal fun parseResponse(responseText: String): IncidentAnalysisDto {
         val root = try {
             mapper.readTree(responseText)
         } catch (e: Exception) {

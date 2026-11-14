@@ -13,7 +13,11 @@ data class CreateIncidentRequest(
     /** Reporter-supplied impact: HIGH | MEDIUM | LOW. The backend calls PriorityPolicy to derive the priority. */
     @field:NotBlank val impact: String = "",
     /** Reporter-supplied urgency: HIGH | MEDIUM | LOW. The backend calls PriorityPolicy to derive the priority. */
-    @field:NotBlank val urgency: String = ""
+    @field:NotBlank val urgency: String = "",
+    /** Category the AI suggested before the reporter confirmed their choice. Null when the form was submitted without AI analysis. */
+    val aiSuggestedCategoryId: Long? = null,
+    /** Incident IDs the AI flagged as possible duplicates. Null or empty when none were detected. */
+    val aiDuplicateIds: List<String>? = null,
 )
 
 data class UpdateIncidentRequest(
