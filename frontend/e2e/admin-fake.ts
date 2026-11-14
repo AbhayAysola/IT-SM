@@ -147,6 +147,7 @@ export class AdminFake {
       case 'sla-policies': return this.slaApi(req, id, action);
       case 'assignment-settings': return this.assignmentApi(req);
       case 'escalation-settings': return this.escalationApi(req);
+      case 'analytics': return this.analyticsApi(req);
       default: return problem(404, 'RESOURCE_NOT_FOUND', 'Not found');
     }
   }
@@ -429,5 +430,38 @@ export class AdminFake {
     if (b.version !== this.escalation.version) return stale('escalation configuration');
     Object.assign(this.escalation, { unassignedMinutes: b.unassignedMinutes, secondLevelPct: b.secondLevelPct, adminLevelPct: b.adminLevelPct, version: this.escalation.version + 1, updatedAt: now(), updatedByUserId: 1 });
     return { status: 200, body: { ...this.escalation } };
+  }
+
+  // ---- analytics (P4): a deterministic summary for whatever range is asked, validated like the backend ----
+  private analyticsApi({ method, query: q }: RecordedRequest): FakeResult {
+    if (method !== 'GET') return problem(405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
+    const from = q.get('from') ?? '2026-11-01', to = q.get('to') ?? '2026-11-30';
+    const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
+    if (!(days >= 1)) return invalid('from', 'must not be after to');
+    if (days > 366) return invalid('to', 'the range can be at most 366 days');
+    const counts = (rm: number, rb: number, sm: number, sb: number) => ({
+      tracked: rm + rb, responseMet: rm, responseBreached: rb, responseCompliancePct: rm + rb ? Math.round((rm * 1000) / (rm + rb)) / 10 : null,
+      resolutionMet: sm, resolutionBreached: sb, resolutionCompliancePct: sm + sb ? Math.round((sm * 1000) / (sm + sb)) / 10 : null,
+    });
+    const perDay = Array.from({ length: days }, (_, k) => ({
+      date: new Date(Date.parse(from) + k * 86_400_000).toISOString().slice(0, 10), reported: (k * 7) % 5, resolved: (k * 3) % 4, breaches: k % 3 === 0 ? 1 : 0, escalations: k % 4 === 0 ? 1 : 0,
+    }));
+    return {
+      status: 200,
+      body: {
+        from, to,
+        incidents: { reported: perDay.reduce((n, d) => n + d.reported, 0), resolved: perDay.reduce((n, d) => n + d.resolved, 0), openNow: 12, unassignedNow: 3, openByState: { CLASSIFIED: 3, IN_PROGRESS: 9 }, openByPriority: { P1: 2, P2: 4, P3: 6 } },
+        sla: {
+          overall: counts(40, 10, 36, 9),
+          byPriority: [{ id: 'P1', name: 'P1', counts: counts(5, 3, 4, 4) }, { id: 'P2', name: 'P2', counts: counts(15, 3, 12, 3) }, { id: 'P3', name: 'P3', counts: counts(20, 4, 20, 2) }],
+          byService: [{ id: '2', name: 'VPN', counts: counts(10, 2, 9, 3) }, { id: '1', name: 'Email', counts: counts(30, 8, 27, 6) }],
+          byCategory: [{ id: '1', name: 'Network', counts: counts(25, 6, 22, 5) }],
+        },
+        times: { toRespond: { count: 50, meanMinutes: 18.4, p90Minutes: 41 }, toResolve: { count: 45, meanMinutes: 312, p90Minutes: 1500 } },
+        escalations: { total: perDay.reduce((n, d) => n + d.escalations, 0), byTrigger: { RESPONSE_BREACHED: 4, UNASSIGNED: 2, RESOLUTION_OVERDUE: 1 } },
+        perDay,
+        technicians: [{ userId: 3, name: 'Linus Torvalds', maxWorkload: 5, activeIncidents: 4, resolved: 11, ratings: 6, averageRating: 4.5 }, { userId: 4, name: 'Margaret Hamilton', maxWorkload: 8, activeIncidents: 2, resolved: 7, ratings: 0, averageRating: null }],
+      },
+    };
   }
 }

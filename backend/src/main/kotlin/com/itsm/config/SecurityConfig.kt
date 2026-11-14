@@ -112,6 +112,8 @@ class SecurityConfig(
                 it.requestMatchers("/api/admin/escalation-settings/**").hasAuthority(Permission.SLA_CONFIGURE.name)
                 it.requestMatchers("/api/admin/assignment-settings/**").hasAuthority(Permission.ASSIGNMENT_CONFIGURE.name)
                 it.requestMatchers("/api/admin/audit-events/**").hasAuthority(Permission.AUDIT_VIEW.name)
+                // P4: the analytics dashboard (docs/architecture/p4.md section 5).
+                it.requestMatchers("/api/admin/analytics/**").hasAuthority(Permission.ANALYTICS_VIEW.name)
                 it.requestMatchers("/api/admin/**").hasRole("ADMIN")
                 it.anyRequest().authenticated()
             }

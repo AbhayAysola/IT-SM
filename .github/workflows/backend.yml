@@ -132,6 +132,7 @@ jobs:
               'com.itsm.sla.SlaMonitorIntegrationTest': 6,
               'com.itsm.escalation.EscalationIntegrationTest': 6,
               'com.itsm.notification.NotificationIntegrationTest': 5,
+              'com.itsm.analytics.AnalyticsIntegrationTest': 2,
               'com.itsm.intake.IncidentIntakePriorityIntegrationTest': 5,
           }
           total = skipped = 0

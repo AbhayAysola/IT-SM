@@ -90,7 +90,8 @@ class RouteAuthorizationMatrixIntegrationTest {
             "$ADMIN/sla-policies" to Permission.SLA_CONFIGURE,
             "$ADMIN/assignment-settings" to Permission.ASSIGNMENT_CONFIGURE,
             "$ADMIN/escalation-settings" to Permission.SLA_CONFIGURE,
-            "$ADMIN/audit-events" to Permission.AUDIT_VIEW
+            "$ADMIN/audit-events" to Permission.AUDIT_VIEW,
+            "$ADMIN/analytics" to Permission.ANALYTICS_VIEW
         )
         private val ADMIN_PERMISSIONS = AREAS.map { it.second }.toSet()
         private val HAS_AUTHORITY = Regex("""hasAuthority\('([A-Z_]+)'\)""")
@@ -266,6 +267,8 @@ class RouteAuthorizationMatrixIntegrationTest {
             val current = api(HttpMethod.GET, "$ADMIN/assignment-settings")
             Probe(HttpMethod.PUT, "$ADMIN/assignment-settings", mapOf("activeStrategy" to "SKILL_BASED", "defaultMaxWorkload" to 6, "categoryOverrides" to emptyList<Any>(), "version" to current["version"].asLong()))
         },
+
+        "GET $ADMIN/analytics/summary" to { Probe(HttpMethod.GET, "$ADMIN/analytics/summary") },
 
         "GET $ADMIN/audit-events" to { Probe(HttpMethod.GET, "$ADMIN/audit-events") },
         "GET $ADMIN/audit-events/{eventId}" to {

@@ -226,6 +226,12 @@ the section 6 events would replace the polling; nothing else needs to change.
 | `POST /api/notifications/{id}/read` | the recipient | 200 the notification (idempotent); 404 if it is not theirs |
 | `POST /api/notifications/read-all` | any signed-in user | 200 `{updated}` |
 
+**Analytics (implemented, `analytics/`).** Definitions in [p4.md](p4.md) section 5.
+
+| Method and path | Who | Result |
+|---|---|---|
+| `GET /api/admin/analytics/summary?from&to` | `ANALYTICS_VIEW` | 200 `{from, to, incidents{reported, resolved, openNow, unassignedNow, openByState, openByPriority}, sla{overall, byPriority, byService, byCategory}, times{toRespond, toResolve}, escalations{total, byTrigger}, perDay[], technicians[]}`; inclusive UTC dates, default last 30 days, at most 366 (400 otherwise) |
+
 **Frontend.** The incident page shows a "Service level" card (`components/sla-panel.tsx`) to everyone who can open the
 incident, with its escalations for staff; the mock service computes an approximate SLA from the seeded global targets
 (`model/sla.ts`) and has no escalations. Admins edit the escalation settings on the admin workspace's "Escalation" page.
