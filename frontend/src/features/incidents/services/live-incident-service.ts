@@ -4,9 +4,9 @@ import { IncidentError, type Actor, type Audience, type IncidentState, type Reco
 import type { AnalysisResult, FilterOptions, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
 import { technicianApi } from '@/features/admin/services/technician-api';
-import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type TabId } from './tabs';
+import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toSimilar, toSla, toTimelineEntry,
+  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toRowSla, toSimilar, toSla, toTimelineEntry,
   type ApiEscalation, type ApiFeedback, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
@@ -45,7 +45,7 @@ export const liveIncidentService = {
    * One request per page of a tab. The backend scopes the list to what the caller may open and orders it by urgency, so nothing is
    * filtered here. `needsAttention` floats the incidents waiting on this person first within the page (the server cannot know it).
    */
-  async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}): Promise<IncidentListResult> {
+  async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}, sort: IncidentSort = 'URGENCY'): Promise<IncidentListResult> {
     const who = me(actor);
     const tabs = TABS[actor.role];
     const states = (tabs.find((t) => t.id === tab) ?? tabs[0]).states;
@@ -56,6 +56,8 @@ export const liveIncidentService = {
     if (filters.serviceId !== undefined) query.set('serviceId', String(filters.serviceId));
     if (filters.assigneeId !== undefined) query.set('assigneeId', String(filters.assigneeId));
     if (filters.slaStatus) query.set('slaStatus', filters.slaStatus);
+    if (filters.predictedMiss) query.set('predictedMiss', 'true');
+    if (sort !== 'URGENCY') query.set('sort', sort);
     if (filters.from) query.set('createdFrom', filters.from);
     if (filters.to) query.set('createdTo', filters.to);
     const page_ = await call<ApiIncidentList>('GET', `?${query}`);
@@ -63,10 +65,12 @@ export const liveIncidentService = {
     const items = page_.items
       .map((d) => {
         const incident = toIncidentFromSummary(d, who);
-        return { ...incident, needsAttention: needsAttention(actor, incident, d.hasFeedback) };
-      })
-      .sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention)); // stable: the server order (urgency, newest) is kept within each group
-    return { items, counts, total: page_.totalItems, page: Math.max(1, page), pageSize: INCIDENT_PAGE_SIZE };
+        return { ...incident, needsAttention: needsAttention(actor, incident, d.hasFeedback), sla: toRowSla(d.sla) };
+      });
+    // Stable: the server order (urgency, newest) is kept within each group. A deadline order is kept as the server sent it.
+    if (sort === 'URGENCY') items.sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention));
+    const attention = page_.slaAttention ? { breached: page_.slaAttention.breached, atRisk: page_.slaAttention.atRisk, predictedMiss: page_.slaAttention.predictedMiss } : null;
+    return { items, counts, total: page_.totalItems, page: Math.max(1, page), pageSize: INCIDENT_PAGE_SIZE, attention };
   },
 
   async get(actor: Actor, id: string): Promise<IncidentDetail> {

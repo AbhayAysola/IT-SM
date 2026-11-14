@@ -54,7 +54,12 @@ data class IncidentFilters(
     val createdFrom: Instant? = null,
     /** Exclusive upper bound on `created_at`. */
     val createdBefore: Instant? = null,
-    val slaStatus: String? = null
+    val slaStatus: String? = null,
+    /**
+     * Only incidents P4's predictive SLA risk says will probably miss their resolution deadline (`incident_sla_risk`,
+     * V43), while that clock is still running or warned. Once it is met, breached or paused, [slaStatus] says more.
+     */
+    val predictedMiss: Boolean = false
 ) {
     companion object {
         /** The values `incident_sla.status` can hold (see V40). */
@@ -70,10 +75,33 @@ data class IncidentListQuery(
     val search: String?,
     val offset: Long,
     val limit: Int,
-    val filters: IncidentFilters = IncidentFilters()
+    val filters: IncidentFilters = IncidentFilters(),
+    val sort: IncidentSort = IncidentSort.URGENCY
 )
 
-data class IncidentListRow(val record: IncidentRecord, val hasFeedback: Boolean)
+/** The order of a list. */
+enum class IncidentSort {
+    /** Priority, then most recently updated (the default). */
+    URGENCY,
+    /** Nearest resolution deadline first (P4's `incident_sla`); incidents without an open deadline last, by urgency. */
+    DEADLINE
+}
+
+/**
+ * The SLA facts a list row shows, read from P4's tables (`incident_sla`, `incident_sla_risk`); null until SLA tracking has
+ * reached the incident. [status] is the overall SLA status, [resolutionDueAt] the resolution deadline (pauses included),
+ * [predictedMiss] as in [IncidentFilters.predictedMiss].
+ */
+data class IncidentSlaFacts(val status: String, val resolutionStatus: String, val resolutionDueAt: Instant?, val predictedMiss: Boolean)
+
+data class IncidentListRow(val record: IncidentRecord, val hasFeedback: Boolean, val sla: IncidentSlaFacts? = null)
+
+/**
+ * How many incidents in the list need attention, by SLA: breached, at risk (the fixed warning) and predicted to miss.
+ * Counted over the same scope, states, search and filters as the list, except the two SLA filters, so each count is what
+ * applying that filter would show.
+ */
+data class SlaAttentionCounts(val breached: Long = 0, val atRisk: Long = 0, val predictedMiss: Long = 0)
 data class IncidentPage(val rows: List<IncidentListRow>, val total: Long)
 
 /**
@@ -101,11 +129,14 @@ interface IncidentStore {
      */
     fun lockTechnician(technicianId: Long)
 
-    /** One page, most urgent first (priority, then most recently updated), and the total matching. */
+    /** One page in [IncidentListQuery.sort] order, with each row's SLA facts, and the total matching. */
     fun list(query: IncidentListQuery): IncidentPage
 
     /** How many incidents the scope holds per state, ignoring any state filter or search (drives tab counts). */
     fun stateCounts(scope: IncidentScope): Map<IncidentState, Int>
+
+    /** See [SlaAttentionCounts]. Stores without SLA data (test fakes) report none. */
+    fun slaAttention(query: IncidentListQuery): SlaAttentionCounts = SlaAttentionCounts()
 
     /** Incidents in [categoryId] that have a recorded fix, same service first, then newest. */
     fun similarResolved(categoryId: Long, serviceId: Long?, excludeIncidentId: String, limit: Int): List<ResolvedIncident>

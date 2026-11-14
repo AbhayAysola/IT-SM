@@ -1,4 +1,4 @@
-import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type SimilarResolution, type EscalationView, type SlaClockView, type SlaRiskView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
+import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type RowSla, type SimilarResolution, type EscalationView, type SlaClockView, type SlaRiskView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
 
 /**
  * Pure translation between the backend's JSON (`IncidentController` DTOs) and the UI model. No network, so it is
@@ -17,9 +17,14 @@ export interface ApiIncidentSummary {
   id: string; title: string; state: IncidentState; priority: Priority | null; reporterId: number; assigneeId: number | null;
   categoryId: number | null; serviceId: number | null; createdAt: string; updatedAt: string; resolvedAt: string | null; hasFeedback: boolean;
   reporterName?: string | null; assigneeName?: string | null; categoryName?: string | null; serviceName?: string | null;
+  /** P4's SLA facts; absent from older backends, null until SLA tracking has reached the incident. */
+  sla?: ApiRowSla | null;
 }
+export interface ApiRowSla { status: RowSla['status']; resolutionStatus: RowSla['resolutionStatus']; resolutionDueAt: string | null; predictedMiss: boolean }
+export interface ApiSlaAttention { breached: number; atRisk: number; predictedMiss: number }
 export interface ApiIncidentList {
   items: ApiIncidentSummary[]; page: number; size: number; totalItems: number; totalPages: number; stateCounts: Partial<Record<IncidentState, number>>;
+  slaAttention?: ApiSlaAttention | null;
 }
 export interface ApiTimelineEntry { type: TimelineEntry['type']; authorId: number; visibility: TimelineEntry['visibility']; body: string; incidentState: IncidentState; createdAt: string }
 export interface ApiFeedback { rating: number; comment: string | null; submittedAt: string }
@@ -65,6 +70,10 @@ export function toIncident(d: ApiIncident, me: Me): Incident {
 /** A list row carries no description (the detail does), so it is empty here. */
 export const toIncidentFromSummary = (d: ApiIncidentSummary, me: Me): Incident =>
   toIncident({ ...d, description: '', assignedAt: null, firstResponseAt: null, closedAt: null, availableTransitions: [] }, me);
+
+/** A list row's SLA facts (P4). */
+export const toRowSla = (d: ApiRowSla | null | undefined): RowSla | null =>
+  d ? { status: d.status, resolutionStatus: d.resolutionStatus, resolutionDueAt: d.resolutionDueAt, predictedMiss: d.predictedMiss } : null;
 
 export function toTimelineEntry(d: ApiTimelineEntry, me: Me, incidentId: string, index: number): TimelineEntry {
   const author = who(me, d.authorId)!;

@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, Inbox } from 'lucide-react';
+import { ArrowUpDown, CalendarClock, Inbox } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,9 +20,10 @@ import { AssignDialog } from './components/assign-dialog';
 import { formatWhen, PriorityBadge, StateBadge } from './components/badges';
 import { useActor } from './components/workspace-shell';
 import {
-  activeFilterCount, type FilterSlaStatus, type IncidentFilters, type IncidentRow, audienceFor, defaultTab, FILTER_SLA_STATUSES, incidentService,
-  INCIDENT_PAGE_SIZE, TABS, type TabId,
+  activeFilterCount, type FilterSlaStatus, type IncidentFilters, type IncidentRow, type IncidentSort, audienceFor, defaultTab, FILTER_SLA_STATUSES, incidentService,
+  INCIDENT_PAGE_SIZE, type SlaAttention, TABS, type TabId,
 } from './services/incident-service';
+import { listDeadline } from './model/sla';
 
 const COPY = {
   EMPLOYEE: { title: 'My incidents', description: 'Problems you have reported and where each one stands. We’ll tell you here when we need something from you.' },
@@ -43,6 +44,24 @@ const SLA_LABEL: Record<FilterSlaStatus, string> = {
 };
 
 const PRIO_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;
+
+/** P4's quick SLA filters above the list (staff only): each shows how many incidents that filter would leave. */
+const ATTENTION: { key: keyof SlaAttention; label: string; active: (f: IncidentFilters) => boolean; toggle: (f: IncidentFilters, on: boolean) => IncidentFilters }[] = [
+  { key: 'breached', label: 'Breached', active: (f) => f.slaStatus === 'BREACHED', toggle: (f, on) => ({ ...f, slaStatus: on ? 'BREACHED' : undefined }) },
+  { key: 'atRisk', label: 'At risk', active: (f) => f.slaStatus === 'WARNING', toggle: (f, on) => ({ ...f, slaStatus: on ? 'WARNING' : undefined }) },
+  { key: 'predictedMiss', label: 'Predicted to miss', active: (f) => f.predictedMiss === true, toggle: (f, on) => ({ ...f, predictedMiss: on ? true : undefined }) },
+];
+
+/** "Resolution due" cell (P4's SLA facts), refreshed with the page. */
+function DeadlineCell({ row, now }: { row: IncidentRow; now: number }) {
+  const d = listDeadline(row.sla, now);
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <span className={row.sla ? undefined : 'text-muted-foreground'}>{d.text}</span>
+      {d.badge && <Badge variant={d.badge.variant}>{d.badge.label}</Badge>}
+    </div>
+  );
+}
 
 /** Wraps the first case-insensitive match of `query` in a <mark>. */
 function Highlight({ text, query }: { text: string; query: string }) {
@@ -71,6 +90,7 @@ export default function IncidentsPage() {
   const [assigning, setAssigning] = useState<IncidentRow | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [sortPriority, setSortPriority] = useState(false);
+  const [sort, setSort] = useState<IncidentSort>('URGENCY');
   const opener = useRef<HTMLElement | null>(null);
   const [filters, setFilters] = useState<IncidentFilters>({});
   const debounced = useDebounced(search);
@@ -81,11 +101,17 @@ export default function IncidentsPage() {
     setFilters((f) => { const next = { ...f }; if (value === undefined || value === '') delete next[key]; else next[key] = value; return next; });
     setPage(1);
   };
+  const applyFilters = (next: IncidentFilters) => {
+    setFilters(Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== '')) as IncidentFilters);
+    setPage(1);
+  };
 
   const { data, loading, error, reload } = useResource(
-    () => incidentService.list(actor, tab, debounced, page, filters),
-    [actor.email, tab, debounced, page, filterKey]
+    () => incidentService.list(actor, tab, debounced, page, filters, sort),
+    [actor.email, tab, debounced, page, filterKey, sort]
   );
+  const staff = audience === 'staff';
+  const now = Date.now();
   const rawItems = data?.items ?? [];
   const items = sortPriority ? [...rawItems].sort((a, b) => PRIO_ORDER[a.priority] - PRIO_ORDER[b.priority]) : rawItems;
   const copy = COPY[actor.role];
@@ -112,24 +138,53 @@ export default function IncidentsPage() {
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant={sortPriority ? 'secondary' : 'outline'}
               size="sm"
-              onClick={() => setSortPriority((v) => !v)}
+              onClick={() => { setSortPriority((v) => !v); setSort('URGENCY'); }}
               aria-pressed={sortPriority}
               title="Sort by priority (P1 first)"
             >
               <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
               Priority
             </Button>
+            {staff && (
+              <Button
+                type="button"
+                variant={sort === 'DEADLINE' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => { setSort((s) => (s === 'DEADLINE' ? 'URGENCY' : 'DEADLINE')); setSortPriority(false); setPage(1); }}
+                aria-pressed={sort === 'DEADLINE'}
+                title="Sort by resolution deadline (nearest first)"
+              >
+                <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+                Deadline
+              </Button>
+            )}
             <div className="relative w-full sm:w-72">
               <Label htmlFor="incident-search" className="sr-only">Search incidents</Label>
               <Input id="incident-search" type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title or person" />
             </div>
           </div>
         </div>
+
+        {staff && data?.attention && (
+          <div role="group" aria-label="Service level attention" className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Service level</span>
+            {ATTENTION.map((a) => {
+              const on = a.active(filters);
+              return (
+                <Button key={a.key} type="button" size="sm" variant={on ? 'secondary' : 'outline'} aria-pressed={on}
+                  onClick={() => applyFilters(a.toggle(filters, !on))}>
+                  {a.label}
+                  <span className="ml-1 tabular-nums text-muted-foreground">{data.attention![a.key]}</span>
+                </Button>
+              );
+            })}
+          </div>
+        )}
 
         <div role="group" aria-label="Filter incidents" className="mb-3 flex flex-wrap items-center gap-2">
           <FilterSelect label="Priority" allLabel="All priorities" value={filters.priority ?? 'ALL'} options={PRIORITY_OPTIONS}
@@ -148,7 +203,7 @@ export default function IncidentsPage() {
           <FilterSelect label="SLA status" allLabel="Any SLA status" value={filters.slaStatus ?? 'ALL'}
             options={FILTER_SLA_STATUSES.map((v) => ({ value: v, label: SLA_LABEL[v] }))}
             onChange={(v) => setFilter('slaStatus', v === 'ALL' ? undefined : (v as FilterSlaStatus))} />
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Label htmlFor="incident-from" className="text-xs text-muted-foreground">Reported from</Label>
             <Input id="incident-from" type="date" className="w-[150px]" value={filters.from ?? ''} max={filters.to || undefined}
               onChange={(e) => setFilter('from', e.target.value || undefined)} />
@@ -176,6 +231,7 @@ export default function IncidentsPage() {
                         <TableHead>Incident</TableHead>
                         <TableHead>Priority</TableHead>
                         <TableHead>Status</TableHead>
+                        {staff && <TableHead>Resolution due</TableHead>}
                         <TableHead>{audience === 'staff' ? 'Reporter' : 'Technician'}</TableHead>
                         {audience === 'staff' && actor.role === 'ADMIN' && <TableHead>Technician</TableHead>}
                         <TableHead>Updated</TableHead>
@@ -197,6 +253,7 @@ export default function IncidentsPage() {
                           </TableCell>
                           <TableCell><PriorityBadge priority={i.priority} /></TableCell>
                           <TableCell><StateBadge state={i.state} audience={audience} /></TableCell>
+                          {staff && <TableCell className="whitespace-nowrap"><DeadlineCell row={i} now={now} /></TableCell>}
                           <TableCell className="whitespace-nowrap">
                             <Highlight text={audience === 'staff' ? i.reporterName : (i.assigneeName ?? 'Not assigned yet')} query={debounced} />
                           </TableCell>

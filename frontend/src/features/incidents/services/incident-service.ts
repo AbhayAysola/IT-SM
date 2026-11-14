@@ -9,15 +9,15 @@ import {
 } from '../model/recommender';
 import {
   IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
-  type EscalationView, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
+  type EscalationView, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
-import { mockSla } from '../model/sla';
+import { mockRowSla, mockSla } from '../model/sla';
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
 import { needsAttention, same } from './attention';
-import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type TabId } from './tabs';
+import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 
-export { TABS, defaultTab, INCIDENT_PAGE_SIZE, activeFilterCount, FILTER_SLA_STATUSES, type IncidentFilters, type FilterSlaStatus, type TabId } from './tabs';
+export { TABS, defaultTab, INCIDENT_PAGE_SIZE, activeFilterCount, FILTER_SLA_STATUSES, type IncidentFilters, type IncidentSort, type FilterSlaStatus, type TabId } from './tabs';
 
 /** Mirrors the backend com.itsm.common.model.Impact enum. */
 export type Impact = 'HIGH' | 'MEDIUM' | 'LOW';
@@ -95,7 +95,12 @@ function candidates(w: World): Candidate[] {
 export interface IncidentRow extends Incident {
   /** True when this person is the one who has to act next. */
   needsAttention: boolean;
+  /** P4's SLA facts; null until SLA tracking has reached the incident. */
+  sla: RowSla | null;
 }
+
+/** How many incidents of the list (all filters but the SLA ones) are breached, at risk, or predicted to miss. */
+export interface SlaAttention { breached: number; atRisk: number; predictedMiss: number }
 
 /** One page of a tab. `page` is 1-based; `total` counts the whole tab (after the search), not just this page. */
 export interface IncidentListResult {
@@ -104,6 +109,8 @@ export interface IncidentListResult {
   total: number;
   page: number;
   pageSize: number;
+  /** Null when the backend does not report it. */
+  attention: SlaAttention | null;
 }
 
 export interface IncidentDetail {
@@ -181,11 +188,15 @@ function matchesFilters(i: Incident, f: IncidentFilters, options: ReturnType<typ
   if (f.from && created < Date.parse(`${f.from}T00:00:00Z`)) return false;
   if (f.to && created >= Date.parse(`${f.to}T00:00:00Z`) + 86_400_000) return false;
   if (f.slaStatus && (i.state === 'NEW' ? null : mockSla(i, Date.now()).status) !== f.slaStatus) return false;
+  if (f.predictedMiss && !mockRowSla(i, Date.now())?.predictedMiss) return false;
   return true;
 }
 
+/** The mock's copy of `sort=DEADLINE`: nearest open resolution deadline first, then the usual order. */
+const deadlineOf = (r: IncidentRow) => (r.sla?.resolutionDueAt ? Date.parse(r.sla.resolutionDueAt) : Number.POSITIVE_INFINITY);
+
 export const mockIncidentService = {
-  async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}): Promise<IncidentListResult> {
+  async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}, sort: IncidentSort = 'URGENCY'): Promise<IncidentListResult> {
     return simulate(() => {
       const w = world(actor);
       const mine = w.incidents.filter((i) => canOpen(actor, i));
@@ -195,15 +206,25 @@ export const mockIncidentService = {
       const counts = Object.fromEntries(tabs.map((t) => [t.id, mine.filter((i) => t.states.includes(i.state)).length])) as Partial<Record<TabId, number>>;
       const states = (tabs.find((t) => t.id === tab) ?? tabs[0]).states;
       const filterOptions = mockFilterOptions(mine);
-      const items = mine
+      const unfiltered = mine
         .filter((i) => states.includes(i.state))
         .filter((i) => !q || [i.id, i.title, i.category, i.service, i.reporterName, i.assigneeName ?? ''].some((s) => s.toLowerCase().includes(q)))
+        .filter((i) => matchesFilters(i, { ...filters, slaStatus: undefined, predictedMiss: undefined }, filterOptions))
+        .map((i): IncidentRow => ({ ...i, needsAttention: needsAttention(actor, i, hasFb(i.id)), sla: mockRowSla(i, Date.now()) }));
+      // Counted before the SLA filters, like the backend, so each count is what that filter would show.
+      const attention = {
+        breached: unfiltered.filter((r) => r.sla?.status === 'BREACHED').length,
+        atRisk: unfiltered.filter((r) => r.sla?.status === 'WARNING').length,
+        predictedMiss: unfiltered.filter((r) => r.sla?.predictedMiss).length,
+      };
+      const urgency = (a: IncidentRow, b: IncidentRow) =>
+        Number(b.needsAttention) - Number(a.needsAttention) || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+      const items = unfiltered
         .filter((i) => matchesFilters(i, filters, filterOptions))
-        .map((i) => ({ ...i, needsAttention: needsAttention(actor, i, hasFb(i.id)) }))
-        .sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention) || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+        .sort(sort === 'DEADLINE' ? (a, b) => deadlineOf(a) - deadlineOf(b) || urgency(a, b) : urgency);
       const pages = Math.max(1, Math.ceil(items.length / INCIDENT_PAGE_SIZE));
       const current = Math.min(Math.max(1, page), pages);
-      return { items: items.slice((current - 1) * INCIDENT_PAGE_SIZE, current * INCIDENT_PAGE_SIZE), counts, total: items.length, page: current, pageSize: INCIDENT_PAGE_SIZE };
+      return { items: items.slice((current - 1) * INCIDENT_PAGE_SIZE, current * INCIDENT_PAGE_SIZE), counts, total: items.length, page: current, pageSize: INCIDENT_PAGE_SIZE, attention };
     });
   },
 

@@ -152,6 +152,17 @@ export interface SlaSummary {
   risk: SlaRiskView | null;
 }
 
+/** The SLA facts a list row shows (P4's, carried by P3's incident list). */
+export interface RowSla {
+  /** Overall status. */
+  status: Exclude<SlaStatus, 'PENDING'>;
+  resolutionStatus: Exclude<SlaStatus, 'PENDING'>;
+  /** ISO instant; null without a policy, or once the incident is finished. */
+  resolutionDueAt: string | null;
+  /** P4 predicts the resolution deadline will be missed (only while that clock is running or warned). */
+  predictedMiss: boolean;
+}
+
 /** One escalation of an incident (P4, GET /api/incidents/{id}/escalations; staff only). */
 export interface EscalationView {
   /** Why: a breached clock, a resolution far past its target, or nobody assigned in time. */

@@ -1,4 +1,4 @@
-import type { EscalationView, Incident, IncidentState, Priority, SlaClockView, SlaRiskView, SlaStatus, SlaSummary } from './types';
+import type { EscalationView, Incident, IncidentState, Priority, RowSla, SlaClockView, SlaRiskView, SlaStatus, SlaSummary } from './types';
 
 /**
  * SLA display rules and the mock service's SLA. The real rules are P4's backend (`sla/SlaEvaluator.kt`, documented in
@@ -62,6 +62,36 @@ export function riskReason(r: SlaRiskView): string {
   if (r.loadFactor <= 1) return base;
   const load = r.loadFactor >= 1.95 && r.loadFactor <= 2.05 ? 'twice' : `${r.loadFactor.toFixed(1)} times`;
   return `${base} The assignee has ${load} their usual workload.`;
+}
+
+/**
+ * The "Resolution due" cell of the incident list: words first, so the badge colour is never the only signal.
+ * Breached shows how long ago; a running clock shows how long is left, flagged when warned or predicted to miss.
+ */
+export function listDeadline(sla: RowSla | null, now: number): { text: string; badge: { label: string; variant: 'warning' | 'destructive' } | null } {
+  if (!sla) return { text: 'Not tracked yet', badge: null };
+  switch (sla.resolutionStatus) {
+    case 'NO_POLICY': return { text: 'No SLA policy', badge: null };
+    case 'MET': return { text: 'Met', badge: null };
+    case 'PAUSED': return { text: 'Paused', badge: null };
+    case 'BREACHED': return { text: sla.resolutionDueAt ? `Due ${relativeTo(sla.resolutionDueAt, now)}` : 'Deadline passed', badge: { label: 'Breached', variant: 'destructive' } };
+    default: {
+      const text = sla.resolutionDueAt ? `Due ${relativeTo(sla.resolutionDueAt, now)}` : 'No deadline';
+      if (sla.predictedMiss) return { text, badge: { label: 'Likely to miss', variant: 'warning' } };
+      if (sla.resolutionStatus === 'WARNING') return { text, badge: { label: 'At risk', variant: 'warning' } };
+      return { text, badge: null };
+    }
+  }
+}
+
+/** The mock list's SLA facts, from the same approximate clocks as [mockSla]. The mock never predicts a miss. */
+export function mockRowSla(i: Incident, now: number): RowSla | null {
+  if (i.state === 'NEW') return null;
+  const s = mockSla(i, now);
+  const finished = i.state === 'VERIFIED' || i.state === 'CLOSED';
+  const status = s.status === 'PENDING' ? 'RUNNING' : s.status;
+  const resolution = s.resolution?.status ?? 'NO_POLICY';
+  return { status, resolutionStatus: resolution === 'PENDING' ? 'RUNNING' : resolution, resolutionDueAt: finished ? null : s.resolution?.dueAt ?? null, predictedMiss: false };
 }
 
 /** The seeded global policies (backend V13), used only by the mock service. */
