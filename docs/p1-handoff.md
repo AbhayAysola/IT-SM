@@ -1,6 +1,6 @@
 # P1 handoff: Access & Administration
 
-Status: functionally complete and verified. This page is the single entry point for whoever takes P1 over for review, merge, deployment
+Status: functionally complete and verified; the deferred hardening of section 5 is **done** except the items marked open. This page is the single entry point for whoever takes P1 over for review, merge, deployment
 or integration. It links to the detailed documents instead of repeating them.
 
 ## 1. What P1 delivers
@@ -21,7 +21,7 @@ or integration. It links to the detailed documents instead of repeating them.
 
 | Check | Result |
 |---|---|
-| Backend: `./gradlew clean build`, JDK 17, `ITSM_REQUIRE_DOCKER=true`, PostgreSQL 16 | 446 tests, 0 failed, 0 skipped; every class listed in `backend.yml`'s required list ran |
+| Backend: `./gradlew clean build`, JDK 17, `ITSM_REQUIRE_DOCKER=true`, PostgreSQL 16 | 446 tests, 0 failed, 0 skipped; every class listed in `backend.yml`'s required list ran (at the B16 commit; the suite on `main` is much larger, 750+ tests, all passing on 2026-11-14) |
 | Frontend: typecheck, lint, production build | clean |
 | Frontend fake-API Playwright suite | 206 passed |
 | Real frontend/backend suite (`real-stack.yml`, PostgreSQL 16) | 64 of 64, checker: 0 skipped / 0 flaky / 0 failed, secret scan clean |
@@ -44,24 +44,23 @@ real stack see [frontend/e2e-real/README.md](../frontend/e2e-real/README.md).
 * TLS and redirect on both ingresses; host and secret are values; no issuer or certificate is assumed; extra annotations allowed.
 * The frontend image takes the public origin at build time. A runtime variable cannot change it. Verified in a real image build.
 * Probes: liveness = process only; readiness = accepting traffic and PostgreSQL; startup budget 180 s. Redis and RabbitMQ do not affect either
-  because P1 does not use them. `/actuator/health` still reports them. A module that starts using one must add its indicator to the readiness group
-  in `application.yml`.
+  because no feature uses them. `/actuator/health` still reports them. A module that starts using one must add its indicator to the readiness group
+  in `application.yml`. Probes and Prometheus use the separate management port 8081 (`security.md`, "Management port").
 
-## 5. Deferred hardening: assigned to the deployment/operations owners
+## 5. Hardening from the B16 assessment: status
 
-These are findings from the B16 assessment. None changes application behaviour; each needs values or decisions only the owner has. None was
-started. **Production deployment is blocked until C and D are done** (the MVP on a closed network is not).
+Closed on 2026-11-14 unless marked open. Details and the reasoning are in [security.md](architecture/security.md).
 
-| ID | Severity | What | Owner | Needs from the owner |
-|---|---|---|---|---|
-| B16-05 | High | `TRUSTED_PROXIES` is the whole private address space and there is no NetworkPolicy. Any pod can forge `X-Forwarded-For` and bypass the per-email login limit (demonstrated: 12 guesses never throttled). Narrow it to the ingress controller's pod CIDR and add a NetworkPolicy (ingress to backend; backend to Postgres/Redis/RabbitMQ) | Platform | ingress type/version, its pod CIDR or namespace labels, cluster CIDRs, hop count, whether a cloud load balancer or CDN is in front |
-| B16-06 | Medium | `security.md` says ingress-nginx appends `X-Forwarded-For` by default; its default is to overwrite with the connecting address. Behind a load balancer with `externalTrafficPolicy: Cluster` every user would share one login bucket. Confirm the topology and correct the doc | Platform | as above |
-| B16-08 | Medium | Default passwords (`itsm_password`, `redis_password`, `rabbitmq_password`) are committed in the k8s secrets and Helm values. Make them required like `jwt.secret` | Platform | how secrets are provisioned |
-| B16-03 | High | The application and Flyway share one PostgreSQL superuser that owns the audit table, so the append-only trigger can be disabled by the application's own account (demonstrated). Use a migration-owner role and a runtime role with only `SELECT, INSERT` on `audit_events`; apply the grants in an `afterMigrate` step, not in a migration. The privilege model was proven on PostgreSQL 16 | Database / Platform | who owns the migration role, how credentials are issued |
-| B16-07 | Medium | Prometheus cannot scrape `/actuator/prometheus` (401). A separate management port does not help by itself: the security chain applies there too, so it needs a small `SecurityConfig` rule limited to the management port, plus a NetworkPolicy | Backend + Platform | whether Prometheus runs in the cluster, its namespace and labels |
-| B16-09 | Medium | Login throttle is per instance (2 replicas allow about 2x), resets on restart, and keys IPv6 by full address (a /64 can rotate addresses). Accepted for the MVP with an ingress-level limit; no Redis needed | Platform | whether IPv6 clients reach the ingress |
-| B16-10 | Low | `spring.flyway.baseline-on-migrate: true` silently skips V1 on a non-empty database without a history table | Backend | decide for production |
-| B16-11 | Low | Local and production settings are separated implicitly (profiles/values), not by a documented overlay | Platform | none |
+| ID | Severity | What | Status |
+|---|---|---|---|
+| B16-05 | High | `TRUSTED_PROXIES` was the whole private address space and there was no NetworkPolicy | **Done.** No default any more: the Helm chart and `deploy.sh` require the ingress controller's pod CIDR, the raw manifest carries an invalid placeholder. NetworkPolicies limit the backend's API port to the ingress controller and PostgreSQL, Redis and RabbitMQ to the backend. **Operator still has to supply the real CIDR and use a CNI that enforces NetworkPolicy** (Kind's default does) |
+| B16-06 | Medium | `security.md` claimed ingress-nginx appends `X-Forwarded-For`; by default it overwrites it | **Done** (doc corrected, with the `externalTrafficPolicy: Local` / proxy-protocol requirement and a way to verify). The cluster's actual topology still has to be checked by whoever deploys |
+| B16-08 | Medium | Default passwords committed in the k8s secrets and Helm values | **Done** for Helm (`required`, no defaults; `deploy.sh` requires them) and the raw manifests (placeholders; Redis and RabbitMQ now read secrets). The `docker-compose.yml` development stack keeps its throwaway passwords on purpose |
+| B16-03 | High | The application and Flyway shared one superuser that owns the audit table, so the append-only trigger could be disabled | **Done, opt-in.** A Flyway `afterMigrate` callback grants a runtime role DML only (audit: `SELECT, INSERT`); `RuntimeRoleGrantsIntegrationTest` proves it on PostgreSQL 16; `infra/docker-compose.roles.yml` wires it for compose. Off by default; **production must enable it and create the role** (the Helm chart does not provision database roles) |
+| B16-07 | Medium | Prometheus could not scrape `/actuator/prometheus` (401) | **Done.** Actuator on port 8081, unpublished, open to Prometheus only by NetworkPolicy; `ManagementPortIntegrationTest` covers both ports. Added business metrics and a provisioned Grafana dashboard |
+| B16-09 | Medium | Login throttle is per instance and keyed by full IPv6 address | **Accepted and documented** (`security.md`, "Other accepted limitations"): use an ingress-level limit or a shared counter if it matters |
+| B16-10 | Low | `baseline-on-migrate: true` silently skipped V1 on a non-empty database | **Done.** Now `false` (`FLYWAY_BASELINE_ON_MIGRATE` to opt in) |
+| B16-11 | Low | Local and production settings separated implicitly | **Documented** (`security.md`); no separate overlay file was added |
 
 ## 6. CI
 
@@ -77,16 +76,16 @@ started. **Production deployment is blocked until C and D are done** (the MVP on
 Details per team: [p1-contract-matrix.md](architecture/p1-contract-matrix.md) section 5 (written before P2 and P3 landed; re-read its "not implemented" rows
 against this table).
 
-| Team | Dependency | State on `main` (2026-11-13) |
+| Team | Dependency | State on `main` (2026-11-14) |
 |---|---|---|
-| P2 | Register one `IncidentAccessPolicy` (the incident audit trail answers 503 without it) | **implemented** (`SpringIncidentAccessPolicy`); P1 has not re-tested the incident trail against it end to end |
-| P2 | Use `CategoryCatalog.requireActive` for new incidents | not checked by P1 |
+| P2 | Register one `IncidentAccessPolicy` (the incident audit trail answers 503 without it) | **implemented** (`SpringIncidentAccessPolicy`) |
+| P2 | Use `CategoryCatalog.requireActive` for new incidents | **done** (`IncidentIntakeService` calls `requireActive` for both category and service) |
 | P3 | `AssignmentStrategyCatalog` | **implemented** (`RegisteredAssignmentStrategyCatalog`: `LOAD_BASED` (the key P1 seeds), `SKILL_BASED`, `ROUND_ROBIN`, `MANUAL`) |
 | P3 | `TechnicianWorkloadProvider` | **implemented** (`StoreTechnicianWorkloadProvider`); P1 does not call it |
-| P3 | Confirm the technician contract (`available` is an admin flag, not workload; `maxWorkload` is a ceiling; `escalationChain` nearest-first) and the `defaultMaxWorkload` cap of 100 | pending |
-| P4 | Everything: SLA timers, breach detection, escalation, notifications. Confirm `SlaPolicyProvider.resolve` semantics (422 `MISSING_SLA_CONFIG`, inactive service still resolves), the cross-priority rule, and who owns `unassignedEscalationMinutes` | **not built** |
-| All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; use by P2/P3/P4 not verified here |
-| P2 | Incident AI analysis sends the incident text to the Anthropic API when `anthropic.api-key` is set | confirm this is acceptable for the deployment's data policy |
+| P3 | Confirm the technician contract (`available` is an admin flag, not workload; `maxWorkload` is a ceiling; `escalationChain` nearest-first) and the `defaultMaxWorkload` cap of 100 | pending (a confirmation, not code) |
+| P4 | SLA timers, breach detection, escalation, notifications, analytics | **built** (`sla/`, `escalation/`, `notification/`, `analytics/`); `unassignedEscalationMinutes` is owned by P4 (`escalation_settings`, `V41`) |
+| All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; P2 to P4 publish through it |
+| P2 | Incident AI analysis sends the incident text to the Anthropic API when `anthropic.api-key` is set | **open decision:** confirm this is acceptable for the deployment's data policy (off when no key is set) |
 
 ## 8. Integration: `feat/p1-b18-final-integration` (P1 + `main` + P3's PR #10), merged to `main` as PR #11
 
