@@ -6,6 +6,7 @@ import com.itsm.common.spi.AuditPublisher
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.annotation.Configuration
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
@@ -39,6 +40,7 @@ class EscalationMonitor(
     private val targets: EscalationTargets,
     private val audit: AuditPublisher,
     private val clock: Clock,
+    private val events: ApplicationEventPublisher,
     @Value("\${app.escalation.monitor.batch-size:500}") private val batchSize: Int
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -72,6 +74,7 @@ class EscalationMonitor(
                         }
                     )
                 )
+                events.publishEvent(EscalationRecorded(c.incidentId, trigger, people))
                 escalated++
             }
         }

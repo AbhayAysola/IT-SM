@@ -8,6 +8,7 @@ import com.itsm.common.spi.AuditPublisher
 import com.itsm.common.spi.SlaPolicyProvider
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -40,6 +41,7 @@ class SlaMonitor(
     private val policies: SlaPolicyProvider,
     private val audit: AuditPublisher,
     private val clock: Clock,
+    private val events: ApplicationEventPublisher,
     @Value("\${app.sla.monitor.batch-size:500}") private val batchSize: Int
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -63,6 +65,7 @@ class SlaMonitor(
                 written++
             }
             evaluation.events.forEach { audit.publish(it.toAudit(evaluation.record)) }
+            evaluation.events.mapNotNull { it.toNotice(evaluation.record) }.forEach(events::publishEvent)
             published += evaluation.events.size
         }
         if (snapshots.size == batchSize) log.info("SLA monitor reached its batch size ({}); the rest is evaluated next run", batchSize)
@@ -114,6 +117,14 @@ class SlaMonitor(
             actor = AuditActor.system(ACTOR), action = type.auditAction, entityType = ENTITY_TYPE,
             entityId = r.incidentId, incidentId = r.incidentId, description = description, metadata = metadata
         )
+    }
+
+    /** The events people are told about (notifications); the rest are only audited. */
+    private fun SlaEvent.toNotice(r: SlaRecord): SlaNotice? = when (type) {
+        SlaEvent.Type.WARNING -> SlaNotice(r.incidentId, SlaNotice.Kind.WARNING, clock, dueOf(r))
+        SlaEvent.Type.BREACHED -> SlaNotice(r.incidentId, SlaNotice.Kind.BREACHED, clock, dueOf(r))
+        SlaEvent.Type.POLICY_MISSING -> SlaNotice(r.incidentId, SlaNotice.Kind.POLICY_MISSING, null, null)
+        else -> null
     }
 
     private fun SlaEvent.dueOf(r: SlaRecord): Instant? = when (clock) {
