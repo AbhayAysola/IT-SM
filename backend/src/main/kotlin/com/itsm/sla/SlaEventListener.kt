@@ -2,6 +2,7 @@ package com.itsm.sla
 
 import com.itsm.common.event.IncidentClassified
 import com.itsm.common.event.IncidentEvent
+import com.itsm.common.event.IncidentPriorityChanged
 import com.itsm.common.event.IncidentStateChanged
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -12,7 +13,7 @@ import java.time.Clock
 import java.time.Instant
 
 /**
- * Evaluates an incident's SLA as soon as P2 classifies it or P3 moves it (docs/architecture/p4.md section 6), instead of
+ * Evaluates an incident's SLA as soon as P2 classifies it or changes its priority, or P3 moves it (docs/architecture/p4.md section 6), instead of
  * at the next sweep: tracking starts at once, and pauses, resumes and stops carry the exact time of the change.
  *
  * Runs after the change committed, in the monitor's own transaction. A failure is logged and never reaches the publisher;
@@ -28,6 +29,10 @@ class SlaEventListener(private val monitor: SlaMonitor, private val clock: Clock
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: IncidentStateChanged) = evaluate(event)
+
+    /** New targets for the new priority, with deadlines moved as the evaluator's rule for changed targets says. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun on(event: IncidentPriorityChanged) = evaluate(event)
 
     private fun evaluate(event: IncidentEvent) {
         try {

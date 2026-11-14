@@ -111,6 +111,8 @@ class SlaStore(private val jdbc: JdbcTemplate, private val named: NamedParameter
         .addValue("resolutionStatus", resolutionStatus.name)
         .addValue("status", status.name)
         .addValue("complete", complete)
+        .addValue("responseShift", responseShiftSeconds)
+        .addValue("resolutionShift", resolutionShiftSeconds)
 
     private fun ResultSet.toRecord(): SlaRecord {
         val policyId = getObject("policy_id") as Long?
@@ -145,6 +147,8 @@ class SlaStore(private val jdbc: JdbcTemplate, private val named: NamedParameter
             resolutionStatus = ClockStatus.valueOf(getString("resolution_status")),
             status = SlaStatus.valueOf(getString("status")),
             complete = getBoolean("complete"),
+            responseShiftSeconds = getLong("response_shift_seconds"),
+            resolutionShiftSeconds = getLong("resolution_shift_seconds"),
             version = getLong("version")
         )
     }
@@ -169,7 +173,8 @@ class SlaStore(private val jdbc: JdbcTemplate, private val named: NamedParameter
             "resolution_due_at" to "resolutionDueAt", "resolution_warning_at" to "resolutionWarningAt",
             "resolution_warned_at" to "resolutionWarnedAt", "resolution_met_at" to "resolutionMetAt",
             "resolution_breached_at" to "resolutionBreachedAt", "paused_since" to "pausedSince", "paused_seconds" to "pausedSeconds",
-            "response_status" to "responseStatus", "resolution_status" to "resolutionStatus", "status" to "status", "complete" to "complete"
+            "response_status" to "responseStatus", "resolution_status" to "resolutionStatus", "status" to "status", "complete" to "complete",
+            "response_shift_seconds" to "responseShift", "resolution_shift_seconds" to "resolutionShift"
         )
         private val COLUMNS = COLUMN_TO_PARAM.keys.joinToString(", ")
         private val VALUES = COLUMN_TO_PARAM.values.joinToString(", ") { ":$it" }

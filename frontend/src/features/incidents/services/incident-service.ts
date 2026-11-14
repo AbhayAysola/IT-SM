@@ -12,6 +12,7 @@ import {
   type EscalationView, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { mockRowSla, mockSla } from '../model/sla';
+import { canChangePriority, priorityChangeErrors } from '../model/priority';
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
 import { needsAttention, same } from './attention';
@@ -293,6 +294,20 @@ export const mockIncidentService = {
   },
 
   /** ASSIGN from CLASSIFIED, REASSIGN (reason required) from an active state. */
+  /** The mock's copy of P2's priority change: admins only, while it is worked on, with a reason. */
+  async changePriority(actor: Actor, id: string, priority: Priority, reason: string): Promise<void> {
+    return simulate(() => {
+      const w = world(actor);
+      const i = find(w, actor, id);
+      if (!canChangePriority(actor.role, i.state)) throw new IncidentError('FORBIDDEN', 'You cannot change the priority of this incident.');
+      const errors = priorityChangeErrors(i.priority, priority, reason);
+      if (errors) throw new IncidentError('VALIDATION', Object.values(errors)[0], errors);
+      i.priority = priority;
+      i.updatedAt = new Date().toISOString();
+      saveWorld(actor.email, w);
+    });
+  },
+
   async assign(actor: Actor, id: string, technicianEmail: string, reason?: string): Promise<void> {
     return simulate(() => {
       const w = world(actor);

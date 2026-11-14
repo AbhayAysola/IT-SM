@@ -1,5 +1,6 @@
 package com.itsm.notification
 
+import com.itsm.common.model.Priority
 import com.itsm.escalation.EscalationRecorded
 import com.itsm.sla.SlaClock
 import com.itsm.sla.SlaNotice
@@ -68,6 +69,13 @@ object NotificationMessages {
         SlaNotice.Kind.POLICY_MISSING -> admins().distinct().map {
             make(c, it, NotificationType.SLA_POLICY_MISSING, "${c.incidentId} has no SLA policy", "No SLA policy covers its service and priority, so it has no deadlines: ${c.title}")
         }
+    }
+
+    /** To the assignee, unless they changed it themselves; nobody while it is unassigned. */
+    fun forPriorityChange(c: IncidentContext, from: Priority, to: Priority, actorId: Long): List<Notification> {
+        val assignee = c.assigneeId?.takeIf { it != actorId } ?: return emptyList()
+        val direction = if (to.ordinal < from.ordinal) "raised" else "lowered"
+        return listOf(make(c, assignee, NotificationType.PRIORITY_CHANGED, "${c.incidentId} priority $direction to ${to.name}", "${c.title}. It was ${from.name}; the SLA deadlines follow the new priority."))
     }
 
     fun forEscalation(e: EscalationRecorded, c: IncidentContext): List<Notification> = e.targetUserIds.distinct().map {

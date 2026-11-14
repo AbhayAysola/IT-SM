@@ -174,7 +174,9 @@ Rules (all on a 24x7 calendar, from the incident's `created_at`):
 * A clock **warns** once `warningThresholdPct` of its target has elapsed while running, and is **breached** once its
   deadline passes before it stops. A breach is recorded once, dated at the deadline, and never removed.
 * Targets are **copied** from the policy when tracking starts, so editing a policy does not move existing deadlines. A
-  priority change (none is possible after creation today) re-resolves them from `created_at`.
+  priority change (P2's `POST /api/incidents/{id}/priority`, admins) re-resolves them, and each clock's deadline moves by
+  the `V44` rule: met or breached clocks keep theirs; a tighter target gives the earlier of the old deadline and (the change
+  + the new target), so a raise never breaches at once; a looser one counts from `created_at`. See [p4.md](p4.md) section 1.
 * No applicable policy (`MISSING_SLA_CONFIG`, or `SERVICE_NOT_FOUND`): the SLA is `NO_POLICY`, `SLA_POLICY_MISSING` is
   published once, and the lookup is retried every run. No duration is invented.
 
@@ -583,7 +585,8 @@ Testing code that publishes audit events: mock `AuditPublisher`, or see `SpringA
 
 When an incident changes, the owning service publishes an event with Spring's `ApplicationEventPublisher`, inside its
 transaction, after the change and its audit event are written: P2's intake publishes `IncidentClassified`; P3's lifecycle
-and assignment services publish `IncidentStateChanged`, `IncidentAssigned` and `IncidentAssignmentFailed`. Fields and rules:
+and assignment services publish `IncidentStateChanged`, `IncidentAssigned` and `IncidentAssignmentFailed`; P2's priority
+change publishes `IncidentPriorityChanged`. Fields and rules:
 [p4.md](p4.md) section 6. **If you add a new way to change an incident** (a new transition path, a priority override),
 publish the matching event there too, or other modules will not hear about it. **If you listen**, use
 `@TransactionalEventListener(phase = AFTER_COMMIT)` with your own transaction (`REQUIRES_NEW`) and catch your own errors:

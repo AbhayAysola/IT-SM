@@ -59,3 +59,15 @@ data class IncidentAssignmentFailed(
     val reason: String,
     override val occurredAt: Instant
 ) : IncidentEvent
+
+/**
+ * P2: an incident's priority was changed while it was open (an admin's decision, with a reason kept in the audit trail).
+ * P4 recalculates the SLA deadlines and tells the assignee.
+ */
+data class IncidentPriorityChanged(
+    override val incidentId: String,
+    val fromPriority: Priority,
+    val toPriority: Priority,
+    val actorId: Long,
+    override val occurredAt: Instant
+) : IncidentEvent

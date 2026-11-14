@@ -1,6 +1,6 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
-import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
+import { IncidentError, type Actor, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
 import type { AnalysisResult, FilterOptions, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
 import { technicianApi } from '@/features/admin/services/technician-api';
@@ -130,6 +130,11 @@ export const liveIncidentService = {
     const technicianId = liveId(technicianEmail);
     if (technicianId === null) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
     await call('POST', `/${enc(id)}/assignment`, { technicianId, reason: reason ?? null });
+  },
+
+  /** P2's `POST /api/incidents/{id}/priority` (admins). */
+  async changePriority(_actor: Actor, id: string, priority: Priority, reason: string): Promise<void> {
+    await call('POST', `/${enc(id)}/priority`, { priority, reason: reason.trim() });
   },
 
   async addNote(_actor: Actor, id: string, body: string, shareWithReporter: boolean): Promise<void> {
