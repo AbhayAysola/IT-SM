@@ -93,6 +93,8 @@ export default function ReportIncidentPage() {
         serviceId: Number(serviceId),
         impact: impact as Impact,
         urgency: urgency as Urgency,
+        aiSuggestedCategoryId: analysis?.suggestedCategoryId ?? null,
+        aiDuplicateIds: analysis?.possibleDuplicates.map((d) => d.id) ?? [],
       });
       toast.success('Incident reported.');
       router.push(`/incidents/${id}`);

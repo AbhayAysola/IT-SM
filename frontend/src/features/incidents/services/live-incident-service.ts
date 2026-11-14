@@ -138,7 +138,7 @@ export const liveIncidentService = {
 
   async create(
     _actor: Actor,
-    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency }
+    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency; aiSuggestedCategoryId?: number | null; aiDuplicateIds?: string[] }
   ): Promise<string> {
     const dto = await call<{ id: string }>('POST', '', input);
     return dto.id;

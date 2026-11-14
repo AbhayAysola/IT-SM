@@ -292,7 +292,7 @@ export const mockIncidentService = {
 
   async create(
     actor: Actor,
-    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency }
+    input: { title: string; description: string; categoryId: number; serviceId: number; impact: Impact; urgency: Urgency; aiSuggestedCategoryId?: number | null; aiDuplicateIds?: string[] }
   ): Promise<string> {
     return simulate(() => {
       const w = world(actor);
