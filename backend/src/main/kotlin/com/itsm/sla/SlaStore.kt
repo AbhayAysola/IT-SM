@@ -53,6 +53,12 @@ class SlaStore(private val jdbc: JdbcTemplate, private val named: NamedParameter
     @Transactional(propagation = Propagation.MANDATORY)
     fun tryMonitorLock(): Boolean = jdbc.queryForObject("SELECT pg_try_advisory_xact_lock(?)", Boolean::class.java, MONITOR_LOCK_KEY)!!
 
+    /** The same lock, waiting for it: a single-incident evaluation waits for a running sweep instead of skipping. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun waitForMonitorLock() {
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", { _, _ -> }, MONITOR_LOCK_KEY)
+    }
+
     /**
      * One page of SLA records, newest deadline pressure first (breached, then nearest resolution deadline).
      * [assigneeId] restricts to incidents currently assigned to that user: the only other read of `incidents` in P4

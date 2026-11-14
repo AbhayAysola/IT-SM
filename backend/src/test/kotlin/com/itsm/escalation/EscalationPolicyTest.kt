@@ -69,6 +69,14 @@ class EscalationPolicyTest {
         assertEquals(emptyList<EscalationTrigger>(), due(unassigned.copy(state = "ASSIGNED", assigneeId = 7), 300), "assigned in the meantime")
     }
 
+    @Test fun `a failed automatic assignment escalates at once, but only while nobody has it, and only once`() {
+        val unassigned = EscalationCandidate("INC1002", "CLASSIFIED", assigneeId = null, createdAt = t0)
+        val failed = { c: EscalationCandidate, fired: Set<EscalationTrigger> -> EscalationPolicy.due(c, settings, fired, at(1), assignmentFailed = true) }
+        assertEquals(listOf(UNASSIGNED), failed(unassigned, emptySet()))
+        assertEquals(emptyList<EscalationTrigger>(), failed(unassigned, setOf(UNASSIGNED)), "already escalated")
+        assertEquals(emptyList<EscalationTrigger>(), failed(unassigned.copy(state = "ASSIGNED", assigneeId = 7), emptySet()), "assigned since")
+    }
+
     @Test fun `without SLA facts only the unassigned rule applies`() {
         val noSla = EscalationCandidate("INC1003", "CLASSIFIED", assigneeId = null, createdAt = t0)
         assertEquals(listOf(UNASSIGNED), due(noSla, 10_000))

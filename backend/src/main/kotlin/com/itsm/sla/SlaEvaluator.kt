@@ -16,9 +16,10 @@ import java.time.Instant
  * A clock **warns** once `warningThresholdPct` of its target has elapsed while it is still running, and is **breached**
  * once its deadline passes before it stops. A breach is recorded once, dated at the deadline, and never removed.
  *
- * Pause and reopen times come from polling (until P2/P3 publish domain events): the incident's `updated_at` at the first
- * run that sees the change is used, which every lifecycle transition sets. Two changes that both happen between two runs
- * (for example a reopen and a second resolve) can be missed; the error is at most one polling interval.
+ * Pause and reopen times are the incident's `updated_at` (every lifecycle transition sets it) when the change is evaluated.
+ * P4 evaluates right after each P2/P3 domain event, so they are exact. Only a change whose event reaction failed is left
+ * to the next sweep; then two changes between two runs (for example a reopen and a second resolve) can be missed, and the
+ * error is at most one interval.
  */
 object SlaEvaluator {
 

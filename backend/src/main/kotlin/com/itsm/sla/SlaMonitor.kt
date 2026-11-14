@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
@@ -32,7 +33,9 @@ data class SlaRunResult(val skipped: Boolean, val evaluated: Int = 0, val writte
  * from P1's provider (recorded as `NO_POLICY`, retried on the next run); any other failure rolls the run back and the
  * next run retries everything.
  *
- * Scheduled by [SlaMonitorSchedule]; tests call [runAt] directly with a chosen time.
+ * Scheduled by [SlaMonitorSchedule] as a sweep: deadlines pass with no event, so warnings and breaches need it, and it
+ * catches any change an event listener missed. Incident changes are evaluated at once by [evaluateIncident]. Tests call
+ * [runAt] directly with a chosen time.
  */
 @Component
 class SlaMonitor(
@@ -51,8 +54,24 @@ class SlaMonitor(
     @Transactional
     fun runAt(time: Instant): SlaRunResult {
         if (!store.tryMonitorLock()) return SlaRunResult.SKIPPED
+        val result = evaluate(incidents.findTracked(batchSize), time)
+        if (result.evaluated == batchSize) log.info("SLA monitor reached its batch size ({}); the rest is evaluated next run", batchSize)
+        return result
+    }
+
+    /**
+     * Evaluates one incident now, in its own transaction: P4's reaction to an incident domain event (see
+     * [SlaEventListener]). It waits for a running sweep to finish rather than skipping, so the change is evaluated at once
+     * with the exact time it was made. An incident that is not tracked (still `NEW`, or its SLA is complete) is left alone.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun evaluateIncident(incidentId: String, time: Instant): SlaRunResult {
+        store.waitForMonitorLock()
+        return evaluate(listOfNotNull(incidents.findTracked(incidentId)), time)
+    }
+
+    private fun evaluate(snapshots: List<IncidentSnapshot>, time: Instant): SlaRunResult {
         val now = time.truncatedTo(ChronoUnit.MICROS)
-        val snapshots = incidents.findTracked(batchSize)
         val records = store.findAll(snapshots.map { it.incidentId })
         var written = 0
         var published = 0
@@ -68,7 +87,6 @@ class SlaMonitor(
             evaluation.events.mapNotNull { it.toNotice(evaluation.record) }.forEach(events::publishEvent)
             published += evaluation.events.size
         }
-        if (snapshots.size == batchSize) log.info("SLA monitor reached its batch size ({}); the rest is evaluated next run", batchSize)
         return SlaRunResult(skipped = false, evaluated = snapshots.size, written = written, events = published)
     }
 

@@ -66,6 +66,9 @@ tasks.withType<Test> {
     systemProperty("app.sla.monitor.enabled", "false")
     systemProperty("app.escalation.monitor.enabled", "false")
     systemProperty("app.notification.monitor.enabled", "false")
+    // P4 reacting to incident events would write SLA/notification/audit rows into other modules' tests; P4's own
+    // IncidentEventReactionsIntegrationTest turns it back on.
+    systemProperty("app.p4.event-listeners.enabled", "false")
     systemProperty("app.rate-limit.login-pair.max-failures", "100000")
     systemProperty("app.rate-limit.login-ip.max-failures", "100000")
     systemProperty("app.rate-limit.register-ip.max-attempts", "100000")

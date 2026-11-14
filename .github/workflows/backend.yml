@@ -133,7 +133,8 @@ jobs:
               'com.itsm.escalation.EscalationIntegrationTest': 6,
               'com.itsm.notification.NotificationIntegrationTest': 5,
               'com.itsm.analytics.AnalyticsIntegrationTest': 2,
-              'com.itsm.intake.IncidentIntakePriorityIntegrationTest': 5,
+              'com.itsm.intake.IncidentIntakePriorityIntegrationTest': 6,
+              'com.itsm.integration.IncidentEventReactionsIntegrationTest': 3,
           }
           total = skipped = 0
           executed = {}
