@@ -82,3 +82,6 @@ data class Escalation(
     val assigneeId: Long?,
     val createdAt: Instant
 )
+
+/** Published (as a Spring application event, inside the monitor's transaction) for every recorded escalation. */
+data class EscalationRecorded(val incidentId: String, val trigger: EscalationTrigger, val targetUserIds: List<Long>)

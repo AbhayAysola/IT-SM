@@ -127,3 +127,11 @@ data class SlaEvent(
 }
 
 data class SlaEvaluation(val record: SlaRecord, val events: List<SlaEvent>)
+
+/**
+ * Published (as a Spring application event, inside the monitor's transaction) for the SLA changes people must hear about:
+ * a warning, a breach, or no applicable policy. P4's notifications react to it; it is not an audit record.
+ */
+data class SlaNotice(val incidentId: String, val kind: Kind, val clock: SlaClock?, val dueAt: Instant?) {
+    enum class Kind { WARNING, BREACHED, POLICY_MISSING }
+}

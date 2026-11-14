@@ -131,6 +131,7 @@ jobs:
               'com.itsm.integration.PaginationOffsetIntegrationTest': 1,
               'com.itsm.sla.SlaMonitorIntegrationTest': 6,
               'com.itsm.escalation.EscalationIntegrationTest': 6,
+              'com.itsm.notification.NotificationIntegrationTest': 5,
               'com.itsm.intake.IncidentIntakePriorityIntegrationTest': 5,
           }
           total = skipped = 0

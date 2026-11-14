@@ -68,6 +68,14 @@ app:
       interval-ms: ${ESCALATION_MONITOR_INTERVAL_MS:60000}
       initial-delay-ms: ${ESCALATION_MONITOR_INITIAL_DELAY_MS:45000}
       batch-size: ${ESCALATION_MONITOR_BATCH_SIZE:500}
+  notification:
+    monitor:
+      # P4's lifecycle notifications (docs/architecture/p4.md section 4): notices assignments, questions, fixes and reopens.
+      # SLA and escalation notifications need no schedule: they are sent by those monitors' events.
+      enabled: ${NOTIFICATION_MONITOR_ENABLED:true}
+      interval-ms: ${NOTIFICATION_MONITOR_INTERVAL_MS:30000}
+      initial-delay-ms: ${NOTIFICATION_MONITOR_INITIAL_DELAY_MS:20000}
+      batch-size: ${NOTIFICATION_MONITOR_BATCH_SIZE:500}
 
 management:
   endpoints:

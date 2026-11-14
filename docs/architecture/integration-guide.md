@@ -213,6 +213,19 @@ it never reassigns.
 | `PUT /api/admin/escalation-settings` `{unassignedMinutes, secondLevelPct, adminLevelPct, version}` | `SLA_CONFIGURE` | 200; 400 field errors (minutes 1-10080, percentages 101-1000, admin above next level); 409 stale version; audited `ESCALATION_SETTINGS_UPDATED`, an unchanged request is a no-op |
 | `GET /api/incidents/{incidentId}/escalations` | IT staff (technicians, admins) whom P2's `IncidentAccessPolicy` lets see the incident | 200 `[{trigger, tier, description, targets[{id, name}], assigneeId, createdAt}]`; reporters 403; 503 without the access policy |
 
+**Notifications (implemented, `notification/`, `V42`).** Rules in [p4.md](p4.md) section 4. In-app inbox for everyone, plus
+simulated email (P1, P2) and SMS (P1) by priority. Lifecycle changes (assigned, question asked, resolved, reopened) are
+noticed by `NotificationMonitor` polling (`app.notification.monitor.*`, env `NOTIFICATION_MONITOR_ENABLED`); SLA warnings,
+breaches, missing policies and escalations are sent by the SLA and escalation monitors' events. **For P2/P3:** publishing
+the section 6 events would replace the polling; nothing else needs to change.
+
+| Method and path | Who | Result |
+|---|---|---|
+| `GET /api/notifications?unreadOnly&page&size` | any signed-in user | 200 `PageResponse<{id, type, incidentId, priority, title, body, channels, createdAt, readAt}>`, own only, newest first |
+| `GET /api/notifications/unread-count` | any signed-in user | 200 `{count}` |
+| `POST /api/notifications/{id}/read` | the recipient | 200 the notification (idempotent); 404 if it is not theirs |
+| `POST /api/notifications/read-all` | any signed-in user | 200 `{updated}` |
+
 **Frontend.** The incident page shows a "Service level" card (`components/sla-panel.tsx`) to everyone who can open the
 incident, with its escalations for staff; the mock service computes an approximate SLA from the seeded global targets
 (`model/sla.ts`) and has no escalations. Admins edit the escalation settings on the admin workspace's "Escalation" page.
