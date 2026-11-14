@@ -1,4 +1,4 @@
-import type { EscalationView, Incident, IncidentState, Priority, SlaClockView, SlaStatus, SlaSummary } from './types';
+import type { EscalationView, Incident, IncidentState, Priority, SlaClockView, SlaRiskView, SlaStatus, SlaSummary } from './types';
 
 /**
  * SLA display rules and the mock service's SLA. The real rules are P4's backend (`sla/SlaEvaluator.kt`, documented in
@@ -40,6 +40,30 @@ export function clockLine(c: SlaClockView, now: number, when: (iso: string) => s
   return 'No target';
 }
 
+/**
+ * Whether a predicted miss is still worth showing: only while the resolution clock is running or warned about. Once it is
+ * met, breached or paused, the clock's own status says more.
+ */
+export function showRisk(sla: SlaSummary): SlaRiskView | null {
+  const status = sla.resolution?.status;
+  return sla.risk && (status === 'RUNNING' || status === 'WARNING') ? sla.risk : null;
+}
+
+/** "Likely to be resolved around 14 Nov, 15:30 UTC, 1 h 30 min after the deadline." */
+export function riskLine(r: SlaRiskView, when: (iso: string) => string): string {
+  const late = relativeTo(r.predictedFinishAt, Date.parse(r.dueAt)).replace(/^in /, '');
+  return `Likely to be resolved around ${when(r.predictedFinishAt)}, ${late} after the deadline.`;
+}
+
+/** Why: "Based on 7 similar incidents (same category and priority). The assignee has twice their usual workload." */
+export function riskReason(r: SlaRiskView): string {
+  const kind = r.basis === 'CATEGORY' ? 'same category and priority' : 'same priority';
+  const base = `Based on ${r.sampleSize} similar resolved incidents (${kind}).`;
+  if (r.loadFactor <= 1) return base;
+  const load = r.loadFactor >= 1.95 && r.loadFactor <= 2.05 ? 'twice' : `${r.loadFactor.toFixed(1)} times`;
+  return `${base} The assignee has ${load} their usual workload.`;
+}
+
 /** The seeded global policies (backend V13), used only by the mock service. */
 const MOCK_TARGETS: Record<Priority, { response: number; resolution: number }> = {
   P1: { response: 5, resolution: 30 }, P2: { response: 15, resolution: 120 }, P3: { response: 60, resolution: 480 }, P4: { response: 240, resolution: 1440 },
@@ -72,7 +96,7 @@ export function mockSla(i: Incident, now: number): SlaSummary {
   const responded = !NOT_RESPONDED.includes(i.state);
   const response = mockClock(created, t.response, now, responded ? created : null, false, true);
   const resolution = mockClock(created, t.resolution, now, i.resolvedAt ? Date.parse(i.resolvedAt) : null, i.state === 'PENDING_INFO');
-  return { status: overallSla(response.status, resolution.status), response, resolution, pausedSince: i.state === 'PENDING_INFO' ? i.updatedAt : null, evaluatedAt: null };
+  return { status: overallSla(response.status, resolution.status), response, resolution, pausedSince: i.state === 'PENDING_INFO' ? i.updatedAt : null, evaluatedAt: null, risk: null };
 }
 
 /** The most serious of the two clocks, in the backend's order. */

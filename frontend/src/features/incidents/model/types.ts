@@ -123,6 +123,22 @@ export interface SlaClockView {
   breachedAt: string | null;
 }
 
+/**
+ * A predicted miss of the resolution deadline (P4's predictive SLA risk, docs/architecture/p4.md section 2): raised once,
+ * before the fixed warning, when similar incidents suggest this one will be resolved after its deadline.
+ */
+export interface SlaRiskView {
+  /** ISO instants. */
+  raisedAt: string;
+  dueAt: string;
+  predictedFinishAt: string;
+  /** Which past incidents it was based on: same category and priority, or same priority only. */
+  basis: 'CATEGORY' | 'PRIORITY';
+  sampleSize: number;
+  /** 1 when the assignee's load did not change the forecast; 2 means twice their configured capacity. */
+  loadFactor: number;
+}
+
 /** The response and resolution clocks of one incident (P4, docs/architecture/p4.md section 2). */
 export interface SlaSummary {
   status: SlaStatus;
@@ -132,6 +148,8 @@ export interface SlaSummary {
   pausedSince: string | null;
   /** When the backend last evaluated it (statuses can lag by up to a minute); null for mock data. */
   evaluatedAt: string | null;
+  /** Set when the resolution deadline is predicted to be missed; never set by the mock. */
+  risk: SlaRiskView | null;
 }
 
 /** One escalation of an incident (P4, GET /api/incidents/{id}/escalations; staff only). */

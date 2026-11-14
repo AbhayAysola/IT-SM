@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Timer } from 'lucide-react';
+import { Timer, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { CardHeading } from './card-heading';
 import { formatWhen } from './badges';
-import { clockLine, escalationAudience, SLA_LABEL, SLA_VARIANT } from '../model/sla';
+import { clockLine, escalationAudience, riskLine, riskReason, showRisk, SLA_LABEL, SLA_VARIANT } from '../model/sla';
 import type { EscalationView, SlaClockView, SlaStatus, SlaSummary } from '../model/types';
 
 function SlaBadge({ status }: { status: SlaStatus }) {
@@ -30,7 +30,8 @@ const formatTarget = (minutes: number) =>
   minutes % 1440 === 0 ? `${minutes / 1440} day target` : minutes % 60 === 0 ? `${minutes / 60} h target` : `${minutes} min target`;
 
 /**
- * The incident's response and resolution clocks. Deadlines are absolute, so the "in 23 min" text is refreshed every
+ * The incident's response and resolution clocks, and P4's forecast when the resolution deadline is likely to be missed.
+ * Deadlines are absolute, so the "in 23 min" text is refreshed every
  * 30 seconds without asking the server again; statuses come from the server, which re-evaluates them every minute.
  */
 export function SlaPanel({ sla, escalations = [] }: { sla: SlaSummary; escalations?: EscalationView[] }) {
@@ -39,6 +40,8 @@ export function SlaPanel({ sla, escalations = [] }: { sla: SlaSummary; escalatio
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  const risk = showRisk(sla);
 
   return (
     <Card data-testid="sla-panel">
@@ -60,6 +63,16 @@ export function SlaPanel({ sla, escalations = [] }: { sla: SlaSummary; escalatio
             <ClockRow name="Resolution" clock={sla.resolution} now={now} />
           </dl>
           {sla.evaluatedAt && <p className="mt-3 text-xs text-muted-foreground">Checked {formatWhen(sla.evaluatedAt)}</p>}
+        </CardContent>
+      )}
+      {risk && (
+        <CardContent className="border-t pt-4" data-testid="sla-risk">
+          <h3 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" /> Forecast
+            <Badge variant="warning" className="normal-case tracking-normal">Likely to miss</Badge>
+          </h3>
+          <p className="mt-2 text-sm">{riskLine(risk, formatWhen)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{riskReason(risk)}</p>
         </CardContent>
       )}
       {escalations.length > 0 && (

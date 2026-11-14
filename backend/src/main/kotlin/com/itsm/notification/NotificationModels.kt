@@ -3,7 +3,7 @@ package com.itsm.notification
 import com.itsm.common.model.Priority
 import java.time.Instant
 
-/** What a notification is about (docs/architecture/p4.md section 4). Stored; a contract with V42's CHECK. */
+/** What a notification is about (docs/architecture/p4.md section 4). Stored; a contract with V42's CHECK (extended in V43). */
 enum class NotificationType {
     /** To the new assignee. */
     INCIDENT_ASSIGNED,
@@ -22,7 +22,9 @@ enum class NotificationType {
     /** To the admins. */
     SLA_POLICY_MISSING,
     /** To whoever the escalation reached. */
-    ESCALATED
+    ESCALATED,
+    /** To the assignee (the admins when nobody has it): predicted to miss the resolution deadline (V43). */
+    SLA_AT_RISK
 }
 
 /** Where a notification is delivered. */

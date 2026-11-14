@@ -59,6 +59,12 @@ object NotificationMessages {
         SlaNotice.Kind.BREACHED -> listOfNotNull(c.assigneeId?.let {
             make(c, it, NotificationType.SLA_BREACHED, "${c.incidentId}: ${clockName(notice.clock)} SLA breached", "${c.title}. The deadline was ${when_(notice.dueAt)}.")
         })
+        SlaNotice.Kind.AT_RISK -> {
+            val title = "${c.incidentId} is likely to miss its resolution SLA"
+            val body = "${c.title}. Due ${when_(notice.dueAt)}; at the current pace it will probably be resolved around ${when_(notice.predictedAt)}."
+            val recipients = c.assigneeId?.let(::listOf) ?: admins().distinct()
+            recipients.map { make(c, it, NotificationType.SLA_AT_RISK, title, body) }
+        }
         SlaNotice.Kind.POLICY_MISSING -> admins().distinct().map {
             make(c, it, NotificationType.SLA_POLICY_MISSING, "${c.incidentId} has no SLA policy", "No SLA policy covers its service and priority, so it has no deadlines: ${c.title}")
         }

@@ -32,6 +32,26 @@ data class SlaClockDto(
 data class SlaPolicyRefDto(val id: Long, val scope: String)
 
 /**
+ * A predicted miss of the resolution deadline (V43), raised once by the SLA monitor before the fixed warning: when it was
+ * raised, the deadline, the predicted resolution time, and what the forecast was based on.
+ */
+data class SlaRiskDto(
+    val raisedAt: Instant,
+    val dueAt: Instant,
+    val predictedFinishAt: Instant,
+    /** `CATEGORY` (same priority and category) or `PRIORITY` (same priority). */
+    val basis: String,
+    val sampleSize: Int,
+    val typicalRemainingMinutes: Long,
+    /** 1.0 when the assignee's load did not change the forecast. */
+    val loadFactor: Double
+) {
+    companion object {
+        fun of(r: SlaRisk) = SlaRiskDto(r.raisedAt, r.dueAt, r.predictedFinishAt, r.basis.name, r.sampleSize, r.typicalRemainingMinutes, r.loadFactor)
+    }
+}
+
+/**
  * The SLA of one incident. `status` is `PENDING` until the monitor has evaluated the incident once (right after its
  * classification, or at the next sweep if that failed), then the overall [SlaStatus]. Deadlines are absolute instants, so a client can count
  * down without asking again; `evaluatedAt` says how fresh the statuses are.
@@ -46,12 +66,14 @@ data class SlaDto(
     val resolution: SlaClockDto?,
     val pausedSince: Instant?,
     val pausedSeconds: Long,
-    val evaluatedAt: Instant?
+    val evaluatedAt: Instant?,
+    /** Null unless the resolution deadline was predicted to be missed. */
+    val risk: SlaRiskDto? = null
 ) {
     companion object {
         fun pending(incidentId: String) = SlaDto(incidentId, PENDING, null, null, null, null, null, null, 0, null)
 
-        fun of(r: SlaRecord, evaluatedAt: Instant?) = SlaDto(
+        fun of(r: SlaRecord, evaluatedAt: Instant?, risk: SlaRisk? = null) = SlaDto(
             incidentId = r.incidentId,
             status = r.status.name,
             priority = r.priority.name,
@@ -61,7 +83,8 @@ data class SlaDto(
             resolution = SlaClockDto(r.resolutionStatus.name, r.targets?.resolutionMinutes, r.resolutionDueAt, r.resolutionWarningAt, r.resolutionMetAt, r.resolutionBreachedAt),
             pausedSince = r.pausedSince,
             pausedSeconds = r.pausedSeconds,
-            evaluatedAt = evaluatedAt
+            evaluatedAt = evaluatedAt,
+            risk = risk?.let(SlaRiskDto::of)
         )
 
         const val PENDING = "PENDING"
@@ -75,7 +98,11 @@ data class SlaDto(
  */
 @Service
 @Transactional(readOnly = true)
-class SlaQueryService(private val store: SlaStore, private val access: ObjectProvider<IncidentAccessPolicy>) {
+class SlaQueryService(
+    private val store: SlaStore,
+    private val risks: SlaRiskStore,
+    private val access: ObjectProvider<IncidentAccessPolicy>
+) {
 
     /** 404 for an unknown incident, 403 when the caller may not see it (P2's policy decides), 503 without the policy. */
     fun forIncident(user: CurrentUser, incidentId: String): SlaDto {
@@ -86,15 +113,16 @@ class SlaQueryService(private val store: SlaStore, private val access: ObjectPro
         )
         policy.requireView(user, incidentId)
         val record = store.find(incidentId) ?: return SlaDto.pending(incidentId)
-        return SlaDto.of(record, store.lastEvaluatedAt(incidentId))
+        return SlaDto.of(record, store.lastEvaluatedAt(incidentId), risks.find(incidentId))
     }
 
     /** Admins see every incident; technicians only those currently assigned to them. */
     fun list(user: CurrentUser, statuses: Set<SlaStatus>, openOnly: Boolean, query: PageQuery): PageResponse<SlaDto> {
         val assignee = if (user.has(Permission.INCIDENT_VIEW_ALL)) null else user.id
         val (items, total) = store.list(statuses, openOnly, assignee, query.page, query.size)
+        val risk = risks.findAll(items.map { it.incidentId })
         return PageResponse(
-            items = items.map { SlaDto.of(it, null) },
+            items = items.map { SlaDto.of(it, null, risk[it.incidentId]) },
             page = query.page,
             size = query.size,
             totalItems = total,

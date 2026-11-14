@@ -162,7 +162,7 @@ is a new class.
 
 **Migrations:** block `V40-V49`.
 
-### SLA tracking (implemented, `sla/`, `V40`)
+### SLA tracking (implemented, `sla/`, `V40`, `V43`)
 
 Rules (all on a 24x7 calendar, from the incident's `created_at`):
 
@@ -182,7 +182,13 @@ Rules (all on a 24x7 calendar, from the incident's `created_at`):
 run is one `@Transactional` pass holding a PostgreSQL advisory lock (`pg_try_advisory_xact_lock`), so a second instance skips
 instead of publishing everything twice. Audit, as `AuditActor.system("SLA_MONITOR")`, entity type `INCIDENT_SLA`, entity id =
 incident id: `SLA_STARTED`, `SLA_RECALCULATED`, `SLA_POLICY_MISSING`, `SLA_PAUSED`, `SLA_RESUMED`, `SLA_WARNING_RAISED`,
-`SLA_BREACHED`, `SLA_MET`. The test suite turns the schedule off (`build.gradle.kts`) and calls `runAt(time)` directly.
+`SLA_BREACHED`, `SLA_MET`, `SLA_RISK_PREDICTED`. The test suite turns the schedule off (`build.gradle.kts`) and calls `runAt(time)` directly.
+
+**Predictive risk (`V43`).** Each run also forecasts when every incident with a running resolution clock will probably be
+resolved, from similar resolved incidents (same priority and category, else same priority; at least 5) and the assignee's
+load (P3's `TechnicianWorkloadProvider` against P1's `maxWorkload`). A predicted miss is recorded once in
+`incident_sla_risk`, audited, and sent to the assignee or the admins (`SLA_AT_RISK`). Rules: [p4.md](p4.md) section 2,
+"Predictive risk".
 
 **Events, plus a sweep.** `SlaEventListener` evaluates an incident right after P2/P3's `IncidentClassified` or
 `IncidentStateChanged` commits ([p4.md](p4.md) section 6), so pause and reopen times are exact. The every-minute run stays
@@ -197,7 +203,9 @@ read-only through `IncidentSnapshotReader` (plus one join in `SlaStore.list` for
 | `GET /api/sla/incidents?status&open&page&size` | `INCIDENT_VIEW_ALL` (everything) or `INCIDENT_VIEW_ASSIGNED` (own assigned incidents) | 200 `PageResponse<SlaDto>`, breached first then nearest resolution deadline; `status` repeatable (`BREACHED`, `WARNING`, `PAUSED`, `RUNNING`, `MET`, `NO_POLICY`); `open=true` by default hides verified/closed |
 
 `SlaDto` = `incidentId, status, priority, policy{id, scope}, noPolicyReason, response{status, targetMinutes, dueAt, warningAt,
-metAt, breachedAt}, resolution{...same}, pausedSince, pausedSeconds, evaluatedAt`. Clock statuses: `NO_POLICY`, `RUNNING`,
+metAt, breachedAt}, resolution{...same}, pausedSince, pausedSeconds, evaluatedAt, risk`. `risk` is null unless a miss
+was predicted: `{raisedAt, dueAt, predictedFinishAt, basis (CATEGORY | PRIORITY), sampleSize, typicalRemainingMinutes,
+loadFactor}`. Clock statuses: `NO_POLICY`, `RUNNING`,
 `WARNING`, `PAUSED`, `MET`, `BREACHED`; the overall `status` is the most serious of the two.
 
 **Escalation (implemented, `escalation/`, `V41`).** Rules in [p4.md](p4.md) section 3. An `EscalationMonitor` runs after the
