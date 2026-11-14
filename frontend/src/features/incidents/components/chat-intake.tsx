@@ -28,7 +28,7 @@ export function ChatIntake({ onReady }: Props) {
     // SpeechRecognition is browser-only; check after mount to avoid SSR issues.
     setVoiceSupported(
       typeof window !== 'undefined' &&
-      !!(window.SpeechRecognition || (window as any).webkitSpeechRecognition)
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
     );
   }, []);
 
