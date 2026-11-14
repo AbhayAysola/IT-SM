@@ -31,12 +31,37 @@ class IncidentAnalysisService(
         if (apiKey.isBlank()) throw InvalidInput("AI analysis is not configured on this server.")
 
         val activeCategories = categories.listActive()
-        val recentOpen = jdbc.query(
-            """SELECT id, title FROM incidents
+        // Step 1: use full-text search to surface open incidents whose title + description
+        // overlap with the new one. ts_rank_cd ranks by term coverage, not just presence.
+        val searchQuery = "$title $description"
+        val ftsMatches = jdbc.query(
+            """SELECT id, title, left(description, 200) AS snippet
+               FROM incidents
                WHERE state IN ('NEW','CLASSIFIED','ASSIGNED','ACKNOWLEDGED','IN_PROGRESS','PENDING_INFO')
-               ORDER BY created_at DESC LIMIT 20""",
-            { rs, _ -> rs.getString("id") to rs.getString("title") }
+                 AND to_tsvector('english', title || ' ' || description)
+                     @@ plainto_tsquery('english', ?)
+               ORDER BY ts_rank_cd(
+                   to_tsvector('english', title || ' ' || description),
+                   plainto_tsquery('english', ?)) DESC
+               LIMIT 10""",
+            { rs, _ -> Triple(rs.getString("id"), rs.getString("title"), rs.getString("snippet")) },
+            searchQuery, searchQuery
         )
+
+        // Step 2: if FTS found fewer than 5 candidates (very short description, all stop-words, etc.),
+        // top-up with the most recent open incidents so there is always something to compare against.
+        val seenIds = ftsMatches.map { it.first }.toHashSet()
+        val extras = if (ftsMatches.size < 5) {
+            jdbc.query(
+                """SELECT id, title, left(description, 200) AS snippet
+                   FROM incidents
+                   WHERE state IN ('NEW','CLASSIFIED','ASSIGNED','ACKNOWLEDGED','IN_PROGRESS','PENDING_INFO')
+                   ORDER BY created_at DESC LIMIT 15""",
+                { rs, _ -> Triple(rs.getString("id"), rs.getString("title"), rs.getString("snippet")) }
+            ).filterNot { it.first in seenIds }.take(10 - ftsMatches.size)
+        } else emptyList()
+
+        val candidates = ftsMatches + extras
 
         val systemPrompt = """
             You are an IT service management assistant that classifies support incidents.
@@ -58,9 +83,12 @@ class IncidentAnalysisService(
                 appendLine("  ${c.id}: ${c.name}$kw")
             }
             appendLine()
-            if (recentOpen.isNotEmpty()) {
-                appendLine("Open incidents (flag any that look like duplicates):")
-                recentOpen.forEach { (id, t) -> appendLine("  $id: $t") }
+            if (candidates.isNotEmpty()) {
+                appendLine("Open incidents — flag any that look like duplicates (FTS-ranked, most similar first):")
+                candidates.forEach { (id, t, snippet) ->
+                    appendLine("  $id: $t")
+                    if (snippet.isNotBlank()) appendLine("    \"${snippet.trim()}\"")
+                }
                 appendLine()
             }
             appendLine("New incident to classify:")

@@ -40,8 +40,18 @@ class IncidentAnalysisServiceTest {
         `when`(cat.name).thenReturn("Network")
         `when`(cat.keywords).thenReturn(listOf("wifi", "internet"))
         `when`(categories.listActive()).thenReturn(listOf(cat))
-        `when`(jdbc.query(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any<org.springframework.jdbc.core.RowMapper<Pair<String,String>>>()))
-            .thenReturn(emptyList())
+        // FTS query: jdbc.query(sql, rowMapper, searchQuery, searchQuery) — two String varargs
+        `when`(jdbc.query(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any<org.springframework.jdbc.core.RowMapper<Triple<String,String,String>>>(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(emptyList())
+        // Fallback recent query: jdbc.query(sql, rowMapper) — no extra args
+        `when`(jdbc.query(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any<org.springframework.jdbc.core.RowMapper<Triple<String,String,String>>>()
+        )).thenReturn(emptyList())
     }
 
     private fun claudeResponse(payload: String) = """
