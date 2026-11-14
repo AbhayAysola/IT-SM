@@ -61,9 +61,12 @@ class IncidentLifecycleService(
      * the count per state for the whole scope. Nothing here reveals an incident the caller could not open.
      */
     @Transactional(readOnly = true)
-    fun list(user: CurrentUser, states: Set<IncidentState>, search: String?, page: Int, size: Int): IncidentListResult {
+    fun list(
+        user: CurrentUser, states: Set<IncidentState>, search: String?, page: Int, size: Int,
+        filters: IncidentFilters = IncidentFilters()
+    ): IncidentListResult {
         val scope = IncidentScope(user.id, user.isAdmin)
-        val result = incidents.list(IncidentListQuery(scope, states, search?.take(MAX_SEARCH), page.toLong() * size, size))
+        val result = incidents.list(IncidentListQuery(scope, states, search?.take(MAX_SEARCH), page.toLong() * size, size, filters))
         return IncidentListResult(result.rows, result.total, incidents.stateCounts(scope))
     }
 

@@ -40,6 +40,28 @@ data class ResolvedIncident(
 /** Whose incidents a list covers: everyone's for an admin, otherwise those the user reported or is assigned. */
 data class IncidentScope(val userId: Long, val all: Boolean)
 
+/**
+ * Optional narrowing of a list. Every field left empty or null means "no filter"; the filters combine with AND.
+ * [slaStatus] is the overall status of the incident's SLA record (`incident_sla.status`), so an incident that SLA
+ * tracking has not reached yet matches none of them.
+ */
+data class IncidentFilters(
+    val priorities: Set<Priority> = emptySet(),
+    val categoryId: Long? = null,
+    val serviceId: Long? = null,
+    val assigneeId: Long? = null,
+    /** Inclusive lower bound on `created_at`. */
+    val createdFrom: Instant? = null,
+    /** Exclusive upper bound on `created_at`. */
+    val createdBefore: Instant? = null,
+    val slaStatus: String? = null
+) {
+    companion object {
+        /** The values `incident_sla.status` can hold (see V40). */
+        val SLA_STATUSES = setOf("NO_POLICY", "BREACHED", "WARNING", "PAUSED", "RUNNING", "MET")
+    }
+}
+
 data class IncidentListQuery(
     val scope: IncidentScope,
     /** Empty = every state. */
@@ -47,7 +69,8 @@ data class IncidentListQuery(
     /** Matches the id or the title, case-insensitively. Null or blank = no filter. */
     val search: String?,
     val offset: Long,
-    val limit: Int
+    val limit: Int,
+    val filters: IncidentFilters = IncidentFilters()
 )
 
 data class IncidentListRow(val record: IncidentRecord, val hasFeedback: Boolean)

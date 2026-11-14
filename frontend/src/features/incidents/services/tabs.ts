@@ -25,3 +25,25 @@ export const TABS: Record<ActorRole, { id: TabId; label: string; states: Inciden
 };
 
 export const defaultTab = (role: ActorRole): TabId => TABS[role][0].id;
+
+// ---- Filters ------------------------------------------------------------------------------------------------------
+
+export const FILTER_SLA_STATUSES = ['BREACHED', 'WARNING', 'RUNNING', 'PAUSED', 'MET', 'NO_POLICY'] as const;
+export type FilterSlaStatus = (typeof FILTER_SLA_STATUSES)[number];
+
+/**
+ * Narrowing applied on top of a tab and the text search; every field left unset is "no filter" and they combine with AND.
+ * `from` / `to` are `YYYY-MM-DD` days (both inclusive). Mirrors the query parameters of `GET /api/incidents`.
+ */
+export interface IncidentFilters {
+  priority?: 'P1' | 'P2' | 'P3' | 'P4';
+  categoryId?: number;
+  serviceId?: number;
+  /** The technician the incident is assigned to (a user id on the backend). Offered to admins only. */
+  assigneeId?: number;
+  slaStatus?: FilterSlaStatus;
+  from?: string;
+  to?: string;
+}
+
+export const activeFilterCount = (f: IncidentFilters): number => Object.values(f).filter((v) => v !== undefined && v !== '').length;

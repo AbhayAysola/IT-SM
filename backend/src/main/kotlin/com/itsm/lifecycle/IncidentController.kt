@@ -7,12 +7,16 @@ import com.itsm.common.error.InvalidInput
 import com.itsm.common.error.ResourceNotFound
 import com.itsm.common.model.Priority
 import com.itsm.common.security.CurrentUserProvider
+import com.itsm.common.spi.CategoryCatalog
+import com.itsm.common.spi.ServiceCatalog
+import com.itsm.common.spi.UserDirectory
 import com.itsm.feedback.Feedback
 import com.itsm.investigation.InvestigationEntry
 import com.itsm.investigation.InvestigationEntryType
 import com.itsm.investigation.Visibility
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,12 +28,17 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeParseException
 
 data class IncidentDto(
     val id: String, val title: String, val description: String, val createdAt: Instant, val updatedAt: Instant, val state: String, val reporterId: Long, val assigneeId: Long?, val categoryId: Long?, val serviceId: Long?,
     val priority: Priority?, val assignedAt: Instant?, val firstResponseAt: Instant?, val resolvedAt: Instant?, val closedAt: Instant?,
     /** What the caller can do right now (drives which buttons to show). Moves are `POST .../transitions`. */
-    val availableTransitions: List<String>
+    val availableTransitions: List<String>,
+    /** Display names for the ids above; null when the id is unset or its directory is unavailable. */
+    val reporterName: String? = null, val assigneeName: String? = null, val categoryName: String? = null, val serviceName: String? = null
 )
 
 /** A row of the list: no transitions or description, so a page stays small. */
@@ -37,7 +46,8 @@ data class IncidentSummaryDto(
     val id: String, val title: String, val state: String, val priority: Priority?, val reporterId: Long, val assigneeId: Long?,
     val categoryId: Long?, val serviceId: Long?, val createdAt: Instant, val updatedAt: Instant, val resolvedAt: Instant?,
     /** True once the reporter has rated it; lets a UI decide whether feedback is still due. */
-    val hasFeedback: Boolean
+    val hasFeedback: Boolean,
+    val reporterName: String? = null, val assigneeName: String? = null, val categoryName: String? = null, val serviceName: String? = null
 )
 
 data class IncidentListDto(
@@ -76,13 +86,28 @@ data class FeedbackRequest(@field:NotNull val rating: Int?, val comment: String?
 class IncidentController(
     private val lifecycle: IncidentLifecycleService,
     private val assignment: IncidentAssignmentService,
-    private val currentUser: CurrentUserProvider
+    private val currentUser: CurrentUserProvider,
+    private val users: ObjectProvider<UserDirectory>,
+    private val services: ObjectProvider<ServiceCatalog>,
+    private val categories: ObjectProvider<CategoryCatalog>
 ) {
-    /** The caller's incidents (an admin's: all). `states` is a comma-separated list of states; `q` matches id or title. */
+    /**
+     * The caller's incidents (an admin's: all). `states` is a comma-separated list of states; `q` matches id or title.
+     * Optional filters, combined with AND: `priority` (P1..P4, repeatable or comma-separated), `categoryId`, `serviceId`,
+     * `assigneeId`, `createdFrom` / `createdTo` (ISO dates, both inclusive, UTC days), `slaStatus` (the SLA record's status).
+     * `stateCounts` ignores every filter and `q`.
+     */
     @GetMapping
     fun list(
         @RequestParam(required = false) states: List<String>?,
         @RequestParam(required = false) q: String?,
+        @RequestParam(required = false) priority: List<String>?,
+        @RequestParam(required = false) categoryId: Long?,
+        @RequestParam(required = false) serviceId: Long?,
+        @RequestParam(required = false) assigneeId: Long?,
+        @RequestParam(required = false) createdFrom: String?,
+        @RequestParam(required = false) createdTo: String?,
+        @RequestParam(required = false) slaStatus: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): IncidentListDto {
@@ -90,9 +115,16 @@ class IncidentController(
         val wanted = states.orEmpty().filter { it.isNotBlank() }.map {
             IncidentState.entries.firstOrNull { s -> s.name == it.trim().uppercase() } ?: throw InvalidInput("Unknown state '${it.take(30)}'")
         }.toSet()
-        val result = lifecycle.list(currentUser.current(), wanted, q, paging.page, paging.size)
+        val filters = parseFilters(priority, categoryId, serviceId, assigneeId, createdFrom, createdTo, slaStatus)
+        val result = lifecycle.list(currentUser.current(), wanted, q, paging.page, paging.size, filters)
+        val names = Names()
         return IncidentListDto(
-            result.rows.map { (r, fb) -> IncidentSummaryDto(r.id, r.title, r.state.name, r.priority, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.createdAt, r.updatedAt, r.resolvedAt, fb) },
+            result.rows.map { (r, fb) ->
+                IncidentSummaryDto(
+                    r.id, r.title, r.state.name, r.priority, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.createdAt, r.updatedAt, r.resolvedAt, fb,
+                    names.user(r.reporterId), names.user(r.assigneeId), names.category(r.categoryId), names.service(r.serviceId)
+                )
+            },
             paging.page, paging.size, result.total, ((result.total + paging.size - 1) / paging.size).toInt(),
             result.stateCounts.mapKeys { it.key.name }
         )
@@ -144,10 +176,49 @@ class IncidentController(
     fun similar(@PathVariable id: String, @RequestParam(defaultValue = "5") limit: Int): List<ResolvedIncidentDto> =
         lifecycle.similarResolved(id, currentUser.current(), limit).map { ResolvedIncidentDto(it.incidentId, it.title, it.resolution, it.resolvedAt, it.sameService) }
 
-    private fun dto(r: IncidentRecord) = IncidentDto(
-        r.id, r.title, r.description, r.createdAt, r.updatedAt, r.state.name, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.priority, r.assignedAt, r.firstResponseAt,
-        r.resolvedAt, r.closedAt, lifecycle.availableTransitions(r, currentUser.current()).map { it.name }
-    )
+    private fun dto(r: IncidentRecord): IncidentDto {
+        val names = Names()
+        return IncidentDto(
+            r.id, r.title, r.description, r.createdAt, r.updatedAt, r.state.name, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.priority, r.assignedAt, r.firstResponseAt,
+            r.resolvedAt, r.closedAt, lifecycle.availableTransitions(r, currentUser.current()).map { it.name },
+            names.user(r.reporterId), names.user(r.assigneeId), names.category(r.categoryId), names.service(r.serviceId)
+        )
+    }
+
+    /**
+     * Turns the raw query values into [IncidentFilters]. Anything malformed is a 400 that names the parameter, never an
+     * empty result: a typo in a filter must not look like "no incidents".
+     */
+    private fun parseFilters(
+        priority: List<String>?, categoryId: Long?, serviceId: Long?, assigneeId: Long?,
+        createdFrom: String?, createdTo: String?, slaStatus: String?
+    ): IncidentFilters {
+        val priorities = priority.orEmpty().flatMap { it.split(',') }.filter { it.isNotBlank() }.map { Priority.fromCode(it) }.toSet()
+        fun day(name: String, value: String?): LocalDate? = value?.takeIf { it.isNotBlank() }?.let {
+            try { LocalDate.parse(it.trim()) } catch (e: DateTimeParseException) { throw InvalidInput("'$name' must be a date like 2026-11-30") }
+        }
+        val from = day("createdFrom", createdFrom)
+        val to = day("createdTo", createdTo)
+        if (from != null && to != null && to.isBefore(from)) throw InvalidInput("'createdTo' must not be before 'createdFrom'")
+        val sla = slaStatus?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+        if (sla != null && sla !in IncidentFilters.SLA_STATUSES) throw InvalidInput("Unknown slaStatus. Expected one of ${IncidentFilters.SLA_STATUSES.sorted().joinToString(", ")}.")
+        return IncidentFilters(
+            priorities = priorities, categoryId = categoryId, serviceId = serviceId, assigneeId = assigneeId,
+            createdFrom = from?.atStartOfDay(ZoneOffset.UTC)?.toInstant(),
+            createdBefore = to?.plusDays(1)?.atStartOfDay(ZoneOffset.UTC)?.toInstant(),
+            slaStatus = sla
+        )
+    }
+
+    /** Resolves ids to display names for one response. A missing directory or unknown id just leaves the name null. */
+    private inner class Names {
+        private val userNames = HashMap<Long, String?>()
+        private val categoryNames = HashMap<Long, String?>()
+        private val serviceNames = HashMap<Long, String?>()
+        fun user(id: Long?): String? = id?.let { userNames.getOrPut(it) { runCatching { users.ifAvailable?.findById(it)?.name }.getOrNull() } }
+        fun category(id: Long?): String? = id?.let { categoryNames.getOrPut(it) { runCatching { categories.ifAvailable?.findById(it)?.name }.getOrNull() } }
+        fun service(id: Long?): String? = id?.let { serviceNames.getOrPut(it) { runCatching { services.ifAvailable?.findById(it)?.name }.getOrNull() } }
+    }
 
     private fun dto(e: InvestigationEntry) = TimelineEntryDto(e.type.name, e.authorId, e.visibility.name, e.body, e.incidentState.name, e.createdAt)
     private fun dto(f: Feedback) = FeedbackDto(f.rating, f.comment, f.submittedAt)

@@ -1,0 +1,82 @@
+{{- if .Values.networkPolicy.enabled }}
+# Ingress-only policies (egress is not restricted): the ingress controller reaches the frontend and the backend API; only the backend reaches
+# PostgreSQL, Redis and RabbitMQ; and the backend's management port (actuator, Prometheus) is open to the Prometheus pods and nobody else.
+# The kubelet's own probe traffic comes from the node and is not affected by NetworkPolicy on the common CNIs.
+{{- $ns := .Values.global.namespace }}
+{{- $ingressNs := .Values.networkPolicy.ingressControllerNamespace }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "it-sm.fullname" . }}-backend
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "it-sm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ingressNs }}
+      ports:
+        - port: {{ .Values.backend.service.port }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.prometheus.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.prometheus.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.backend.managementPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "it-sm.fullname" . }}-frontend
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "it-sm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ingressNs }}
+      ports:
+        - port: {{ .Values.frontend.service.port }}
+{{- range $component, $port := dict "postgres" 5432 "redis" 6379 "rabbitmq" 5672 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "it-sm.fullname" $ }}-{{ $component }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "it-sm.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "it-sm.selectorLabels" $ | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
+        - port: {{ $port }}
+{{- end }}
+{{- end }}

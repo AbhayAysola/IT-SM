@@ -41,7 +41,7 @@ kubectl wait --namespace ingress-nginx \
 echo "Building Docker images..."
 docker build -t it-sm/backend:latest ../backend
 # The browser-facing API origin is compiled into the frontend image: use the host you will deploy with (bare https origin, no /api).
-docker build --build-arg NEXT_PUBLIC_API_URL="https://${PUBLIC_HOST}" -t it-sm/frontend:latest ../frontend
+docker build --build-arg NEXT_PUBLIC_API_URL="https://${PUBLIC_HOST}" --build-arg NEXT_PUBLIC_INCIDENTS_API=live -t it-sm/frontend:latest ../frontend
 
 echo "Loading images into Kind cluster..."
 kind load docker-image it-sm/backend:latest --name $CLUSTER_NAME

@@ -22,6 +22,9 @@ backend:
   replicaCount: 2
   service:
     port: 8080
+  # Actuator (health probes and /actuator/prometheus) is served on this separate port. It is never published by the Service or the
+  # Ingress; the NetworkPolicy lets only the kubelet and the Prometheus pods in `networkPolicy.prometheus` reach it.
+  managementPort: 8081
   jwt:
     secret: ""   # REQUIRED: >= 32 bytes of random secret (set via --set / a secret manager); the chart fails without it
     expiration: 86400000
@@ -35,7 +38,10 @@ backend:
     # Proxies in front of the backend that YOU operate (the ingress = 1). Needed so the login/registration rate limits are charged
     # to the real client address instead of the ingress pod. Narrow `cidrs` to the ingress controller's pod CIDR.
     hops: 1
-    cidrs: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    # REQUIRED, no default: the pod CIDR (or the exact addresses) of the ingress controller that forwards to the backend. X-Forwarded-For is
+    # trusted from these addresses ONLY, so a broad range lets any pod in it forge a client address and dodge the per-email login limit.
+    # Kind with scripts/setup-kind.sh: the default pod network, 10.244.0.0/16. Anything else: look at your CNI / ingress controller.
+    cidrs: ""
 
 postgres:
   image:
@@ -44,20 +50,20 @@ postgres:
   storage: 5Gi
   database: itsm
   username: itsm
-  password: itsm_password
+  password: ""   # REQUIRED: choose a strong password (--set postgres.password=...); the chart fails without it
 
 redis:
   image:
     repository: redis
     tag: "7-alpine"
-  password: redis_password
+  password: ""   # REQUIRED
 
 rabbitmq:
   image:
     repository: rabbitmq
     tag: "3-management-alpine"
   username: itsm
-  password: rabbitmq_password
+  password: ""   # REQUIRED
   vhost: /
 
 ingress:
@@ -74,6 +80,18 @@ ingress:
   # Optional extra annotations, e.g. your own certificate-issuer annotation. No issuer is assumed. The chart's own annotations
   # (ssl-redirect "true", proxy-body-size) cannot be overridden here.
   annotations: {}
+
+# Ingress-only policies: who may open a connection to whom. Egress is not restricted. Needs a CNI that enforces NetworkPolicy
+# (Kind's default kindnet does from v0.20; Calico and Cilium do). Without one the objects are accepted and ignored.
+networkPolicy:
+  enabled: true
+  # Namespace of the ingress controller that forwards to the frontend and the backend.
+  ingressControllerNamespace: ingress-nginx
+  # Where the pods that scrape the backend's management port run, and how they are labelled. Nothing else can reach that port.
+  prometheus:
+    namespace: monitoring
+    podLabels:
+      app.kubernetes.io/name: prometheus
 
 monitoring:
   prometheus:

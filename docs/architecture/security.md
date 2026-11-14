@@ -242,10 +242,9 @@ migration (`V17` or later) and is a separate batch. Proposed contract:
   not Redis or RabbitMQ, which P1 does not use) are enabled explicitly in `application.yml`; the aggregate `/actuator/health` still reports every
   indicator and may be DOWN while Redis/RabbitMQ are absent. A module that starts to depend on Redis or RabbitMQ must add that indicator to the
   readiness group. Actuator is not routed through the ingress.
-* **Actuator**: `/actuator/health/**` and `/actuator/info` are public; health details are `when-authorized` (ADMIN only);
-  all other actuator endpoints require ADMIN. **Prometheus now gets 401/403 when scraping `/actuator/prometheus`**
-  (`infra/monitoring/prometheus.yml` sends no credentials). Recommended follow-up: serve actuator on a separate management
-  port that is not exposed publicly, then permit it there.
+* **Actuator**: with no separate management port (local `bootRun`, the test suite) `/actuator/health/**` and `/actuator/info` are public, health
+  details are `when-authorized` (ADMIN only), and every other actuator endpoint needs ADMIN. The compose stack, the raw manifests and the Helm chart
+  set `MANAGEMENT_SERVER_PORT=8081`; see "Management port" below, which is what lets Prometheus scrape without credentials.
 * **CORS**: explicit origins from `CORS_ALLOWED_ORIGINS` (comma-separated, default `http://localhost:3000`, `*` refused),
   headers limited to `Authorization, Content-Type, Accept`.
 * **CSRF** is disabled because auth is a Bearer header with no server session; revisit with cookie refresh tokens.
@@ -253,19 +252,57 @@ migration (`V17` or later) and is a separate batch. Proposed contract:
 * Email addresses are not verified on registration.
 * `/api/auth/**` was previously `permitAll`; now only `login` and `register` are.
 
-## Follow-up design: separate management port (not implemented)
+## Management port
 
-Today actuator shares port 8080 with the API and is protected by the application's own rules (health/info public, the rest
-ADMIN). That is why Prometheus can no longer scrape `/actuator/prometheus` unauthenticated. Proposed replacement, with no
-change to API authentication:
+Actuator is served on its own port, **8081**, when `MANAGEMENT_SERVER_PORT` is set (compose, the raw manifests and the Helm chart set it; plain
+`bootRun` and the tests leave it unset and keep everything on 8080).
 
-1. `management.server.port=8081` (and `management.endpoints.web.exposure.include=health,info,prometheus`; drop `metrics`).
-   Probes keep using `/actuator/health` on 8081 (update the compose healthcheck and the k8s/Helm probe ports together).
-2. Port 8081 is NOT published by the Service/Ingress/compose `ports:`. Reachability is limited by infrastructure: a k8s
-   `NetworkPolicy` allowing only the Prometheus pods (and kubelet probes), or an internal-only compose network.
-3. Spring Security keeps `/api/**` rules as they are; the management port can then `permitAll` health and prometheus because
-   it is unreachable from outside, or stay authenticated if no network control is available.
-4. Test: an integration test asserting 8080 serves no `/actuator/prometheus` and 8081 does.
+* **What is served where.** On 8081: `/actuator/**` with no credentials (health, info, `prometheus`, `metrics`), and *nothing else*: any other path
+  is refused (`managementSecurityFilterChain` in `SecurityConfig`, matched by the request's local port, so it matches nothing when no separate
+  port is configured). On 8080: the API only; `/actuator/prometheus` is not served there at all.
+* **Why no credentials is acceptable.** The port is never published: not by the compose `ports:`, not by the Kubernetes Service or Ingress. In
+  Kubernetes the NetworkPolicy `backend` admits port 8081 only from the Prometheus pods (`networkPolicy.prometheus` in the Helm values;
+  placeholders in `infra/k8s/networkpolicy.yaml`) and the kubelet's probes are not subject to it. In compose only containers on `itsm-network`
+  reach it. **A cluster whose CNI does not enforce NetworkPolicy leaves 8081 reachable from every pod**: that exposes metrics and health
+  (no personal data, no write endpoint), not the API, but say so in the deployment notes.
+* **Probes** (`/actuator/health/liveness`, `/actuator/health/readiness`) use the named container port `management`; the compose healthcheck uses
+  `localhost:8081`.
+* **Tests.** `ManagementPortIntegrationTest` starts the application on real ports: 8081 serves health and `prometheus`, refuses `/api/**`; 8080 no
+  longer serves `prometheus` and still demands authentication for the API.
+
+### Business metrics
+
+`itsm_incidents{state}`, `itsm_incidents_open{priority}`, `itsm_sla_open{status}`, `itsm_sla_breaches`, `itsm_escalations` (class
+`BusinessMetrics`) are refreshed from the database every 15 s, not on each scrape, so scraping never queries the database; a failed refresh keeps
+the last values. They feed the provisioned Grafana dashboard `IT-SM operations` (`infra/monitoring/grafana/`), together with HTTP rate and
+latency percentiles, JVM, connection pool and CPU.
+
+## Database roles
+
+By default the application and Flyway share one PostgreSQL account, which owns the tables, so the application's own credentials could disable the
+append-only trigger on `audit_events` (the trigger guards against SQL mistakes and against the application, not against its own owner).
+
+The opt-in two-role model closes that: Flyway runs as the owner, the application as a runtime role that holds DML privileges only. Turn it on with
+`SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/callback`, `SPRING_FLYWAY_PLACEHOLDERS_RUNTIMEROLE=<role>`,
+`SPRING_FLYWAY_USER/PASSWORD` (owner) and `SPRING_DATASOURCE_USERNAME/PASSWORD` (runtime role), after creating the role
+(`infra/postgres/init-runtime-role.sh`; `infra/docker-compose.roles.yml` wires all of it for compose). The grants live in a Flyway
+*callback* (`db/callback/afterMigrate__runtime_role_grants.sql`), not in a migration: they re-apply after every migrate, so tables added later are
+covered, and the callback fails the start-up if the role is missing instead of silently granting nothing. The audit trail gets `SELECT, INSERT`
+only. `RuntimeRoleGrantsIntegrationTest` proves on PostgreSQL 16 that the runtime role can do the application's work and cannot `UPDATE`,
+`DELETE`, `TRUNCATE`, `DISABLE TRIGGER`, `DROP TRIGGER` or `DROP TABLE` on the audit table, read the migration history, or create objects.
+
+It is off by default so that a plain `docker compose up` keeps working with one account; **production should enable it** (the Helm chart does not
+provision the role: create it in your PostgreSQL and set the variables through your own values).
+
+## Other accepted limitations
+
+* **Login throttle is per instance.** With N replicas an attacker gets up to N times the limit, and a restart resets the counters. Accepted for
+  this project; the clean fix is a shared counter (Redis would do) or a limit at the ingress. The IPv6 keying is by full address, so a /64 can
+  rotate addresses; if IPv6 clients reach the ingress, rate-limit there as well.
+* **Local and production settings** are separated by Spring profiles and Helm values, not by a separate overlay. The compose stack is the `dev`
+  profile (non-Secure cookie, registration on) and must never be pointed at real users.
+* **`spring.flyway.baseline-on-migrate`** is now `false` (`FLYWAY_BASELINE_ON_MIGRATE=true` to adopt an existing database deliberately): a
+  non-empty database with no Flyway history is refused instead of having `V1` skipped silently.
 
 ## Handoff notes for the frontend owner
 
@@ -324,8 +361,17 @@ Which address a limit is charged to is the most important deployment setting.
   doubtful falls back to the immediate peer (untrusted peer, fewer than N entries, an entry that is not a plain IP literal: hostnames, ports,
   zone ids). Only the immediate peer is verified; with N>1 the intermediate hops are trusted because they sit between it and the client.
 * **Kubernetes ingress (this repo).** Without the setting every user appears to come from the ingress pod and the limits become ONE limit for
-  everyone (40 failed logins in 15 minutes would lock the whole company out). `infra/k8s/backend-configmap.yaml` and the Helm chart therefore
-  set `TRUSTED_PROXY_HOPS=1` and `TRUSTED_PROXIES` to the RFC 1918 ranges as a working default. **Narrow `TRUSTED_PROXIES` to your ingress
-  controller's pod CIDR and add a NetworkPolicy so that only the ingress can reach the backend**; otherwise any pod in the cluster could forge
-  `X-Forwarded-For`. The ingress must **append** the client address (ingress-nginx does by default; if a CDN or load balancer sits in front of
-  the ingress, set hops to 2 and make sure it overwrites rather than forwards a client-supplied header).
+  everyone (40 failed logins in 15 minutes would lock the whole company out). The manifests and the Helm chart therefore set
+  `TRUSTED_PROXY_HOPS=1`, and **`TRUSTED_PROXIES` has no default**: `helm template` fails until `backend.trustedProxy.cidrs` names the ingress
+  controller's pod CIDR (`scripts/deploy.sh` requires `TRUSTED_PROXY_CIDRS`; Kind with `scripts/setup-kind.sh` uses its default pod network,
+  `10.244.0.0/16`), and the raw manifest carries a placeholder that is not a valid CIDR. A broad range such as all of RFC 1918 would let any
+  pod in it forge `X-Forwarded-For` and dodge the per-email login limit, which is why it is no longer the default. The NetworkPolicies
+  (`infra/helm/templates/networkpolicy.yaml`, `infra/k8s/networkpolicy.yaml`) additionally let only the ingress controller's namespace reach the
+  backend's API port, so a pod elsewhere in the cluster cannot reach it to forge anything.
+  **What the ingress puts in the header depends on its configuration, so check it for your cluster.** ingress-nginx with its default
+  (`use-forwarded-headers: "false"`) *overwrites* `X-Forwarded-For` with the address that connected to it, so with one hop the backend reads
+  that single entry. That is the real client only when the connection reaches the ingress with its source address intact: behind a cloud load
+  balancer or a Service with `externalTrafficPolicy: Cluster` the source is rewritten to a node or balancer address and **every user shares one
+  login bucket**. Use `externalTrafficPolicy: Local` (or the load balancer's proxy protocol) so the real address arrives, or put a trusted
+  balancer in front, set hops to 2 and make sure each hop appends rather than forwards a client-supplied header. Verify by logging in with a
+  wrong password from two different clients and checking that the throttle counts them separately.

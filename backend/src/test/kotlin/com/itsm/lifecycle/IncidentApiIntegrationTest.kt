@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.itsm.common.spi.TechnicianSummary
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -138,5 +139,34 @@ class IncidentApiIntegrationTest {
         call(reporter, "GET", "/api/incidents?size=1000").andExpect(status().isBadRequest)
         call(reporter, "GET", "/api/incidents?page=-1").andExpect(status().isBadRequest)
         mvc.perform(get("/api/incidents")).andExpect(status().isUnauthorized)
+    }
+
+    @Test fun `the list filters by priority, category, technician and date, and rejects malformed filters`() {
+        val reporter = account("EMPLOYEE"); val other = account("EMPLOYEE")
+        val a = incident(reporter.id); val b = incident(reporter.id); incident(other.id)
+        jdbc.update("UPDATE incidents SET priority = 'P1', created_at = TIMESTAMPTZ '2026-05-01 10:00:00+00' WHERE id = ?", a)
+        jdbc.update("UPDATE incidents SET priority = 'P3', created_at = TIMESTAMPTZ '2026-05-03 10:00:00+00' WHERE id = ?", b)
+        fun ids(query: String) = call(reporter, "GET", "/api/incidents?$query").andExpect(status().isOk).body()["items"].map { it["id"].asText() }.toSet()
+
+        assertEquals(setOf(a), ids("priority=P1"))
+        assertEquals(setOf(a, b), ids("priority=P1&priority=P3"), "repeatable")
+        assertEquals(setOf(a, b), ids("priority=p1,p3"), "comma separated, any case")
+        assertEquals(setOf(b), ids("createdFrom=2026-05-02"))
+        assertEquals(setOf(a), ids("createdTo=2026-05-01"), "createdTo is a whole day, inclusive")
+        assertEquals(setOf(a, b), ids("createdFrom=2026-05-01&createdTo=2026-05-03"))
+        assertEquals(emptySet<String>(), ids("slaStatus=BREACHED"))
+        assertEquals(emptySet<String>(), ids("categoryId=999999"))
+        // the filters never widen what the caller may see
+        assertEquals(emptySet<String>(), ids("assigneeId=${other.id}"))
+
+        for (bad in listOf("priority=P9", "createdFrom=yesterday", "createdTo=2026-13-45", "createdFrom=2026-05-03&createdTo=2026-05-01", "slaStatus=ON_FIRE", "categoryId=abc")) {
+            call(reporter, "GET", "/api/incidents?$bad").andExpect(status().isBadRequest)
+        }
+        call(reporter, "GET", "/api/incidents?priority=P1").andExpect(status().isOk).andExpect(jsonPath("$.stateCounts.CLASSIFIED").value(2))
+        // names ride along with the ids
+        val row = call(reporter, "GET", "/api/incidents/$a").andExpect(status().isOk).body()
+        assertEquals("Authentication", row["categoryName"].asText(), "category 7 is seeded as Authentication")
+        assertTrue(row["serviceName"].asText().startsWith("svc-"))
+        assertTrue(row["reporterName"].isNull, "this suite stubs the user directory, so a user's name is unknown and left null, not invented")
     }
 }

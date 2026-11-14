@@ -23,13 +23,9 @@ spec:
         - name: rabbitmq
           image: rabbitmq:3-management-alpine
           imagePullPolicy: IfNotPresent
-          env:
-            - name: RABBITMQ_DEFAULT_USER
-              value: "itsm"
-            - name: RABBITMQ_DEFAULT_PASS
-              value: "rabbitmq_password"
-            - name: RABBITMQ_DEFAULT_VHOST
-              value: "/"
+          envFrom:
+            - secretRef:
+                name: rabbitmq-secret
           ports:
             - containerPort: 5672
               name: amqp

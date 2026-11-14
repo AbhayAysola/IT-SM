@@ -162,6 +162,14 @@ class JpaIncidentStore(
             val pattern = "%" + it.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
             clauses += "(i.id ILIKE ? OR i.title ILIKE ?)"; args += pattern; args += pattern
         }
+        val f = q.filters
+        if (f.priorities.isNotEmpty()) clauses += "i.priority IN (${f.priorities.joinToString(",") { "'${it.name}'" }})"
+        f.categoryId?.let { clauses += "i.category_id = ?"; args += it }
+        f.serviceId?.let { clauses += "i.service_id = ?"; args += it }
+        f.assigneeId?.let { clauses += "i.assignee_id = ?"; args += it }
+        f.createdFrom?.let { clauses += "i.created_at >= ?"; args += java.sql.Timestamp.from(it) }
+        f.createdBefore?.let { clauses += "i.created_at < ?"; args += java.sql.Timestamp.from(it) }
+        f.slaStatus?.let { clauses += "EXISTS (SELECT 1 FROM incident_sla s WHERE s.incident_id = i.id AND s.status = ?)"; args += it }
         return (clauses.joinToString(" AND ").ifEmpty { "TRUE" }) to args
     }
 

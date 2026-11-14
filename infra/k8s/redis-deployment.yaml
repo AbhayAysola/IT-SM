@@ -23,29 +23,31 @@ spec:
         - name: redis
           image: redis:7-alpine
           imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: redis-secret
+          # `$(REDIS_PASSWORD)` is expanded by Kubernetes from the secret above, so the password is not written in this file.
           args:
             - "--requirepass"
-            - "redis_password"
+            - "$(REDIS_PASSWORD)"
           ports:
             - containerPort: 6379
               name: redis
           livenessProbe:
             exec:
               command:
-                - redis-cli
-                - -a
-                - redis_password
-                - ping
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
           readinessProbe:
             exec:
               command:
-                - redis-cli
-                - -a
-                - redis_password
-                - ping
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

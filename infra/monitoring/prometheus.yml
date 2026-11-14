@@ -6,7 +6,8 @@ scrape_configs:
   - job_name: 'it-sm-backend'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['backend:8080']
+      # The management port: no credentials needed, and never published outside the compose network / the cluster.
+      - targets: ['backend:8081']
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance

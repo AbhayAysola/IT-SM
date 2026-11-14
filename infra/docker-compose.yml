@@ -71,6 +71,8 @@ services:
     environment:
       # `dev` allows the non-Secure session cookie below. Remove `dev` (and AUTH_COOKIE_SECURE) for anything served over HTTPS.
       SPRING_PROFILES_ACTIVE: docker,dev
+      # Actuator (health, Prometheus) on its own port. It is NOT published below: only containers on itsm-network (Prometheus) reach it.
+      MANAGEMENT_SERVER_PORT: 8081
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/itsm
       SPRING_DATASOURCE_USERNAME: itsm
       SPRING_DATASOURCE_PASSWORD: itsm_password
@@ -98,7 +100,7 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || curl -sf http://localhost:8080/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8081/actuator/health || curl -sf http://localhost:8081/actuator/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -114,6 +116,8 @@ services:
         # Compiled into the client bundle at build time (a runtime variable would have no effect). Local development: the browser
         # reaches the API on the published port 8080. Rebuild the image (`docker compose up --build`) after changing it.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+        # `live` = incidents and notifications come from the backend. `mock` would show browser-only demo data.
+        NEXT_PUBLIC_INCIDENTS_API: ${NEXT_PUBLIC_INCIDENTS_API:-live}
     container_name: itsm-frontend
     restart: unless-stopped
     ports:

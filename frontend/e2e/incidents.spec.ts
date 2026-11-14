@@ -357,6 +357,64 @@ test.describe('incidents: states, errors and quality', () => {
     await expect(page.getByText('No incidents match your search.')).toBeVisible();
   });
 
+  test('filters narrow the list by priority, service and SLA status, combine, and clear', async ({ page, api }) => {
+    await open(page, api, 'ADMIN');
+    await tab(page, /^In progress/).click();
+    await expect(row(page, 'INC1001')).toBeVisible();
+    await expect(row(page, 'INC1002')).toBeVisible();
+
+    const pick = async (label: string, option: string) => {
+      await page.getByRole('combobox', { name: label }).click();
+      await page.getByRole('option', { name: option }).click();
+    };
+    await pick('Priority', 'P1 Critical');
+    await expect(row(page, 'INC1002')).toBeVisible();
+    await expect(row(page, 'INC1001')).toHaveCount(0);
+
+    await pick('Service', 'Campus Wi-Fi');
+    await expect(page.getByText('No incidents match your filters.')).toBeVisible(); // P1 AND Campus Wi-Fi: nothing
+
+    await pick('Priority', 'All priorities');
+    await expect(row(page, 'INC1001')).toBeVisible();
+    await expect(row(page, 'INC1002')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(row(page, 'INC1002')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(0);
+  });
+
+  test('admins can filter by technician, and employees are not offered the filter', async ({ page, api }) => {
+    await open(page, api, 'ADMIN');
+    await tab(page, /^In progress/).click();
+    await expect(row(page, 'INC1002')).toBeVisible();
+    await page.getByRole('combobox', { name: 'Technician' }).click();
+    await page.getByRole('option', { name: 'Tomás Herrera' }).click();
+    await expect(row(page, 'INC1003')).toBeVisible(); // assigned to Tomás in the demo data
+    await expect(row(page, 'INC1002')).toHaveCount(0); // Priya's
+    await page.getByRole('combobox', { name: 'Technician' }).click();
+    await page.getByRole('option', { name: 'All technicians' }).click();
+    await expect(row(page, 'INC1002')).toBeVisible();
+  });
+
+  test('employees and technicians get no technician filter', async ({ page, api }) => {
+    await open(page, api, 'EMPLOYEE');
+    await expect(page.getByRole('combobox', { name: 'Priority' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Technician' })).toHaveCount(0);
+  });
+
+  test('a reported-date range keeps only incidents created inside it', async ({ page, api }) => {
+    await open(page, api, 'ADMIN');
+    await tab(page, /^In progress/).click();
+    await expect(row(page, 'INC1001')).toBeVisible();
+    await page.getByLabel('Reported from').fill('2999-01-01');
+    await expect(page.getByText('No incidents match your filters.')).toBeVisible();
+    await page.getByLabel('Reported from').fill('2000-01-01');
+    await expect(row(page, 'INC1001')).toBeVisible();
+    await page.getByLabel('Reported from').fill('');
+    await page.getByLabel('to', { exact: true }).fill('2000-01-01');
+    await expect(page.getByText('No incidents match your filters.')).toBeVisible();
+  });
+
   test('each account has its own demo data', async ({ page, api }) => {
     await open(page, api, 'EMPLOYEE', '/incidents/INC1003');
     await page.getByRole('button', { name: 'Send reply' }).click();

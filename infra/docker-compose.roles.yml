@@ -1,0 +1,22 @@
+# Optional overlay: run the backend as a restricted database role that cannot disable the audit trail's append-only trigger.
+#
+#   RUNTIME_DB_PASSWORD='<strong password>' docker compose -f docker-compose.yml -f docker-compose.roles.yml up --build
+#
+# The role is created when the database volume is first initialised, so on an EXISTING volume run `docker compose down -v` first (this
+# deletes the data). Migrations still run as the owner (`itsm`); the application connects as `itsm_app`. See docs/architecture/security.md,
+# "Database roles".
+services:
+  postgres:
+    environment:
+      RUNTIME_DB_USER: itsm_app
+      RUNTIME_DB_PASSWORD: ${RUNTIME_DB_PASSWORD:?set RUNTIME_DB_PASSWORD to a strong password}
+    volumes:
+      - ./postgres/init-runtime-role.sh:/docker-entrypoint-initdb.d/10-init-runtime-role.sh:ro
+  backend:
+    environment:
+      SPRING_DATASOURCE_USERNAME: itsm_app
+      SPRING_DATASOURCE_PASSWORD: ${RUNTIME_DB_PASSWORD:?set RUNTIME_DB_PASSWORD to a strong password}
+      SPRING_FLYWAY_USER: itsm
+      SPRING_FLYWAY_PASSWORD: itsm_password
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/callback
+      SPRING_FLYWAY_PLACEHOLDERS_RUNTIMEROLE: itsm_app

@@ -2,7 +2,7 @@
 
 > An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
 
-> **Status:** P1 (access and administration) is complete and merged, with P2 intake, P3 lifecycle/assignment and the incident workspace on `main` too. P4 is built: priority calculation, SLA tracking, escalation, notifications and analytics. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
+> **Status:** P1 to P4 are all merged: access and administration, incident intake (with AI-assisted categorisation, duplicate hints and a chatbot), lifecycle and assignment, priority, SLA tracking, escalation, notifications and analytics. The incident UI talks to the real backend in every Docker, Compose and Kind build. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
 
 ## 📚 Documentation
 
@@ -33,7 +33,8 @@
 | Auth, sessions (HttpOnly cookie for the web app, Bearer for scripts), first-admin bootstrap | **Done** (P1): [security.md](docs/architecture/security.md) |
 | Users and roles, technician profiles, categories, IT services, SLA policies, assignment settings | **Done** (P1), served by the real admin API and connected to the admin workspace |
 | Audit trail (`audit_events`, append-only trigger) and admin retrieval API | **Done** (P1) |
-| Incident intake (`/api/incidents`, catalog, AI analysis) | On `main` (P2) |
+| Incident intake (`/api/incidents`, catalog, AI analysis, chatbot intake) | **Done** (P2) |
+| Incident list filters | Priority, category, service, technician, reported-date range and SLA status, on top of state and text search: [p3.md](docs/architecture/p3.md). The incident UI uses the real backend in every Docker, Compose and Kind build; only `npm run dev` and the hermetic e2e suite use browser-only demo data |
 | Incident lifecycle, assignment, investigation timeline, feedback | On `main` (P3), including the strategy catalog and workload provider P1 consumes |
 | Priority calculation | **Done** (P4 with P2): the report form asks impact and urgency, and P4's `PriorityPolicy` derives the priority (service criticality and dependent services included). See [p4.md](docs/architecture/p4.md) section 1 |
 | SLA timers and breach detection | **Done** (P4): `V40`, a scheduled monitor, `GET /api/incidents/{id}/sla`, `GET /api/sla/incidents`, and the incident page's "Service level" card. See the integration guide's P4 section |
@@ -41,7 +42,7 @@
 | Notifications | **Done** (P4): `V42`, an in-app inbox (bell and `/notifications`) with simulated email/SMS by priority, for assignments, questions, fixes, reopens, SLA warnings and breaches, and escalations. See [p4.md](docs/architecture/p4.md) section 4 |
 | Analytics | **Done** (P4): the admin "Analytics" page and `GET /api/admin/analytics/summary` (SLA compliance by priority, service and category, response and resolution times, escalations, daily volumes, technician workload and ratings). See [p4.md](docs/architecture/p4.md) section 5 |
 | Kubernetes / Helm | HTTPS only, build-time API origin, separate liveness/readiness probes. Production hardening is assigned to the deployment owners: [handoff section 5](docs/p1-handoff.md) |
-| Redis / RabbitMQ | In the compose stack and config; no P1 feature uses them (health groups account for that) |
+| Redis / RabbitMQ | In the compose stack, Helm chart and health checks, but **no feature uses them yet**: events travel through Spring's in-process publisher. Using them (or dropping them) is an open decision |
 | CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |
 
 The incident AI analysis calls the Anthropic API with the incident text when `anthropic.api-key` is set; without a key it is off.
@@ -64,8 +65,10 @@ The incident AI analysis calls the Anthropic API with the incident text when `an
 ┌──────▼──┐  ┌────▼────┐  ┌──▼──────────┐
 │PostgreSQL│  │  Redis  │  │  RabbitMQ   │
 │  :5432   │  │  :6379  │  │  :5672      │
-│  (JPA)   │  │(planned)│  │ (planned)   │
+│  (JPA)   │  │(unused) │  │ (unused)    │
 └──────────┘  └─────────┘  └─────────────┘
+
+Optional outbound call: Anthropic API (incident categorisation, duplicate hints, chatbot), only when `anthropic.api-key` is set.
 ```
 
 ---
@@ -99,9 +102,11 @@ IT-SM/
 ├── docs/                        # Architecture, integration guide, migration plan
 ├── frontend/                    # Next.js 14 TypeScript app
 │   ├── src/
-│   │   ├── app/                 # App Router: / (sign in), /dashboard, /admin/*
+│   │   ├── app/                 # App Router: / (sign in), /dashboard, /incidents/*, /notifications, /admin/*
 │   │   ├── components/          # Navbar, AuthGuard, shadcn/ui primitives (ui/)
-│   │   ├── features/admin/      # P1 admin workspace (mock data, see its README)
+│   │   ├── features/admin/      # Admin workspace on the real API (see its README)
+│   │   ├── features/incidents/  # Incident workspace: list + filters, detail, report form, chat intake
+│   │   ├── features/notifications/  # Bell and inbox
 │   │   ├── lib/                 # api.ts (typed client), auth.ts (JWT helpers)
 │   │   └── types/               # Shared TypeScript interfaces
 │   ├── e2e/                     # Playwright tests
@@ -110,14 +115,17 @@ IT-SM/
 ├── backend/                     # Spring Boot 3 Kotlin app
 │   ├── src/main/kotlin/com/itsm/
 │   │   ├── common/              # Shared foundation: model, security, error, api, event, spi
-│   │   ├── auth/                # JWT auth, filter, service, controller
-│   │   ├── user/                # UserEntity, UserService, UserController
-│   │   ├── audit/               # SpringAuditPublisher (publishes only)
+│   │   ├── auth/ user/ bootstrap/   # JWT and web sessions, accounts, first-admin bootstrap
+│   │   ├── admin/               # Users, technicians, categories, services, SLA policies, assignment settings
+│   │   ├── audit/               # Append-only audit trail and its retrieval API
+│   │   ├── intake/              # Incident creation, AI analysis, chatbot
+│   │   ├── lifecycle/ assignment/ investigation/ feedback/   # State machine, strategies, timeline, ratings
+│   │   ├── priority/ sla/ escalation/ notification/ analytics/   # P4
 │   │   └── config/              # SecurityConfig, RedisConfig, RabbitMQConfig
 │   ├── src/main/resources/
 │   │   ├── application.yml
 │   │   ├── application-docker.yml
-│   │   └── db/migration/        # Flyway SQL migrations (V1 only so far)
+│   │   └── db/migration/        # Flyway SQL migrations (V1 to V42, in per-owner blocks)
 │   └── Dockerfile
 │
 ├── infra/
@@ -159,7 +167,7 @@ This starts: PostgreSQL · Redis · RabbitMQ · Backend · Frontend
 |---|---|
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:8080 |
-| Health check | http://localhost:8080/actuator/health |
+| Health check | not published: actuator is on port 8081 inside the compose network (see [Monitoring](#-monitoring)) |
 | RabbitMQ UI | http://localhost:15672 (itsm / rabbitmq_password) |
 
 ### 3. (Optional) Start monitoring stack
@@ -172,7 +180,7 @@ docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml
 | Service | URL |
 |---|---|
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3001 (admin / admin) |
+| Grafana | http://localhost:3001 (admin / admin), dashboard **IT-SM operations** is provisioned |
 
 ---
 
@@ -233,11 +241,16 @@ The Kubernetes deployment is **HTTPS only**: the session cookie is `Secure`, and
 
 ```bash
 export PUBLIC_HOST=<host> TLS_SECRET_NAME=<tls-secret> JWT_SECRET="$(openssl rand -base64 48)"
+export POSTGRES_PASSWORD=<choose> REDIS_PASSWORD=<choose> RABBITMQ_PASSWORD=<choose>   # no defaults; keep them for later deploys
+export TRUSTED_PROXY_CIDRS=10.244.0.0/16   # the ingress controller's pod CIDR (this is Kind's default pod network)
 ./scripts/setup-kind.sh   # Kind only: cluster, ingress controller and images (frontend built for https://$PUBLIC_HOST)
 ./scripts/deploy.sh
 ```
 
-The chart fails with a clear message if `ingress.host` or `ingress.tls.secretName` is empty. `CORS_ALLOWED_ORIGINS` defaults to `https://<ingress.host>`, so it cannot drift from the ingress.
+The chart fails with a clear message if `ingress.host`, `ingress.tls.secretName`, any of the three passwords or `backend.trustedProxy.cidrs` is empty.
+It also installs NetworkPolicies (the ingress controller reaches the frontend and the backend API; only the backend reaches PostgreSQL, Redis and
+RabbitMQ; the backend's management port is open to Prometheus pods only), which need a CNI that enforces them (Kind's default does).
+For production also enable the restricted database role: [security.md, "Database roles"](docs/architecture/security.md#database-roles). `CORS_ALLOWED_ORIGINS` defaults to `https://<ingress.host>`, so it cannot drift from the ingress.
 
 ### Add local DNS entry (Kind)
 
@@ -252,7 +265,7 @@ echo "127.0.0.1 <host>" | sudo tee -a /etc/hosts
 
 ### Raw K8s manifests (alternative)
 
-Edit the marked PLACEHOLDERS first (`infra/k8s/ingress.yaml` host and TLS secret name, `infra/k8s/backend-configmap.yaml` `CORS_ALLOWED_ORIGINS`, and `backend-secret.yaml`), then:
+Edit the marked PLACEHOLDERS first (`infra/k8s/ingress.yaml` host and TLS secret name, `infra/k8s/backend-configmap.yaml` `CORS_ALLOWED_ORIGINS` and `TRUSTED_PROXIES`, the passwords in `backend-secret.yaml`, `postgres-secret.yaml`, `redis-secret.yaml` and `rabbitmq-secret.yaml` (each pair must match), and the namespaces in `networkpolicy.yaml`), then:
 
 ```bash
 kubectl apply -f infra/k8s/namespace.yaml
@@ -271,8 +284,9 @@ Authenticated endpoints need `Authorization: Bearer <token>` for scripts and ser
 | POST | `/api/auth/login` | public | Login, returns JWT |
 | POST | `/api/auth/logout` | required | End the session: revokes ALL of the caller's tokens and clears the cookie |
 | GET | `/api/users/me` | required | Current user profile |
-| GET | `/actuator/health` | public | Health check |
-| GET | `/actuator/prometheus` | admin | Prometheus metrics |
+| GET | `/api/incidents` | required | The caller's incidents (admin: all), paged. Filters, all optional and combined with AND: `states`, `q` (id or title), `priority` (P1 to P4, repeatable), `categoryId`, `serviceId`, `assigneeId`, `createdFrom` / `createdTo` (ISO dates, inclusive), `slaStatus`. A malformed value is a 400, never an empty list |
+| GET | `/actuator/health/liveness`, `/readiness` | management port 8081 (or 8080 when no separate port is set) | Kubernetes probes |
+| GET | `/actuator/prometheus` | management port 8081 only, no credentials, never published | Prometheus metrics, including `itsm_*` business metrics. On 8080 (no separate port) it needs ADMIN |
 
 The administration endpoints (users, technicians, catalogs, SLA, assignment settings, audit) are listed in the [integration guide](docs/architecture/integration-guide.md); the incident endpoints (`/api/incidents/**`: intake, transitions, assignment, timeline, feedback) are in [p3.md](docs/architecture/p3.md); conventions are in [foundation.md](docs/architecture/foundation.md#5-api-conventions).
 
@@ -309,12 +323,16 @@ Self-registration is off unless `REGISTRATION_ENABLED=true` (then `POST /api/aut
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5432/itsm` | PostgreSQL URL |
 | `spring.data.redis.host` | `localhost` | Redis host |
 | `spring.rabbitmq.host` | `localhost` | RabbitMQ host |
+| `management.server.port` (env `MANAGEMENT_SERVER_PORT`) | unset (actuator on 8080) | Set to `8081` (compose, Kubernetes and Helm do) to serve actuator on an unpublished port Prometheus can scrape without credentials |
+| `spring.flyway.baseline-on-migrate` (env `FLYWAY_BASELINE_ON_MIGRATE`) | `false` | `true` only to adopt an existing database that has no Flyway history |
+| `anthropic.api-key` | empty | Enables AI categorisation, duplicate hints and the chatbot. Without it those endpoints answer 400 and the report form falls back to manual entry |
 
 ### Frontend (`.env.local`)
 
 | Variable | Default | Description |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Backend origin the **browser** calls: the bare origin, no `/api`. Compiled in by `next build` (a runtime variable has no effect), so a deployed image must be built with it: [HTTPS and the public origin](#https-and-the-public-origin-read-before-deploying) |
+| `NEXT_PUBLIC_INCIDENTS_API` | unset for `npm run dev` (browser-only demo data); `live` in the Docker image, Compose and Kind builds | `live` makes the incident pages and notification inbox use the backend. Also compiled in at build time. Override a Docker build with `--build-arg NEXT_PUBLIC_INCIDENTS_API=mock` |
 
 ### Helm (`infra/helm/values.yaml`)
 
@@ -337,31 +355,31 @@ helm upgrade --install it-sm ./infra/helm \
 ### JWT Auth
 - Token stored in `localStorage` (key: `it_sm_token`) plus a readable `SameSite=Lax` cookie; planned replacement is described in foundation.md section 7.
 - `JwtAuthFilter` validates the token and sets the `SecurityContext` to an `ItsmUserDetails(id, email, role)`.
-- Public routes: `/api/auth/**`, `/actuator/**`
+- Public routes: `/api/auth/login`, `/api/auth/register`, health probes (see [security.md](docs/architecture/security.md))
 
 ---
 
 ## 📊 Monitoring
 
-Prometheus scrapes metrics from Spring Boot Actuator at `/actuator/prometheus`.
+Prometheus scrapes Spring Boot Actuator on the **management port (8081)**, which no `ports:` entry, Service or Ingress publishes. Start the monitoring stack
+with the command above; the Grafana dashboard **IT-SM operations** and its datasource are provisioned from `infra/monitoring/grafana/`.
 
 Available metric groups:
-- JVM memory, GC, threads
-- HTTP request duration + counts
-- HikariCP connection pool
-- RabbitMQ listener stats
-- Custom business metrics (extendable via `MeterRegistry`)
+- **Business (`itsm_*`):** `itsm_incidents{state}`, `itsm_incidents_open{priority}`, `itsm_sla_open{status}`, `itsm_sla_breaches`, `itsm_escalations`,
+  refreshed from the database every 15 s ([security.md](docs/architecture/security.md#business-metrics))
+- HTTP request rate and latency histograms (p50/p95/p99 in the dashboard)
+- JVM memory, GC, threads; HikariCP connection pool; CPU
 
-Import Grafana dashboards:
-- **JVM Micrometer**: ID `4701`
-- **Spring Boot Statistics**: ID `12685`
+The dashboard panels: open incidents, open P1, awaiting assignment, breached SLAs, breaches ever, escalations, open incidents by priority and state, SLA
+status, request rate, latency percentiles, 5xx rate, heap, connection pool and CPU. Not deployed in Kubernetes by this repo: point your Prometheus at the
+backend pods' port 8081 and set `networkPolicy.prometheus` to where it runs.
 
 ---
 
 ## 🧪 Running Tests
 
 ```bash
-# Backend (JDK 17, Docker running: the integration tests use PostgreSQL 16 Testcontainers)
+# Backend (JDK 17 or 21, not 26: Kotlin 1.9 cannot parse its version; Docker running: the integration tests use PostgreSQL 16 Testcontainers)
 cd backend
 ITSM_REQUIRE_DOCKER=true ./gradlew clean build   # fails instead of skipping when Docker is missing
 
@@ -389,6 +407,8 @@ CI: `backend.yml` (unit and Testcontainers tests, Flyway on a clean PostgreSQL 1
 | `POSTGRES_USER` | postgres | `itsm` |
 | `POSTGRES_PASSWORD` | postgres | `itsm_password` |
 | `SPRING_PROFILES_ACTIVE` | backend | `docker` |
-| `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8080` |
+| `NEXT_PUBLIC_API_URL` | frontend (build arg) | `http://localhost:8080` |
+| `NEXT_PUBLIC_INCIDENTS_API` | frontend (build arg) | `live` |
+| `MANAGEMENT_SERVER_PORT` | backend | `8081` (not published) |
 
-> ⚠️ **Security**: Change all default passwords before deploying to any shared environment.
+> ⚠️ **Security**: these are throwaway development values. Kubernetes and Helm have **no** default passwords any more (they must be supplied), and the restricted database role is available as an overlay: `docker compose -f docker-compose.yml -f docker-compose.roles.yml up` ([security.md](docs/architecture/security.md#database-roles)).

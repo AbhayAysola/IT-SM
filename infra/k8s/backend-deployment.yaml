@@ -26,13 +26,15 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+            - containerPort: 8081
+              name: management
           envFrom:
             - configMapRef:
                 name: backend-config
             - secretRef:
                 name: backend-secret
-          # Spring Boot probe groups (backend/src/main/resources/application.yml). Actuator is NOT routed through the ingress (it only forwards
-          # /api and /), so these are reachable by the kubelet only.
+          # Spring Boot probe groups (backend/src/main/resources/application.yml). Actuator is served on the separate management port, which
+          # no Service or Ingress exposes, so these are reachable by the kubelet (and, for metrics, Prometheus) only.
           #  * startup:   gives boot + Flyway migrations up to 5s x 36 = 180s (200m CPU request) before liveness takes over, so a slow
           #               start is never mistaken for a dead process.
           #  * liveness:  the process itself. Does NOT include PostgreSQL, Redis or RabbitMQ: a dependency outage must not restart pods.
@@ -41,7 +43,7 @@ spec:
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8080
+              port: management
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 5
@@ -49,14 +51,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8080
+              port: management
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: 8080
+              port: management
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

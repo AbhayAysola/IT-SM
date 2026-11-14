@@ -8,6 +8,7 @@ import com.itsm.common.spi.TechnicianSummary
 import com.itsm.common.spi.TechnicianWorkloadProvider
 import com.itsm.common.spi.UserDirectory
 import com.itsm.common.spi.UserSummary
+import com.itsm.common.model.Priority
 import com.itsm.common.model.Role
 import com.itsm.common.security.CurrentUser
 import com.itsm.investigation.InvestigationEntryType
@@ -226,6 +227,40 @@ class IncidentFlowIntegrationTest {
         assertEquals(listOf(assigned), ids(IncidentListQuery(scope.copy(all = true), setOf(S.ASSIGNED), "flicker", 0, 20)).filter { it == assigned })
         // a search containing SQL is just text
         assertEquals(emptyList<String>(), ids(IncidentListQuery(scope, emptySet(), "'; DROP TABLE incidents; --", 0, 20)))
+    }
+
+    @Test fun `the list narrows by priority, category, service, technician, creation date and SLA status`() {
+        val admin = IncidentScope(user(Role.ADMIN).id, true)
+        val t1 = user(Role.TECHNICIAN); val t2 = user(Role.TECHNICIAN); val r = user(Role.EMPLOYEE)
+        val a = incident(r.id, S.ASSIGNED, assignee = t1.id, category = 1, priority = "P1")
+        val b = incident(r.id, S.ASSIGNED, assignee = t2.id, category = 2, priority = "P2")
+        val c = incident(r.id, S.CLASSIFIED, category = 1, priority = "P4")
+        jdbc.update("UPDATE incidents SET created_at = TIMESTAMPTZ '2026-03-10 12:00:00+00' WHERE id = ?", a)
+        jdbc.update("UPDATE incidents SET created_at = TIMESTAMPTZ '2026-03-11 00:00:00+00' WHERE id = ?", b)
+        jdbc.update("UPDATE incidents SET created_at = TIMESTAMPTZ '2026-03-12 23:59:59+00' WHERE id = ?", c)
+        fun sla(id: String, status: String) = jdbc.update(
+            "INSERT INTO incident_sla (incident_id, priority, service_id, clock_start, no_policy_reason, response_status, resolution_status, status) " +
+                "SELECT i.id, 'P3', i.service_id, i.created_at, 'MISSING_SLA_CONFIG', 'NO_POLICY', 'NO_POLICY', ? FROM incidents i WHERE i.id = ?", status, id)
+        sla(a, "BREACHED"); sla(b, "RUNNING")
+        val mine = setOf(a, b, c)
+        fun ids(f: IncidentFilters) = store.list(IncidentListQuery(admin, emptySet(), null, 0, 100, f)).rows.map { it.record.id }.filter { it in mine }.toSet()
+
+        assertEquals(mine, ids(IncidentFilters()), "no filters is no narrowing")
+        assertEquals(setOf(a), ids(IncidentFilters(priorities = setOf(Priority.P1))))
+        assertEquals(setOf(a, b), ids(IncidentFilters(priorities = setOf(Priority.P1, Priority.P2))), "several priorities are OR")
+        assertEquals(setOf(a, c), ids(IncidentFilters(categoryId = 1)))
+        assertEquals(setOf(b), ids(IncidentFilters(assigneeId = t2.id)))
+        val svcOfB = store.find(b)!!.serviceId
+        assertEquals(setOf(b), ids(IncidentFilters(serviceId = svcOfB)))
+        val day = { d: String -> java.time.LocalDate.parse(d).atStartOfDay(java.time.ZoneOffset.UTC).toInstant() }
+        assertEquals(setOf(b, c), ids(IncidentFilters(createdFrom = day("2026-03-11"))), "from is inclusive")
+        assertEquals(setOf(a, b), ids(IncidentFilters(createdBefore = day("2026-03-12"))), "before is exclusive")
+        assertEquals(setOf(b), ids(IncidentFilters(createdFrom = day("2026-03-11"), createdBefore = day("2026-03-12"))))
+        assertEquals(setOf(a), ids(IncidentFilters(slaStatus = "BREACHED")))
+        assertEquals(emptySet<String>(), ids(IncidentFilters(slaStatus = "MET")), "an incident without an SLA row matches no status")
+        assertEquals(setOf(a), ids(IncidentFilters(categoryId = 1, priorities = setOf(Priority.P1, Priority.P2), slaStatus = "BREACHED")), "filters combine with AND")
+        val paged = store.list(IncidentListQuery(admin, emptySet(), null, 0, 1, IncidentFilters(categoryId = 1)))
+        assertEquals(1, paged.rows.size); assertTrue(paged.total >= 2, "the total counts every match, not just the page")
     }
 
     @Test fun `the list says whether feedback was given`() {

@@ -14,6 +14,7 @@ import com.itsm.user.UserRepository
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.Order
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.AuthenticationProvider
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider
@@ -27,6 +28,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.util.matcher.RequestMatcher
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.filter.CorsFilter
@@ -87,7 +89,36 @@ class SecurityConfig(
         return source
     }
 
+    /**
+     * The port actuator is served on when it is separate from the API (`MANAGEMENT_SERVER_PORT` / `management.server.port`), or null
+     * when actuator shares the API port (local development and the test suite).
+     */
+    @Value("\${management.server.port:#{null}}")
+    private var managementPort: Int? = null
+
+    /**
+     * Only exists to open the management port to Prometheus. That port is never published by the Service, Ingress or compose `ports:`;
+     * it is reachable from the cluster network only, and a NetworkPolicy limits it to the Prometheus pods and the kubelet (infra/k8s,
+     * infra/helm). Everything that is not an actuator path is refused on it, so the API is not reachable there even by mistake.
+     * It matches nothing when no separate management port is configured, so the main chain below is then the only one.
+     */
     @Bean
+    @Order(1)
+    fun managementSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
+        val port = managementPort
+        http
+            .securityMatcher(RequestMatcher { request -> port != null && request.localPort == port })
+            .csrf { it.disable() }
+            .authorizeHttpRequests {
+                it.requestMatchers("/actuator/**").permitAll()
+                it.anyRequest().denyAll()
+            }
+            .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+        return http.build()
+    }
+
+    @Bean
+    @Order(2)
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
             .cors { it.configurationSource(corsConfigurationSource()) }

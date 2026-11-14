@@ -11,10 +11,12 @@ export interface ApiIncident {
   reporterId: number; assigneeId: number | null; categoryId: number | null; serviceId: number | null; priority: Priority | null;
   assignedAt: string | null; firstResponseAt: string | null; resolvedAt: string | null; closedAt: string | null;
   availableTransitions: string[];
+  reporterName?: string | null; assigneeName?: string | null; categoryName?: string | null; serviceName?: string | null;
 }
 export interface ApiIncidentSummary {
   id: string; title: string; state: IncidentState; priority: Priority | null; reporterId: number; assigneeId: number | null;
   categoryId: number | null; serviceId: number | null; createdAt: string; updatedAt: string; resolvedAt: string | null; hasFeedback: boolean;
+  reporterName?: string | null; assigneeName?: string | null; categoryName?: string | null; serviceName?: string | null;
 }
 export interface ApiIncidentList {
   items: ApiIncidentSummary[]; page: number; size: number; totalItems: number; totalPages: number; stateCounts: Partial<Record<IncidentState, number>>;
@@ -42,17 +44,17 @@ export const liveId = (email: string): number | null => {
 };
 
 /** Who a user id is, as far as we know. The signed-in user is the only one with a real name and email. */
-export const who = (me: Me, id: number | null): { email: string; name: string } | null =>
-  id === null ? null : id === me.id ? { email: me.email, name: me.name } : { email: liveEmail(id), name: `User #${id}` };
+export const who = (me: Me, id: number | null, name?: string | null): { email: string; name: string } | null =>
+  id === null ? null : id === me.id ? { email: me.email, name: me.name } : { email: liveEmail(id), name: name || `User #${id}` };
 
 export function toIncident(d: ApiIncident, me: Me): Incident {
-  const reporter = who(me, d.reporterId)!;
-  const assignee = who(me, d.assigneeId);
+  const reporter = who(me, d.reporterId, d.reporterName)!;
+  const assignee = who(me, d.assigneeId, d.assigneeName);
   return {
     id: d.id, title: d.title, description: d.description,
-    // Names are not returned yet (the API has ids only), so the id stands in. See the TODO list.
-    category: d.categoryId === null ? 'Not categorised' : `Category #${d.categoryId}`,
-    service: d.serviceId === null ? 'Not set' : `Service #${d.serviceId}`,
+    // The API returns display names; the id only stands in if a directory was unavailable when it answered.
+    category: d.categoryId === null ? 'Not categorised' : d.categoryName || `Category #${d.categoryId}`,
+    service: d.serviceId === null ? 'Not set' : d.serviceName || `Service #${d.serviceId}`,
     priority: d.priority ?? 'P3', state: d.state,
     reporterEmail: reporter.email, reporterName: reporter.name,
     assigneeEmail: assignee?.email ?? null, assigneeName: assignee?.name ?? null,
