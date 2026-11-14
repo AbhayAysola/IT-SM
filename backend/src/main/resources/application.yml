@@ -60,6 +60,14 @@ app:
       interval-ms: ${SLA_MONITOR_INTERVAL_MS:60000}
       initial-delay-ms: ${SLA_MONITOR_INITIAL_DELAY_MS:30000}
       batch-size: ${SLA_MONITOR_BATCH_SIZE:500}
+  escalation:
+    monitor:
+      # P4's escalation monitor (docs/architecture/p4.md section 3); runs after the SLA monitor, safe on every instance.
+      # When it fires is admin configuration (/api/admin/escalation-settings), not here.
+      enabled: ${ESCALATION_MONITOR_ENABLED:true}
+      interval-ms: ${ESCALATION_MONITOR_INTERVAL_MS:60000}
+      initial-delay-ms: ${ESCALATION_MONITOR_INITIAL_DELAY_MS:45000}
+      batch-size: ${ESCALATION_MONITOR_BATCH_SIZE:500}
 
 management:
   endpoints:

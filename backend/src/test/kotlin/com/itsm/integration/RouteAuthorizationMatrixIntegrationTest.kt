@@ -89,6 +89,7 @@ class RouteAuthorizationMatrixIntegrationTest {
             "$ADMIN/services" to Permission.CATALOG_MANAGE,
             "$ADMIN/sla-policies" to Permission.SLA_CONFIGURE,
             "$ADMIN/assignment-settings" to Permission.ASSIGNMENT_CONFIGURE,
+            "$ADMIN/escalation-settings" to Permission.SLA_CONFIGURE,
             "$ADMIN/audit-events" to Permission.AUDIT_VIEW
         )
         private val ADMIN_PERMISSIONS = AREAS.map { it.second }.toSet()
@@ -252,6 +253,14 @@ class RouteAuthorizationMatrixIntegrationTest {
         "POST $ADMIN/sla-policies/{id}/activate" to { Probe(HttpMethod.POST, "$ADMIN/sla-policies/${policy(active = false)["id"].asLong()}/activate") },
         "POST $ADMIN/sla-policies/{id}/deactivate" to { Probe(HttpMethod.POST, "$ADMIN/sla-policies/${policy()["id"].asLong()}/deactivate") },
 
+        "GET $ADMIN/escalation-settings" to { Probe(HttpMethod.GET, "$ADMIN/escalation-settings") },
+        "PUT $ADMIN/escalation-settings" to {
+            // Re-saving the current values is a valid request (a no-op), so the shared singleton is never changed here.
+            val current = api(HttpMethod.GET, "$ADMIN/escalation-settings")
+            Probe(HttpMethod.PUT, "$ADMIN/escalation-settings", mapOf(
+                "unassignedMinutes" to current["unassignedMinutes"].asInt(), "secondLevelPct" to current["secondLevelPct"].asInt(),
+                "adminLevelPct" to current["adminLevelPct"].asInt(), "version" to current["version"].asLong()))
+        },
         "GET $ADMIN/assignment-settings" to { Probe(HttpMethod.GET, "$ADMIN/assignment-settings") },
         "PUT $ADMIN/assignment-settings" to {
             val current = api(HttpMethod.GET, "$ADMIN/assignment-settings")

@@ -38,6 +38,7 @@ export class AdminFake {
   services: (Row & Record<string, any>)[] = [];
   sla: (Row & Record<string, any>)[] = [];
   assignment: Record<string, any> = {};
+  escalation: Record<string, any> = {};
   /**
    * The strategy catalog, as B9's contract reports it. `null` = ABSENT (GET: `strategyCatalogStatus: 'ABSENT'`,
    * `availableStrategies: null`; PUT: 503). An array = AVAILABLE (possibly empty: nothing registered, every PUT 400).
@@ -68,6 +69,7 @@ export class AdminFake {
     this.addSla(null, 'P1', 15, 120); this.addSla(null, 'P2', 30, 240); this.addSla(null, 'P3', 60, 480); this.addSla(null, 'P4', 120, 1440); this.addSla(2, 'P1', 5, 60);
     this.addTechnician(3, 5, 4, [{ categoryId: 1, proficiency: 4 }], true); this.addTechnician(4, 8, 10, [{ categoryId: 2, proficiency: 5 }, { categoryId: 3, proficiency: 2 }]);
     this.assignment = { activeStrategy: 'ROUND_ROBIN', defaultMaxWorkload: 5, categoryOverrides: [], version: 0, updatedAt: now(), updatedByUserId: null };
+    this.escalation = { unassignedMinutes: 30, secondLevelPct: 150, adminLevelPct: 200, version: 0, updatedAt: now(), updatedByUserId: null };
   }
 
   addUser(name: string, role: string, email = `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@example.test`) {
@@ -144,6 +146,7 @@ export class AdminFake {
       case 'services': return this.servicesApi(req, id, action);
       case 'sla-policies': return this.slaApi(req, id, action);
       case 'assignment-settings': return this.assignmentApi(req);
+      case 'escalation-settings': return this.escalationApi(req);
       default: return problem(404, 'RESOURCE_NOT_FOUND', 'Not found');
     }
   }
@@ -410,5 +413,21 @@ export class AdminFake {
     if (badIdx >= 0) return invalid(`categoryOverrides[${badIdx}].strategy`, `'${overrides[badIdx].strategy}' is not a registered strategy`);
     Object.assign(this.assignment, { activeStrategy: b.activeStrategy, defaultMaxWorkload: b.defaultMaxWorkload, categoryOverrides: overrides, version: this.assignment.version + 1, updatedAt: now(), updatedByUserId: 1 });
     return { status: 200, body: this.assignmentView() };
+  }
+
+  // ---- escalation settings (P4): the same rules as EscalationSettings.validate ----
+  private escalationApi({ method, body }: RecordedRequest): FakeResult {
+    if (method === 'GET') return { status: 200, body: { ...this.escalation } };
+    if (method !== 'PUT') return problem(405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
+    const b = (body ?? {}) as Record<string, any>;
+    const errors: { field: string; message: string }[] = [];
+    if (!(Number.isInteger(b.unassignedMinutes) && b.unassignedMinutes >= 1 && b.unassignedMinutes <= 10080)) errors.push({ field: 'unassignedMinutes', message: 'must be between 1 and 10080 minutes (one week)' });
+    if (!(Number.isInteger(b.secondLevelPct) && b.secondLevelPct >= 101 && b.secondLevelPct <= 1000)) errors.push({ field: 'secondLevelPct', message: 'must be between 101 and 1000' });
+    if (!(Number.isInteger(b.adminLevelPct) && b.adminLevelPct >= 101 && b.adminLevelPct <= 1000)) errors.push({ field: 'adminLevelPct', message: 'must be between 101 and 1000' });
+    else if (b.adminLevelPct <= b.secondLevelPct) errors.push({ field: 'adminLevelPct', message: 'must be greater than secondLevelPct' });
+    if (errors.length) return problem(400, 'INVALID_INPUT', 'Invalid escalation settings', errors);
+    if (b.version !== this.escalation.version) return stale('escalation configuration');
+    Object.assign(this.escalation, { unassignedMinutes: b.unassignedMinutes, secondLevelPct: b.secondLevelPct, adminLevelPct: b.adminLevelPct, version: this.escalation.version + 1, updatedAt: now(), updatedByUserId: 1 });
+    return { status: 200, body: { ...this.escalation } };
   }
 }

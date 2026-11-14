@@ -2,7 +2,7 @@
 
 > An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
 
-> **Status:** P1 (access and administration) is complete and merged, with P2 intake, P3 lifecycle/assignment and the incident workspace on `main` too. P4 has started: priority calculation and SLA tracking are built; escalation, notifications and analytics are not. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
+> **Status:** P1 (access and administration) is complete and merged, with P2 intake, P3 lifecycle/assignment and the incident workspace on `main` too. P4 has started: priority calculation, SLA tracking and escalation are built; notifications and analytics are not. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
 
 ## 📚 Documentation
 
@@ -37,7 +37,8 @@
 | Incident lifecycle, assignment, investigation timeline, feedback | On `main` (P3), including the strategy catalog and workload provider P1 consumes |
 | Priority calculation | **Done** (P4 with P2): the report form asks impact and urgency, and P4's `PriorityPolicy` derives the priority (service criticality and dependent services included). See [p4.md](docs/architecture/p4.md) section 1 |
 | SLA timers and breach detection | **Done** (P4): `V40`, a scheduled monitor, `GET /api/incidents/{id}/sla`, `GET /api/sla/incidents`, and the incident page's "Service level" card. See the integration guide's P4 section |
-| Escalation, notifications, analytics | **Not built** (P4) |
+| Escalation | **Done** (P4): `V41`, an escalation monitor (breach to the team lead, 150 %/200 % of the target further up, unassigned to the admins), the admin "Escalation" page and the incident's escalation history. See [p4.md](docs/architecture/p4.md) section 3 |
+| Notifications, analytics | **Not built** (P4) |
 | Kubernetes / Helm | HTTPS only, build-time API origin, separate liveness/readiness probes. Production hardening is assigned to the deployment owners: [handoff section 5](docs/p1-handoff.md) |
 | Redis / RabbitMQ | In the compose stack and config; no P1 feature uses them (health groups account for that) |
 | CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |

@@ -83,7 +83,7 @@ export default function IncidentDetailPage() {
     );
   }
 
-  const { incident: i, audience, timeline, feedback, actions, canAddNote, canGiveFeedback, similar, sla } = data;
+  const { incident: i, audience, timeline, feedback, actions, canAddNote, canGiveFeedback, similar, sla, escalations } = data;
   const label = (t: TransitionName) => TRANSITION_LABEL[t][audience];
   const perform = async (t: TransitionName, reason = '') => {
     await incidentService.perform(actor, i.id, t, reason);
@@ -158,7 +158,7 @@ export default function IncidentDetailPage() {
             </CardContent>
           </Card>
 
-          {sla && <SlaPanel sla={sla} />}
+          {sla && <SlaPanel sla={sla} escalations={escalations} />}
 
           {(actions.length > 0) && (
             <Card>
