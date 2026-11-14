@@ -26,7 +26,9 @@ enum class NotificationType {
     /** To the assignee (the admins when nobody has it): predicted to miss the resolution deadline (V43). */
     SLA_AT_RISK,
     /** To the assignee: an admin changed the incident's priority (V44). */
-    PRIORITY_CHANGED
+    PRIORITY_CHANGED,
+    /** To every active admin: P4 suggests a different priority (V45). */
+    PRIORITY_SUGGESTED
 }
 
 /** Where a notification is delivered. */

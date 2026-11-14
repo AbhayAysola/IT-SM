@@ -70,6 +70,16 @@ app:
       # resolved in the last history-days days.
       history-days: ${SLA_RISK_HISTORY_DAYS:180}
       batch-size: ${SLA_RISK_BATCH_SIZE:500}
+  priority:
+    monitor:
+      # P4's priority suggestions (docs/architecture/p4.md section 1): flags open incidents whose priority looks out of date
+      # and tells the admins. It never changes a priority itself.
+      enabled: ${PRIORITY_MONITOR_ENABLED:true}
+      interval-ms: ${PRIORITY_MONITOR_INTERVAL_MS:300000}
+      initial-delay-ms: ${PRIORITY_MONITOR_INITIAL_DELAY_MS:60000}
+      batch-size: ${PRIORITY_MONITOR_BATCH_SIZE:500}
+      # New reports flagged as duplicates within this many hours count towards the DUPLICATES rule.
+      duplicate-window-hours: ${PRIORITY_DUPLICATE_WINDOW_HOURS:24}
   p4:
     event-listeners:
       # P4 reacts to P2/P3's incident domain events (docs/architecture/p4.md section 6): SLA evaluation, lifecycle

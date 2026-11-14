@@ -3,6 +3,7 @@ import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../mod
 import { IncidentError, type Actor, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
 import type { AnalysisResult, FilterOptions, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
+import type { PrioritySuggestionView } from '../model/priority';
 import { technicianApi } from '@/features/admin/services/technician-api';
 import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 import {
@@ -130,6 +131,17 @@ export const liveIncidentService = {
     const technicianId = liveId(technicianEmail);
     if (technicianId === null) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
     await call('POST', `/${enc(id)}/assignment`, { technicianId, reason: reason ?? null });
+  },
+
+  /** P4's open suggestion, or null (204). Admins only. */
+  async prioritySuggestion(_actor: Actor, id: string): Promise<PrioritySuggestionView | null> {
+    const d = await call<Partial<PrioritySuggestionView>>('GET', `/${enc(id)}/priority-suggestion`);
+    if (!d.suggestedPriority || !d.currentPriority) return null;
+    return { currentPriority: d.currentPriority, suggestedPriority: d.suggestedPriority, rules: d.rules ?? [], reasons: d.reasons ?? [], createdAt: d.createdAt ?? '' };
+  },
+
+  async dismissPrioritySuggestion(_actor: Actor, id: string): Promise<void> {
+    await call('POST', `/${enc(id)}/priority-suggestion/dismiss`);
   },
 
   /** P2's `POST /api/incidents/{id}/priority` (admins). */

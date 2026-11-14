@@ -78,6 +78,13 @@ object NotificationMessages {
         return listOf(make(c, assignee, NotificationType.PRIORITY_CHANGED, "${c.incidentId} priority $direction to ${to.name}", "${c.title}. It was ${from.name}; the SLA deadlines follow the new priority."))
     }
 
+    /** To every active admin, once: they decide whether to apply it. */
+    fun forPrioritySuggestion(c: IncidentContext, current: Priority, suggested: Priority, reasons: List<String>, admins: List<Long>): List<Notification> {
+        val verb = if (suggested.ordinal < current.ordinal) "raising" else "lowering"
+        val body = "${c.title}. ${reasons.firstOrNull() ?: ""}".trim()
+        return admins.distinct().map { make(c, it, NotificationType.PRIORITY_SUGGESTED, "${c.incidentId}: consider $verb it to ${suggested.name} (now ${current.name})", body) }
+    }
+
     fun forEscalation(e: EscalationRecorded, c: IncidentContext): List<Notification> = e.targetUserIds.distinct().map {
         make(c, it, NotificationType.ESCALATED, "${c.incidentId} was escalated to you", "${e.trigger.description}: ${c.title}")
     }

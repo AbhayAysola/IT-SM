@@ -16,6 +16,7 @@ import { formatDay, formatWhen, PriorityBadge, StateBadge } from './components/b
 import { FeedbackCard } from './components/feedback-card';
 import { NoteForm } from './components/note-form';
 import { PriorityDialog } from './components/priority-dialog';
+import { PrioritySuggestionCard } from './components/priority-suggestion-card';
 import { ReasonDialog } from './components/reason-dialog';
 import { SimilarPanel } from './components/similar-panel';
 import { SlaPanel } from './components/sla-panel';
@@ -24,7 +25,7 @@ import { useActor } from './components/workspace-shell';
 import { TRANSITION_LABEL, WORKLOAD_STATES as WORK_IN_PROGRESS } from './model/lifecycle';
 import { IncidentError, type TransitionName } from './model/types';
 import { incidentService } from './services/incident-service';
-import { canChangePriority, direction } from './model/priority';
+import { canChangePriority, direction, suggestionReason, type PrioritySuggestionView } from './model/priority';
 
 /** Low-risk moves with nothing to say happen on one click; the rest go through a dialog. */
 const DIRECT: TransitionName[] = ['ACKNOWLEDGE', 'START_WORK'];
@@ -51,7 +52,13 @@ export default function IncidentDetailPage() {
   };
   const [busyAction, setBusyAction] = useState<TransitionName | null>(null);
   const [priorityOpen, setPriorityOpen] = useState(false);
+  const [applying, setApplying] = useState<PrioritySuggestionView | null>(null);
   const priorityOpener = useRef<HTMLElement | null>(null);
+  // Only admins act on priorities; for anyone else there is nothing to ask for.
+  const suggestion = useResource(
+    () => (actor.role === 'ADMIN' ? incidentService.prioritySuggestion(actor, id).catch(() => null) : Promise.resolve(null)),
+    [actor.email, id]
+  );
 
   const back = (
     <Link href="/incidents" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline">
@@ -125,7 +132,7 @@ export default function IncidentDetailPage() {
           <PriorityBadge priority={i.priority} />
           {canChangePriority(actor.role, i.state) && (
             <Button variant="link" size="sm" className="h-auto p-0 text-xs"
-              onClick={(e) => { priorityOpener.current = e.currentTarget; setPriorityOpen(true); }}>
+              onClick={(e) => { priorityOpener.current = e.currentTarget; setApplying(null); setPriorityOpen(true); }}>
               Change priority
             </Button>
           )}
@@ -168,6 +175,18 @@ export default function IncidentDetailPage() {
             </CardContent>
           </Card>
 
+          {suggestion.data && canChangePriority(actor.role, i.state) && (
+            <PrioritySuggestionCard
+              suggestion={suggestion.data}
+              onApply={(opener) => { priorityOpener.current = opener; setApplying(suggestion.data); setPriorityOpen(true); }}
+              onDismiss={async () => {
+                await incidentService.dismissPrioritySuggestion(actor, i.id);
+                toast.success('Suggestion dismissed. It will not be suggested again for this incident.');
+                suggestion.reload();
+              }}
+            />
+          )}
+
           {sla && <SlaPanel sla={sla} escalations={escalations} />}
 
           {(actions.length > 0) && (
@@ -193,10 +212,12 @@ export default function IncidentDetailPage() {
       </div>
 
       <PriorityDialog open={priorityOpen} onOpenChange={setPriorityOpen} current={i.priority} restoreFocusTo={priorityOpener}
+        suggested={applying?.suggestedPriority} defaultReason={applying ? suggestionReason(applying) : undefined}
         onConfirm={async (p, reason) => {
           await incidentService.changePriority(actor, i.id, p, reason);
           toast.success(`Priority ${direction(i.priority, p)} to ${p}. The SLA deadlines now follow it.`);
           reload();
+          suggestion.reload();
         }} />
       {dialog && dialog !== 'ASSIGN' && dialog !== 'REASSIGN' && (
         <ReasonDialog open={dialogOpen} onOpenChange={setDialogOpen} transition={dialog} audience={audience} restoreFocusTo={opener} onConfirm={(r) => perform(dialog, r)} />

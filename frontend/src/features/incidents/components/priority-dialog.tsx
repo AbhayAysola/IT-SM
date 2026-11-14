@@ -16,6 +16,8 @@ interface Props {
   current: Priority;
   /** Preselected choice (e.g. a suggestion); none by default. */
   suggested?: Priority;
+  /** Prefilled reason (e.g. a suggestion's), which the admin can edit. */
+  defaultReason?: string;
   /** May throw; an IncidentError's field errors are shown beside the fields and the dialog stays open. */
   onConfirm: (priority: Priority, reason: string) => Promise<void>;
   restoreFocusTo?: RefObject<HTMLElement | null>;
@@ -25,7 +27,7 @@ interface Props {
  * Changes an incident's priority (admins), with a reason kept in the audit trail. The SLA deadlines follow the new
  * priority and the assignee is told (P4), so the dialog says so before anyone confirms.
  */
-export function PriorityDialog({ open, onOpenChange, current, suggested, onConfirm, restoreFocusTo }: Props) {
+export function PriorityDialog({ open, onOpenChange, current, suggested, defaultReason, onConfirm, restoreFocusTo }: Props) {
   const [choice, setChoice] = useState<Priority | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,8 +35,8 @@ export function PriorityDialog({ open, onOpenChange, current, suggested, onConfi
   const [fields, setFields] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (open) { setChoice(suggested ?? null); setReason(''); setError(null); setFields({}); }
-  }, [open, suggested]);
+    if (open) { setChoice(suggested ?? null); setReason(defaultReason ?? ''); setError(null); setFields({}); }
+  }, [open, suggested, defaultReason]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

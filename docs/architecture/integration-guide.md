@@ -136,7 +136,9 @@ Use `UnauthorizedOperation` if a technician acts on an incident that is not thei
 **Design:** [p4.md](p4.md) (priority, SLA clock rules, escalation, notifications, analytics, open questions).
 
 **Priority (implemented, `priority/`).** P4 provides `PriorityPolicy` in `common/spi`; `CatalogPriorityPolicy` is the only
-implementation. `Impact` and `Urgency` (`HIGH`, `MEDIUM`, `LOW`, with `fromCode`) are shared vocabulary in `common/model`.
+implementation. Priorities can change while an incident is open: an admin changes one through P2's
+`POST /api/incidents/{id}/priority`, and P4's priority monitor suggests changes to admins (`V45`,
+`GET /api/incidents/{id}/priority-suggestion`, `.../dismiss`). See [p4.md](p4.md) section 1. `Impact` and `Urgency` (`HIGH`, `MEDIUM`, `LOW`, with `fromCode`) are shared vocabulary in `common/model`.
 
 ```kotlin
 val assessment = priorityPolicy.assess(serviceId, Impact.MEDIUM, Urgency.HIGH)

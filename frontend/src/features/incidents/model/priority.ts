@@ -31,3 +31,23 @@ export function priorityChangeErrors(current: Priority, next: Priority | null, r
 
 /** "raised" or "lowered", for messages. P1 is the highest. */
 export const direction = (from: Priority, to: Priority) => (PRIORITIES.indexOf(to) < PRIORITIES.indexOf(from) ? 'raised' : 'lowered');
+
+// ---- suggestions (P4's priority monitor) -------------------------------------------------------------------------
+
+/** P4 suggests a different priority for an open incident (admins only; GET /api/incidents/{id}/priority-suggestion). */
+export interface PrioritySuggestionView {
+  currentPriority: Priority;
+  suggestedPriority: Priority;
+  rules: ('CRITICALITY' | 'DUPLICATES')[];
+  /** Plain-language reasons, shown as they are. */
+  reasons: string[];
+  createdAt: string;
+}
+
+/** "Raise to P1 Critical" or "Lower to P4 Low". */
+export const suggestionHeadline = (s: PrioritySuggestionView) =>
+  `${direction(s.currentPriority, s.suggestedPriority) === 'raised' ? 'Raise' : 'Lower'} to ${PRIORITY_NAME[s.suggestedPriority]}`;
+
+/** The reason prefilled when an admin applies a suggestion (they can edit it); within the backend's limit. */
+export const suggestionReason = (s: PrioritySuggestionView) =>
+  `Applied the suggested priority: ${s.reasons.join(' ')}`.slice(0, MAX_PRIORITY_REASON);

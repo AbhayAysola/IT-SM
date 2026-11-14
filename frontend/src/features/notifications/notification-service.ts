@@ -8,7 +8,7 @@ import { request } from '@/lib/api';
 
 export type NotificationType =
   | 'INCIDENT_ASSIGNED' | 'ASSIGNMENT_MADE' | 'INFO_REQUESTED' | 'INCIDENT_RESOLVED' | 'INCIDENT_REOPENED'
-  | 'SLA_WARNING' | 'SLA_BREACHED' | 'SLA_POLICY_MISSING' | 'ESCALATED' | 'SLA_AT_RISK' | 'PRIORITY_CHANGED';
+  | 'SLA_WARNING' | 'SLA_BREACHED' | 'SLA_POLICY_MISSING' | 'ESCALATED' | 'SLA_AT_RISK' | 'PRIORITY_CHANGED' | 'PRIORITY_SUGGESTED';
 
 export interface NotificationItem {
   id: number;

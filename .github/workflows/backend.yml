@@ -138,6 +138,7 @@ jobs:
               'com.itsm.integration.IncidentEventReactionsIntegrationTest': 3,
               'com.itsm.integration.IncidentListSlaIntegrationTest': 3,
               'com.itsm.integration.IncidentPriorityChangeIntegrationTest': 2,
+              'com.itsm.priority.PrioritySuggestionIntegrationTest': 4,
           }
           total = skipped = 0
           executed = {}
