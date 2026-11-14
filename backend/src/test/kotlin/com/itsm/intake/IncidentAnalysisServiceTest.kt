@@ -54,9 +54,8 @@ class IncidentAnalysisServiceTest {
         )).thenReturn(emptyList())
     }
 
-    private fun claudeResponse(payload: String) = """
-        {"content":[{"type":"text","text":${mapper.writeValueAsString(payload)}}]}
-    """.trimIndent()
+    private fun geminiResponse(payload: String) =
+        """{"candidates":[{"content":{"parts":[{"text":${mapper.writeValueAsString(payload)}}]}}]}"""
 
     // ---- no API key -------------------------------------------------------------------------
 
@@ -70,7 +69,7 @@ class IncidentAnalysisServiceTest {
     @Test fun `parseResponse handles a well-formed Claude reply`() {
         val (svc, _) = service()
         val payload = """{"suggestedCategoryId":1,"suggestedCategoryName":"Network","confidence":"HIGH","reasoning":"wifi issue","possibleDuplicates":[]}"""
-        val result = svc.parseResponse(claudeResponse(payload))
+        val result = svc.parseResponse(geminiResponse(payload))
         assertEquals(1L, result.suggestedCategoryId)
         assertEquals("Network", result.suggestedCategoryName)
         assertEquals("HIGH", result.confidence)
@@ -81,7 +80,7 @@ class IncidentAnalysisServiceTest {
     @Test fun `parseResponse surfaces duplicate candidates`() {
         val (svc, _) = service()
         val payload = """{"suggestedCategoryId":2,"suggestedCategoryName":"Hardware","confidence":"MEDIUM","reasoning":"monitor","possibleDuplicates":[{"id":"INC1001","title":"Screen black","reason":"same symptom"}]}"""
-        val result = svc.parseResponse(claudeResponse(payload))
+        val result = svc.parseResponse(geminiResponse(payload))
         assertEquals(1, result.possibleDuplicates.size)
         assertEquals("INC1001", result.possibleDuplicates[0].id)
     }
@@ -89,7 +88,7 @@ class IncidentAnalysisServiceTest {
     @Test fun `parseResponse accepts a null suggestedCategoryId`() {
         val (svc, _) = service()
         val payload = """{"suggestedCategoryId":null,"suggestedCategoryName":null,"confidence":"LOW","reasoning":"unclear","possibleDuplicates":[]}"""
-        val result = svc.parseResponse(claudeResponse(payload))
+        val result = svc.parseResponse(geminiResponse(payload))
         assertNull(result.suggestedCategoryId)
     }
 
@@ -115,9 +114,9 @@ class IncidentAnalysisServiceTest {
         val (svc, server) = service()
         stubCatalogAndDb()
         val payload = """{"suggestedCategoryId":1,"suggestedCategoryName":"Network","confidence":"HIGH","reasoning":"wifi","possibleDuplicates":[]}"""
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
-            .andRespond(withSuccess(claudeResponse(payload), MediaType.APPLICATION_JSON))
+            .andRespond(withSuccess(geminiResponse(payload), MediaType.APPLICATION_JSON))
 
         val result = svc.analyze("WiFi down", "No connection in office")
         assertEquals(1L, result.suggestedCategoryId)
@@ -128,7 +127,7 @@ class IncidentAnalysisServiceTest {
     @Test fun `analyze throws InvalidInput when the API returns a server error`() {
         val (svc, server) = service()
         stubCatalogAndDb()
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
             .andRespond(withServerError())
 
         assertThrows<InvalidInput> { svc.analyze("title", "desc") }

@@ -13,7 +13,7 @@ import org.springframework.web.client.RestClientException
 
 @Service
 class IncidentAnalysisService(
-    @Value("\${anthropic.api-key:}") private val apiKey: String,
+    @Value("\${gemini.api-key:}") private val apiKey: String,
     private val jdbc: JdbcTemplate,
     private val categories: CategoryCatalog,
     private val mapper: ObjectMapper,
@@ -21,8 +21,8 @@ class IncidentAnalysisService(
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(IncidentAnalysisService::class.java)
-        private const val ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-        private const val MODEL = "claude-haiku-4-5-20251001"
+        private const val GEMINI_BASE_URL =
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
     }
 
     private val client = restClientBuilder.build()
@@ -98,25 +98,22 @@ class IncidentAnalysisService(
 
         val body = mapper.writeValueAsString(
             mapOf(
-                "model" to MODEL,
-                "max_tokens" to 512,
-                "system" to systemPrompt,
-                "messages" to listOf(mapOf("role" to "user", "content" to userContent))
+                "system_instruction" to mapOf("parts" to listOf(mapOf("text" to systemPrompt))),
+                "contents" to listOf(mapOf("role" to "user", "parts" to listOf(mapOf("text" to userContent)))),
+                "generationConfig" to mapOf("maxOutputTokens" to 512)
             )
         )
 
         val responseText = try {
             client.post()
-                .uri(ANTHROPIC_URL)
-                .header("x-api-key", apiKey)
-                .header("anthropic-version", "2023-06-01")
+                .uri("$GEMINI_BASE_URL?key=$apiKey")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()
                 .body(String::class.java)
                 ?: throw InvalidInput("Empty response from AI service.")
         } catch (e: RestClientException) {
-            log.warn("Anthropic API call failed: ${e.message}")
+            log.warn("Gemini API call failed: ${e.message}")
             throw InvalidInput("AI service is unavailable. Please try again later.")
         }
 
@@ -127,12 +124,12 @@ class IncidentAnalysisService(
         val root = try {
             mapper.readTree(responseText)
         } catch (e: Exception) {
-            log.warn("Failed to parse Anthropic envelope as JSON: $responseText")
+            log.warn("Failed to parse Gemini envelope as JSON: $responseText")
             throw InvalidInput("AI returned an unexpected response.")
         }
 
-        // Claude Messages API: content[0].text holds the model's reply
-        val text = root.path("content").get(0)?.path("text")?.asText()
+        val text = root.path("candidates").get(0)
+            ?.path("content")?.path("parts")?.get(0)?.path("text")?.asText()
             ?: throw InvalidInput("AI response had no text content.")
 
         return try {
