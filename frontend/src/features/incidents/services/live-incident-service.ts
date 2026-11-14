@@ -1,9 +1,10 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
 import { IncidentError, type Actor, type Audience, type IncidentState, type Recommendation, type TransitionName } from '../model/types';
-import type { AnalysisResult, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
+import type { AnalysisResult, FilterOptions, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
-import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
+import { technicianApi } from '@/features/admin/services/technician-api';
+import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type TabId } from './tabs';
 import {
   liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toSimilar, toSla, toTimelineEntry,
   type ApiEscalation, type ApiFeedback, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
@@ -44,12 +45,19 @@ export const liveIncidentService = {
    * One request per page of a tab. The backend scopes the list to what the caller may open and orders it by urgency, so nothing is
    * filtered here. `needsAttention` floats the incidents waiting on this person first within the page (the server cannot know it).
    */
-  async list(actor: Actor, tab: TabId, search = '', page = 1): Promise<IncidentListResult> {
+  async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}): Promise<IncidentListResult> {
     const who = me(actor);
     const tabs = TABS[actor.role];
     const states = (tabs.find((t) => t.id === tab) ?? tabs[0]).states;
     const query = new URLSearchParams({ states: states.join(','), page: String(Math.max(1, page) - 1), size: String(INCIDENT_PAGE_SIZE) });
     if (search.trim()) query.set('q', search.trim());
+    if (filters.priority) query.set('priority', filters.priority);
+    if (filters.categoryId !== undefined) query.set('categoryId', String(filters.categoryId));
+    if (filters.serviceId !== undefined) query.set('serviceId', String(filters.serviceId));
+    if (filters.assigneeId !== undefined) query.set('assigneeId', String(filters.assigneeId));
+    if (filters.slaStatus) query.set('slaStatus', filters.slaStatus);
+    if (filters.from) query.set('createdFrom', filters.from);
+    if (filters.to) query.set('createdTo', filters.to);
     const page_ = await call<ApiIncidentList>('GET', `?${query}`);
     const counts = Object.fromEntries(tabs.map((t) => [t.id, t.states.reduce((n, s) => n + (page_.stateCounts[s] ?? 0), 0)])) as Partial<Record<TabId, number>>;
     const items = page_.items
@@ -126,6 +134,17 @@ export const liveIncidentService = {
 
   async submitFeedback(_actor: Actor, id: string, rating: number, comment: string): Promise<void> {
     await call('POST', `/${enc(id)}/feedback`, { rating, comment: comment.trim() || null });
+  },
+
+  /** The categories and services the backend knows, plus (admins only) the technicians: the list filters use ids. */
+  async loadFilterOptions(actor: Actor): Promise<FilterOptions> {
+    const catalog = await liveIncidentService.loadCatalog();
+    if (actor.role !== 'ADMIN') return { ...catalog, technicians: [] };
+    // Inactive technicians stay in the list: old incidents are still filed under them. A failure only hides this one dropdown.
+    const technicians = await technicianApi.list({ active: 'ALL', sort: 'name', dir: 'asc', size: 100 })
+      .then((p) => p.items.map((t) => ({ id: t.userId, name: t.name })))
+      .catch(() => []);
+    return { ...catalog, technicians };
   },
 
   async loadCatalog(): Promise<{ categories: { id: number; name: string }[]; services: { id: number; name: string }[] }> {

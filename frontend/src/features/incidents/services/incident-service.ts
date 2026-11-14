@@ -15,9 +15,9 @@ import { mockSla } from '../model/sla';
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
 import { needsAttention, same } from './attention';
-import { INCIDENT_PAGE_SIZE, TABS, type TabId } from './tabs';
+import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type TabId } from './tabs';
 
-export { TABS, defaultTab, INCIDENT_PAGE_SIZE, type TabId } from './tabs';
+export { TABS, defaultTab, INCIDENT_PAGE_SIZE, activeFilterCount, FILTER_SLA_STATUSES, type IncidentFilters, type FilterSlaStatus, type TabId } from './tabs';
 
 /** Mirrors the backend com.itsm.common.model.Impact enum. */
 export type Impact = 'HIGH' | 'MEDIUM' | 'LOW';
@@ -152,8 +152,40 @@ export const COMMENT_MAX = 1000;
 
 // ---- The service --------------------------------------------------------------------------------------------------
 
+/**
+ * The mock's filter choices: the distinct categories and services among the account's demo incidents, numbered in name order
+ * (the report form's catalog uses different names, so it cannot be used to filter the seeded data).
+ */
+function mockFilterOptions(incidents: Incident[]) {
+  const distinct = (pick: (i: Incident) => string) =>
+    Array.from(new Set(incidents.map(pick))).sort().map((name, idx) => ({ id: idx + 1, name }));
+  // Technician ids are positions in the demo roster, so the same id means the same person in the dropdown and the filter.
+  const technicians = DEMO_TECHNICIANS.map((t, idx) => ({ id: idx + 1, name: t.name }));
+  return { categories: distinct((i) => i.category), services: distinct((i) => i.service), technicians };
+}
+
+/** What the list's filter dropdowns offer. `technicians` is empty for everyone but admins. */
+export interface FilterOptions {
+  categories: { id: number; name: string }[];
+  services: { id: number; name: string }[];
+  technicians: { id: number; name: string }[];
+}
+
+/** The mock's copy of the backend's list filters (SLA status comes from the same mock clocks the detail page shows). */
+function matchesFilters(i: Incident, f: IncidentFilters, options: ReturnType<typeof mockFilterOptions>): boolean {
+  if (f.priority && i.priority !== f.priority) return false;
+  if (f.categoryId !== undefined && options.categories.find((c) => c.id === f.categoryId)?.name !== i.category) return false;
+  if (f.serviceId !== undefined && options.services.find((s) => s.id === f.serviceId)?.name !== i.service) return false;
+  if (f.assigneeId !== undefined && DEMO_TECHNICIANS[f.assigneeId - 1]?.email !== i.assigneeEmail) return false;
+  const created = Date.parse(i.createdAt);
+  if (f.from && created < Date.parse(`${f.from}T00:00:00Z`)) return false;
+  if (f.to && created >= Date.parse(`${f.to}T00:00:00Z`) + 86_400_000) return false;
+  if (f.slaStatus && (i.state === 'NEW' ? null : mockSla(i, Date.now()).status) !== f.slaStatus) return false;
+  return true;
+}
+
 export const mockIncidentService = {
-  async list(actor: Actor, tab: TabId, search = '', page = 1): Promise<IncidentListResult> {
+  async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}): Promise<IncidentListResult> {
     return simulate(() => {
       const w = world(actor);
       const mine = w.incidents.filter((i) => canOpen(actor, i));
@@ -162,9 +194,11 @@ export const mockIncidentService = {
       const tabs = TABS[actor.role];
       const counts = Object.fromEntries(tabs.map((t) => [t.id, mine.filter((i) => t.states.includes(i.state)).length])) as Partial<Record<TabId, number>>;
       const states = (tabs.find((t) => t.id === tab) ?? tabs[0]).states;
+      const filterOptions = mockFilterOptions(mine);
       const items = mine
         .filter((i) => states.includes(i.state))
         .filter((i) => !q || [i.id, i.title, i.category, i.service, i.reporterName, i.assigneeName ?? ''].some((s) => s.toLowerCase().includes(q)))
+        .filter((i) => matchesFilters(i, filters, filterOptions))
         .map((i) => ({ ...i, needsAttention: needsAttention(actor, i, hasFb(i.id)) }))
         .sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention) || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
       const pages = Math.max(1, Math.ceil(items.length / INCIDENT_PAGE_SIZE));
@@ -300,6 +334,14 @@ export const mockIncidentService = {
       w.feedback.push({ incidentId: id, reporterEmail: actor.email, rating, comment: text, submittedAt: new Date().toISOString() });
       saveWorld(actor.email, w);
     });
+  },
+
+  /** What the list's category and service filters offer. */
+  async loadFilterOptions(actor: Actor): Promise<FilterOptions> {
+    return simulate(() => ({
+      ...mockFilterOptions(world(actor).incidents.filter((i) => canOpen(actor, i))),
+      technicians: actor.role === 'ADMIN' ? mockFilterOptions([]).technicians : [],
+    }));
   },
 
   async loadCatalog(): Promise<{ categories: { id: number; name: string }[]; services: { id: number; name: string }[] }> {

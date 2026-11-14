@@ -17,6 +17,10 @@ ENV NODE_OPTIONS="--dns-result-order=ipv4first --no-network-family-autoselection
 # and must never be used for an image that is deployed to a cluster.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Which incident and notification service the pages use, also compiled in at build time. Images are always built for the real backend
+# (`live`); the in-browser demo data (`mock`) is for `npm run dev` and the hermetic Playwright suite only. Never ship `mock`.
+ARG NEXT_PUBLIC_INCIDENTS_API=live
+ENV NEXT_PUBLIC_INCIDENTS_API=$NEXT_PUBLIC_INCIDENTS_API
 RUN npm run build
 
 FROM node:20-alpine AS runner

@@ -33,6 +33,15 @@ test.describe('live API mappers', () => {
       .toMatchObject({ assigneeEmail: null, assigneeName: null, category: 'Not categorised', service: 'Not set', priority: 'P3' });
   });
 
+  test('display names from the API replace the id stand-ins, and the ids only stand in when a name is missing', () => {
+    const named = toIncident({ ...dto, reporterName: 'Rita', assigneeName: 'Priya', categoryName: 'VPN & Remote', serviceName: 'VPN Gateway' }, me);
+    expect(named).toMatchObject({ assigneeName: 'Priya', category: 'VPN & Remote', service: 'VPN Gateway' });
+    expect(named.assigneeEmail).toBe('user-13@live.invalid'); // identity is still the id; only the label changes
+    expect(toIncident({ ...dto, assigneeName: null, categoryName: null }, me)).toMatchObject({ assigneeName: 'User #13', category: 'Category #7' });
+    expect(who(me, 13, 'Priya')).toEqual({ email: 'user-13@live.invalid', name: 'Priya' });
+    expect(who(me, 12, 'Someone else')).toEqual({ email: 'rita@campus.example', name: 'Rita' }); // your own name comes from /users/me
+  });
+
   test('timeline entries get stable ids and the author by id', () => {
     const e = toTimelineEntry({ type: 'NOTE', authorId: 13, visibility: 'INTERNAL', body: 'x', incidentState: 'IN_PROGRESS', createdAt: 't' }, me, 'INC1001', 2);
     expect(e).toMatchObject({ id: 'INC1001-2', authorName: 'User #13', visibility: 'INTERNAL' });

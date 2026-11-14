@@ -15,10 +15,14 @@ import { Pagination } from '@/features/admin/components/pagination';
 import { PageHeader } from '@/features/admin/components/page-header';
 import { useToast } from '@/features/admin/components/toast';
 import { useDebounced, useResource } from '@/features/admin/hooks/use-resource';
+import { ClearFilters, FilterSelect } from '@/features/admin/components/filters';
 import { AssignDialog } from './components/assign-dialog';
 import { formatWhen, PriorityBadge, StateBadge } from './components/badges';
 import { useActor } from './components/workspace-shell';
-import { type IncidentRow, audienceFor, defaultTab, incidentService, INCIDENT_PAGE_SIZE, TABS, type TabId } from './services/incident-service';
+import {
+  activeFilterCount, type FilterSlaStatus, type IncidentFilters, type IncidentRow, audienceFor, defaultTab, FILTER_SLA_STATUSES, incidentService,
+  INCIDENT_PAGE_SIZE, TABS, type TabId,
+} from './services/incident-service';
 
 const COPY = {
   EMPLOYEE: { title: 'My incidents', description: 'Problems you have reported and where each one stands. We’ll tell you here when we need something from you.' },
@@ -29,6 +33,13 @@ const COPY = {
 const EMPTY: Record<TabId, string> = {
   ACTIVE: 'Nothing active right now.', WAITING: 'Nothing is waiting on a reporter.', DONE: 'No finished incidents yet.',
   UNASSIGNED: 'Every incident has a technician.', OPEN: 'You have no open incidents.',
+};
+
+const PRIORITY_OPTIONS = [
+  { value: 'P1', label: 'P1 Critical' }, { value: 'P2', label: 'P2 High' }, { value: 'P3', label: 'P3 Medium' }, { value: 'P4', label: 'P4 Low' },
+];
+const SLA_LABEL: Record<FilterSlaStatus, string> = {
+  BREACHED: 'Breached', WARNING: 'At risk', RUNNING: 'On track', PAUSED: 'Paused', MET: 'Met', NO_POLICY: 'No SLA policy',
 };
 
 const PRIO_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;
@@ -61,9 +72,20 @@ export default function IncidentsPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [sortPriority, setSortPriority] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
+  const [filters, setFilters] = useState<IncidentFilters>({});
   const debounced = useDebounced(search);
+  const filterKey = JSON.stringify(filters);
+  const filterCount = activeFilterCount(filters);
+  const catalog = useResource(() => incidentService.loadFilterOptions(actor), [actor.email]);
+  const setFilter = <K extends keyof IncidentFilters>(key: K, value: IncidentFilters[K] | undefined) => {
+    setFilters((f) => { const next = { ...f }; if (value === undefined || value === '') delete next[key]; else next[key] = value; return next; });
+    setPage(1);
+  };
 
-  const { data, loading, error, reload } = useResource(() => incidentService.list(actor, tab, debounced, page), [actor.email, tab, debounced, page]);
+  const { data, loading, error, reload } = useResource(
+    () => incidentService.list(actor, tab, debounced, page, filters),
+    [actor.email, tab, debounced, page, filterKey]
+  );
   const rawItems = data?.items ?? [];
   const items = sortPriority ? [...rawItems].sort((a, b) => PRIO_ORDER[a.priority] - PRIO_ORDER[b.priority]) : rawItems;
   const copy = COPY[actor.role];
@@ -109,6 +131,34 @@ export default function IncidentsPage() {
           </div>
         </div>
 
+        <div role="group" aria-label="Filter incidents" className="mb-3 flex flex-wrap items-center gap-2">
+          <FilterSelect label="Priority" allLabel="All priorities" value={filters.priority ?? 'ALL'} options={PRIORITY_OPTIONS}
+            onChange={(v) => setFilter('priority', v === 'ALL' ? undefined : (v as IncidentFilters['priority']))} />
+          <FilterSelect label="Category" allLabel="All categories" value={filters.categoryId === undefined ? 'ALL' : String(filters.categoryId)}
+            options={(catalog.data?.categories ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+            onChange={(v) => setFilter('categoryId', v === 'ALL' ? undefined : Number(v))} />
+          <FilterSelect label="Service" allLabel="All services" value={filters.serviceId === undefined ? 'ALL' : String(filters.serviceId)}
+            options={(catalog.data?.services ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+            onChange={(v) => setFilter('serviceId', v === 'ALL' ? undefined : Number(v))} />
+          {actor.role === 'ADMIN' && (
+            <FilterSelect label="Technician" allLabel="All technicians" value={filters.assigneeId === undefined ? 'ALL' : String(filters.assigneeId)}
+              options={(catalog.data?.technicians ?? []).map((t) => ({ value: String(t.id), label: t.name }))}
+              onChange={(v) => setFilter('assigneeId', v === 'ALL' ? undefined : Number(v))} />
+          )}
+          <FilterSelect label="SLA status" allLabel="Any SLA status" value={filters.slaStatus ?? 'ALL'}
+            options={FILTER_SLA_STATUSES.map((v) => ({ value: v, label: SLA_LABEL[v] }))}
+            onChange={(v) => setFilter('slaStatus', v === 'ALL' ? undefined : (v as FilterSlaStatus))} />
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="incident-from" className="text-xs text-muted-foreground">Reported from</Label>
+            <Input id="incident-from" type="date" className="w-[150px]" value={filters.from ?? ''} max={filters.to || undefined}
+              onChange={(e) => setFilter('from', e.target.value || undefined)} />
+            <Label htmlFor="incident-to" className="text-xs text-muted-foreground">to</Label>
+            <Input id="incident-to" type="date" className="w-[150px]" value={filters.to ?? ''} min={filters.from || undefined}
+              onChange={(e) => setFilter('to', e.target.value || undefined)} />
+          </div>
+          <ClearFilters show={filterCount > 0} onClear={() => { setFilters({}); setPage(1); }} />
+        </div>
+
         {tabs.map((t) => (
           <TabsContent key={t.id} value={t.id} className="mt-0">
             {t.id !== tab ? null : (
@@ -118,7 +168,7 @@ export default function IncidentsPage() {
                 ) : error ? (
                   <ErrorState message={error} onRetry={reload} />
                 ) : items.length === 0 ? (
-                  <EmptyState icon={Inbox} title={debounced ? 'No incidents match your search.' : EMPTY[t.id]} />
+                  <EmptyState icon={Inbox} title={filterCount > 0 ? 'No incidents match your filters.' : debounced ? 'No incidents match your search.' : EMPTY[t.id]} />
                 ) : (
                   <Table>
                     <TableHeader>
