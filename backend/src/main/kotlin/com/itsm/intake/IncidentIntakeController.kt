@@ -21,6 +21,7 @@ class IncidentIntakeController(
     private val service: IncidentIntakeService,
     private val analysisService: IncidentAnalysisService,
     private val chatService: IncidentChatService,
+    private val priorities: IncidentPriorityService,
     private val currentUser: CurrentUserProvider
 ) {
 
@@ -36,6 +37,15 @@ class IncidentIntakeController(
     @PreAuthorize("hasAuthority('INCIDENT_CREATE')")
     fun update(@PathVariable id: String, @Valid @RequestBody body: UpdateIncidentRequest): IncidentIntakeDto =
         service.update(id, body, currentUser.current())
+
+    /**
+     * Changes an open incident's priority, with a reason (admins: `INCIDENT_ASSIGN`). 400 for an unknown or unchanged
+     * priority, a missing reason, or an incident that is not being worked on; 404 for an unknown incident.
+     */
+    @PostMapping("/{id}/priority")
+    @PreAuthorize("hasAuthority('INCIDENT_ASSIGN')")
+    fun changePriority(@PathVariable id: String, @Valid @RequestBody body: PriorityChangeRequest): PriorityChangeDto =
+        priorities.change(id, body, currentUser.current())
 
     /** Active categories for the report form. Any authenticated user with INCIDENT_CREATE may read them. */
     @GetMapping("/catalog/categories")

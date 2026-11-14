@@ -24,7 +24,9 @@ enum class NotificationType {
     /** To whoever the escalation reached. */
     ESCALATED,
     /** To the assignee (the admins when nobody has it): predicted to miss the resolution deadline (V43). */
-    SLA_AT_RISK
+    SLA_AT_RISK,
+    /** To the assignee: an admin changed the incident's priority (V44). */
+    PRIORITY_CHANGED
 }
 
 /** Where a notification is delivered. */

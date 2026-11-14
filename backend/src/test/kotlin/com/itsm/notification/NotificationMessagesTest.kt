@@ -99,6 +99,15 @@ class NotificationMessagesTest {
         assertEquals(listOf(NotificationType.SLA_POLICY_MISSING to 90L, NotificationType.SLA_POLICY_MISSING to 91L), n.summary())
     }
 
+    @Test fun `a priority change tells the assignee which way it went, unless they made it`() {
+        val raised = NotificationMessages.forPriorityChange(incident, Priority.P3, Priority.P1, actorId = 90)
+        assertEquals(listOf(NotificationType.PRIORITY_CHANGED to 7L), raised.summary())
+        assertEquals("INC1001 priority raised to P1", raised[0].title)
+        assertEquals("INC1001 priority lowered to P4", NotificationMessages.forPriorityChange(incident, Priority.P3, Priority.P4, 90).single().title)
+        assertEquals(emptyList<Notification>(), NotificationMessages.forPriorityChange(incident, Priority.P3, Priority.P1, actorId = 7), "the assignee did it")
+        assertEquals(emptyList<Notification>(), NotificationMessages.forPriorityChange(incident.copy(assigneeId = null), Priority.P3, Priority.P1, 90))
+    }
+
     @Test fun `an escalation tells everyone it reached, with the reason`() {
         val n = NotificationMessages.forEscalation(EscalationRecorded("INC1001", EscalationTrigger.RESOLUTION_OVERDUE, listOf(20, 21)), incident)
         assertEquals(listOf(NotificationType.ESCALATED to 20L, NotificationType.ESCALATED to 21L), n.summary())

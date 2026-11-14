@@ -2,6 +2,7 @@ package com.itsm.notification
 
 import com.itsm.common.event.IncidentClassified
 import com.itsm.common.event.IncidentEvent
+import com.itsm.common.event.IncidentPriorityChanged
 import com.itsm.common.event.IncidentStateChanged
 import com.itsm.common.spi.UserDirectory
 import com.itsm.escalation.EscalationRecorded
@@ -64,6 +65,15 @@ class IncidentNotificationListener(private val monitor: NotificationMonitor, pri
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: IncidentStateChanged) = process(event)
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun on(event: IncidentPriorityChanged) {
+        try {
+            monitor.priorityChanged(event)
+        } catch (e: Exception) {
+            log.error("The priority-change notification for {} failed; it is not retried", event.incidentId, e)
+        }
+    }
+
     private fun process(event: IncidentEvent) {
         try {
             monitor.processIncident(event.incidentId, Instant.now(clock))
@@ -109,6 +119,13 @@ class NotificationMonitor(
     fun processIncident(incidentId: String, time: Instant): NotificationRunResult {
         store.waitForMonitorLock()
         return process(listOfNotNull(store.change(incidentId)), time)
+    }
+
+    /** Tells the assignee about a priority change (not a state or assignee change, so not part of the watch). */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun priorityChanged(event: IncidentPriorityChanged) {
+        val c = store.context(event.incidentId) ?: return
+        notifications.send(NotificationMessages.forPriorityChange(c, event.fromPriority, event.toPriority, event.actorId))
     }
 
     private fun process(changes: List<IncidentChange>, time: Instant): NotificationRunResult {

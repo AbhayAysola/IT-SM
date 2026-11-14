@@ -16,6 +16,14 @@ import java.time.Instant
  * A clock **warns** once `warningThresholdPct` of its target has elapsed while it is still running, and is **breached**
  * once its deadline passes before it stops. A breach is recorded once, dated at the deadline, and never removed.
  *
+ * **Targets that change during tracking** (a new priority or service): re-dating the new target from the report would
+ * make a raised priority breach at once, so each clock's deadline moves deliberately, at the time of the change (the
+ * incident's `updated_at`):
+ * * a clock that already stopped or breached keeps its deadline;
+ * * a tighter target: the earlier of the old deadline and (time of the change + the new target);
+ * * a looser or equal target: the report time + the new target, as usual.
+ * The difference from "clock start + target (+ pauses)" is kept per clock as a shift (V44) and applied from then on.
+ *
  * Pause and reopen times are the incident's `updated_at` (every lifecycle transition sets it) when the change is evaluated.
  * P4 evaluates right after each P2/P3 domain event, so they are exact. Only a change whose event reaction failed is left
  * to the next sweep; then two changes between two runs (for example a reopen and a second resolve) can be missed, and the
@@ -45,12 +53,13 @@ object SlaEvaluator {
                     old != lookup.targets || previous.priority != s.priority || previous.serviceId != s.serviceId ->
                         events += SlaEvent(SlaEvent.Type.RECALCULATED, null, now)
                 }
-                (previous ?: newRecord(s, lookup.targets, null))
+                val shifted = if (old != null && old != lookup.targets) shiftFor(previous, lookup.targets, s, now) else previous
+                (shifted ?: newRecord(s, lookup.targets, null))
                     .copy(priority = s.priority, serviceId = s.serviceId, targets = lookup.targets, noPolicyReason = null)
             }
             is TargetLookup.Missing -> when {
-                // Tracking already runs on the old targets: keep them rather than stop tracking. (Priority cannot change
-                // after creation today; the monitor retries the lookup on every run while the priority differs.)
+                // Tracking already runs on the old targets: keep them rather than stop tracking (the monitor retries the
+                // lookup on every run while the priority or service differs).
                 previous?.targets != null -> previous
                 else -> {
                     if (previous?.noPolicyReason != lookup.reason) {
@@ -61,6 +70,34 @@ object SlaEvaluator {
                 }
             }
         }
+
+    /** The shifts that place each clock's deadline by the rule for targets changed during tracking (see the class doc). */
+    private fun shiftFor(previous: SlaRecord, new: SlaTargets, s: IncidentSnapshot, now: Instant): SlaRecord {
+        val old = previous.targets!!
+        val changedAt = clamp(s.updatedAt, previous.clockStart, now)
+        fun shift(stopped: Boolean, oldDue: Instant?, oldMinutes: Int, newMinutes: Int, base: Instant): Long {
+            val due = when {
+                oldDue == null -> base
+                stopped -> oldDue
+                newMinutes < oldMinutes -> minOf(oldDue, changedAt.plus(minutes(newMinutes)))
+                else -> base
+            }
+            // Whole seconds (V44), rounded up so a deadline never comes out earlier than the rule says.
+            val d = Duration.between(base, due)
+            return d.seconds + if (d.nano > 0) 1 else 0
+        }
+        val paused = Duration.ofSeconds(previous.pausedSeconds)
+        return previous.copy(
+            responseShiftSeconds = shift(
+                previous.responseMetAt != null || previous.responseBreachedAt != null, previous.responseDueAt,
+                old.responseMinutes, new.responseMinutes, previous.clockStart.plus(minutes(new.responseMinutes))
+            ),
+            resolutionShiftSeconds = shift(
+                previous.resolutionMetAt != null || previous.resolutionBreachedAt != null, previous.resolutionDueAt,
+                old.resolutionMinutes, new.resolutionMinutes, previous.clockStart.plus(minutes(new.resolutionMinutes)).plus(paused)
+            )
+        )
+    }
 
     private fun newRecord(s: IncidentSnapshot, targets: SlaTargets?, reason: NoPolicyReason?) =
         SlaRecord(s.incidentId, s.priority, s.serviceId, clockStart = s.createdAt, targets = targets, noPolicyReason = reason)
@@ -108,13 +145,14 @@ object SlaEvaluator {
             complete = s.trackingFinished
         )
 
-        val responseDue = r.clockStart.plus(minutes(t.responseMinutes))
-        val responseWarning = r.clockStart.plus(fraction(t.responseMinutes, t.warningThresholdPct))
+        val responseShift = Duration.ofSeconds(r.responseShiftSeconds)
+        val responseDue = r.clockStart.plus(minutes(t.responseMinutes)).plus(responseShift)
+        val responseWarning = r.clockStart.plus(fraction(t.responseMinutes, t.warningThresholdPct)).plus(responseShift)
         val (responseBreached, responseWarned) = judgeClock(
             SlaClock.RESPONSE, r.responseMetAt, responseDue, responseWarning, now, r.responseBreachedAt, r.responseWarnedAt, events
         )
 
-        val paused = Duration.ofSeconds(r.pausedSeconds)
+        val paused = Duration.ofSeconds(r.pausedSeconds).plusSeconds(r.resolutionShiftSeconds)
         val resolutionDue = r.clockStart.plus(minutes(t.resolutionMinutes)).plus(paused)
         val resolutionWarning = r.clockStart.plus(fraction(t.resolutionMinutes, t.warningThresholdPct)).plus(paused)
         // While paused the clock is stopped at the start of the pause: nothing after it can warn or breach.

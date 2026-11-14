@@ -95,12 +95,62 @@ class SlaEvaluatorTest {
         assertTrue(e.events.isEmpty())
     }
 
-    @Test fun `a priority change with a new policy recalculates the deadlines from created_at`() {
+    @Test fun `a priority change right at the start applies the new targets as if from the report`() {
         val p2 = SlaTargets(2, PolicyScope.GLOBAL, 15, 120, 80)
         val e = eval(started(), snap(priority = Priority.P2), 5, TargetLookup.Found(p2))
         assertEquals(listOf(SlaEvent.Type.RECALCULATED), e.types())
         assertEquals(at(15), e.record.responseDueAt); assertEquals(at(120), e.record.resolutionDueAt)
         assertEquals(Priority.P2, e.record.priority)
+    }
+
+    // --- priority changed during tracking (V44) ------------------------------------------------------------------------
+
+    private val p1 = SlaTargets(1, PolicyScope.GLOBAL, 5, 30, 80)
+    private val p4 = SlaTargets(4, PolicyScope.GLOBAL, 240, 1440, 80)
+
+    @Test fun `raising the priority mid-way gives the tighter target from the change, not an instant breach`() {
+        // Responded at minute 10; raised to P1 at minute 200. Re-dating 30 minutes from the report would be long breached.
+        val tracked = eval(started(), snap("IN_PROGRESS", updated = 10, firstResponse = 10), 10).record
+        val e = eval(tracked, snap("IN_PROGRESS", updated = 200, firstResponse = 10, priority = Priority.P1), 200, TargetLookup.Found(p1))
+        assertEquals(listOf(SlaEvent.Type.RECALCULATED), e.types(), "no breach")
+        with(e.record) {
+            assertEquals(at(230), resolutionDueAt, "the change + 30 minutes")
+            assertEquals(at(224), resolutionWarningAt, "the warning moves with it (80 % of 30 minutes before the deadline)")
+            assertEquals(at(60), responseDueAt, "a met clock keeps its deadline, so the change cannot breach it after the fact")
+            assertEquals(ClockStatus.MET, responseStatus)
+            assertEquals(ClockStatus.RUNNING, resolutionStatus)
+        }
+        // The shift stays: later runs keep the deadline, and the new clock can still warn and breach.
+        assertEquals(at(230), eval(e.record, snap("IN_PROGRESS", updated = 200, firstResponse = 10, priority = Priority.P1), 210).record.resolutionDueAt)
+        val late = eval(e.record, snap("IN_PROGRESS", updated = 200, firstResponse = 10, priority = Priority.P1), 231)
+        assertTrue(SlaEvent.Type.BREACHED in late.types())
+        assertEquals(at(230), late.record.resolutionBreachedAt)
+    }
+
+    @Test fun `a raise never moves a deadline later than it already was`() {
+        // At minute 470 the P3 deadline (480) is sooner than the change + 30 minutes (500): it stays.
+        val e = eval(started(), snap("IN_PROGRESS", updated = 470, firstResponse = 10, priority = Priority.P1), 470, TargetLookup.Found(p1))
+        assertEquals(at(480), e.record.resolutionDueAt)
+    }
+
+    @Test fun `lowering the priority applies the looser target from the report, and a breach is never undone`() {
+        val e = eval(started(), snap("IN_PROGRESS", updated = 100, firstResponse = 10, priority = Priority.P4), 100, TargetLookup.Found(p4))
+        assertEquals(at(1440), e.record.resolutionDueAt)
+
+        val breached = eval(started(), snap("ASSIGNED", updated = 0), 70).record // response breached at minute 60
+        assertEquals(at(60), breached.responseBreachedAt)
+        val lowered = eval(breached, snap("ASSIGNED", updated = 75, priority = Priority.P4), 75, TargetLookup.Found(p4)).record
+        assertEquals(at(60), lowered.responseBreachedAt)
+        assertEquals(ClockStatus.BREACHED, lowered.responseStatus)
+        assertEquals(at(60), lowered.responseDueAt, "a breached clock keeps its deadline")
+    }
+
+    @Test fun `pauses after a raise still move the new deadline`() {
+        val raised = eval(started(), snap("IN_PROGRESS", updated = 100, firstResponse = 10, priority = Priority.P1), 100, TargetLookup.Found(p1)).record
+        assertEquals(at(130), raised.resolutionDueAt)
+        val paused = eval(raised, snap("PENDING_INFO", updated = 110, firstResponse = 10, priority = Priority.P1), 110).record
+        val resumed = eval(paused, snap("IN_PROGRESS", updated = 120, firstResponse = 10, priority = Priority.P1), 120).record
+        assertEquals(at(140), resumed.resolutionDueAt, "ten paused minutes later")
     }
 
     // --- response clock ------------------------------------------------------------------------------------------------

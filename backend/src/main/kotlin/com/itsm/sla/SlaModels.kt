@@ -89,6 +89,12 @@ data class SlaRecord(
     val pausedSince: Instant? = null,
     /** Total length of completed pauses. Every deadline of the resolution clock moves later by this much. */
     val pausedSeconds: Long = 0,
+    /**
+     * Added to each clock's deadline (and warning point) after its targets changed during tracking (V44): see
+     * [SlaEvaluator]. 0 unless the priority or service changed while the clock was open. May be negative.
+     */
+    val responseShiftSeconds: Long = 0,
+    val resolutionShiftSeconds: Long = 0,
 
     val responseStatus: ClockStatus = ClockStatus.NO_POLICY,
     val resolutionStatus: ClockStatus = ClockStatus.NO_POLICY,
