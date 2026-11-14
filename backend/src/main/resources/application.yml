@@ -16,7 +16,9 @@ spring:
         format_sql: true
   flyway:
     enabled: true
-    baseline-on-migrate: true
+    # false: a non-empty database without a Flyway history table is refused instead of having V1 silently skipped. Set
+    # FLYWAY_BASELINE_ON_MIGRATE=true only to adopt an existing database on purpose.
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
   data:
     redis:
       host: localhost
@@ -114,6 +116,13 @@ management:
     export:
       prometheus:
         enabled: true
+    distribution:
+      # Lets Grafana compute request-latency percentiles (histogram_quantile) across replicas.
+      percentiles-histogram:
+        http.server.requests: true
+  # Actuator shares the API port unless MANAGEMENT_SERVER_PORT is set (compose, Kubernetes and Helm set it to 8081, which is never
+  # published). On the API port every actuator endpoint except health/info needs ADMIN; on the management port Prometheus needs no
+  # credentials. See docs/architecture/security.md, "Management port".
 
 server:
   port: 8080

@@ -7,6 +7,7 @@ import com.itsm.auth.web.OriginSyntaxFilter
 import com.itsm.common.security.JsonAccessDeniedHandler
 import com.itsm.common.security.JsonAuthenticationEntryPoint
 import com.itsm.user.UserRepository
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
@@ -38,11 +39,13 @@ class SecurityWiringContextTest {
         @Bean fun userRepository(): UserRepository = mock(UserRepository::class.java)
     }
 
-    @Autowired lateinit var chain: SecurityFilterChain
+    // Two chains exist on purpose: the management-port chain (Order 1) and the API chain (Order 2).
+    @Autowired lateinit var chains: List<SecurityFilterChain>
     @Autowired lateinit var filter: JwtAuthFilter
 
     @Test fun `security beans wire without a dependency cycle`() {
-        assertNotNull(chain)
+        assertEquals(2, chains.size, "management chain + API chain")
+        assertNotNull(chains.first())
         assertNotNull(filter)
     }
 }
