@@ -14,6 +14,8 @@ import com.itsm.investigation.InvestigationEntryType
 import com.itsm.investigation.InvestigationLog
 import com.itsm.investigation.InvestigationPolicy
 import com.itsm.investigation.Visibility
+import com.itsm.common.event.IncidentStateChanged
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -35,7 +37,9 @@ class IncidentLifecycleService(
     private val timeline: InvestigationLog,
     private val feedbacks: FeedbackStore,
     private val audit: AuditPublisher,
-    private val clock: Clock
+    private val clock: Clock,
+    /** Domain events for modules that react to changes (P4); a no-op where none is wanted (unit tests). */
+    private val events: ApplicationEventPublisher = ApplicationEventPublisher {}
 ) {
     /** Moves that start from a person's action here. Classify is intake's (P2); assign and reassign are the assignment service's. */
     private val handled = setOf(
@@ -96,6 +100,7 @@ class IncidentLifecycleService(
                 metadata = mapOf("transition" to transition.name, "reasonGiven" to (result.reason != null))
             )
         )
+        events.publishEvent(IncidentStateChanged(incidentId, result.previousState.name, result.newState.name, transition.name, user.id, now))
         return updated
     }
 

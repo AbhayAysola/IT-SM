@@ -14,6 +14,8 @@ import com.itsm.common.spi.PriorityPolicy
 import com.itsm.common.spi.ServiceCatalog
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.support.GeneratedKeyHolder
+import com.itsm.common.event.IncidentClassified
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.sql.Statement
@@ -30,7 +32,9 @@ class IncidentIntakeService(
     private val services: ServiceCatalog,
     private val priorityPolicy: PriorityPolicy,
     private val audit: AuditPublisher,
-    private val clock: Clock
+    private val clock: Clock,
+    /** Domain events for modules that react to new incidents (P4's SLA tracking and notifications). */
+    private val events: ApplicationEventPublisher
 ) {
 
     @Transactional
@@ -94,6 +98,8 @@ class IncidentIntakeService(
                 "priorityReasons" to assessment.reasons.take(MAX_REASONS).map { it.take(MAX_REASON_LENGTH) }
             )
         ))
+
+        events.publishEvent(IncidentClassified(id, user.id, service.id, category.id, priority, now))
 
         return IncidentIntakeDto(id, title, description, "CLASSIFIED", category.id, service.id, priority.name, user.id, now, now, impact.name, urgency.name)
     }
