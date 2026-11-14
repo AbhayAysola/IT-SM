@@ -6,6 +6,7 @@ import com.itsm.common.event.IncidentPriorityChanged
 import com.itsm.common.event.IncidentStateChanged
 import com.itsm.common.spi.UserDirectory
 import com.itsm.escalation.EscalationRecorded
+import com.itsm.priority.PrioritySuggested
 import com.itsm.sla.SlaNotice
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -24,7 +25,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
- * Turns P4's own SLA and escalation events into notifications. Runs synchronously inside the monitor's transaction, so
+ * Turns P4's own SLA, escalation and priority-suggestion events into notifications. Runs synchronously inside the monitor's transaction, so
  * the in-app rows commit with the SLA or escalation change they report, or not at all.
  */
 @Component
@@ -37,6 +38,13 @@ class NotificationEventListener(
     fun on(notice: SlaNotice) {
         val c = store.context(notice.incidentId) ?: return
         notifications.send(NotificationMessages.forSla(notice, c) { directory.listAdmins().filter { it.active }.map { it.id } })
+    }
+
+    @EventListener
+    fun on(suggestion: PrioritySuggested) {
+        val c = store.context(suggestion.incidentId) ?: return
+        val admins = directory.listAdmins().filter { it.active }.map { it.id }
+        notifications.send(NotificationMessages.forPrioritySuggestion(c, suggestion.current, suggestion.suggested, suggestion.reasons, admins))
     }
 
     @EventListener

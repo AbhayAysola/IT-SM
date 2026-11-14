@@ -12,7 +12,7 @@ import {
   type EscalationView, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { mockRowSla, mockSla } from '../model/sla';
-import { canChangePriority, priorityChangeErrors } from '../model/priority';
+import { canChangePriority, priorityChangeErrors, type PrioritySuggestionView } from '../model/priority';
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
 import { needsAttention, same } from './attention';
@@ -196,6 +196,26 @@ function matchesFilters(i: Incident, f: IncidentFilters, options: ReturnType<typ
 /** The mock's copy of `sort=DEADLINE`: nearest open resolution deadline first, then the usual order. */
 const deadlineOf = (r: IncidentRow) => (r.sla?.resolutionDueAt ? Date.parse(r.sla.resolutionDueAt) : Number.POSITIVE_INFINITY);
 
+const MOCK_SUGGESTIONS: Record<string, PrioritySuggestionView> = {
+  INC1001: {
+    currentPriority: 'P2', suggestedPriority: 'P1', rules: ['DUPLICATES'], createdAt: '2026-11-06T14:30:00Z',
+    reasons: ['3 new reports look like duplicates of it: the problem is spreading.'],
+  },
+};
+const dismissedKey = (email: string) => `itsm_p4_v1_dismissed_suggestions_${email.toLowerCase()}`;
+const dismissedMemory = new Map<string, string[]>();
+/** Reading never writes: signing in leaves localStorage untouched. */
+function mockDismissed(email: string): string[] {
+  try {
+    const raw = localStorage.getItem(dismissedKey(email));
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch { return dismissedMemory.get(dismissedKey(email)) ?? []; }
+}
+function saveMockDismissed(email: string, ids: string[]) {
+  try { localStorage.setItem(dismissedKey(email), JSON.stringify(ids)); } catch { dismissedMemory.set(dismissedKey(email), ids); }
+}
+
 export const mockIncidentService = {
   async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}, sort: IncidentSort = 'URGENCY'): Promise<IncidentListResult> {
     return simulate(() => {
@@ -294,6 +314,27 @@ export const mockIncidentService = {
   },
 
   /** ASSIGN from CLASSIFIED, REASSIGN (reason required) from an active state. */
+  /**
+   * The mock's priority suggestion: one demo suggestion (INC1001, spreading duplicates), shown to admins while that incident
+   * is still at its seeded priority and being worked on, until dismissed. The real rules are P4's backend.
+   */
+  async prioritySuggestion(actor: Actor, id: string): Promise<PrioritySuggestionView | null> {
+    return simulate(() => {
+      if (actor.role !== 'ADMIN') throw new IncidentError('FORBIDDEN', 'Only administrators see priority suggestions.');
+      const demo = MOCK_SUGGESTIONS[id];
+      const i = world(actor).incidents.find((x) => x.id === id);
+      if (!demo || !i || i.priority !== demo.currentPriority || !canChangePriority(actor.role, i.state) || mockDismissed(actor.email).includes(id)) return null;
+      return demo;
+    });
+  },
+
+  async dismissPrioritySuggestion(actor: Actor, id: string): Promise<void> {
+    return simulate(() => {
+      if (actor.role !== 'ADMIN') throw new IncidentError('FORBIDDEN', 'Only administrators can dismiss priority suggestions.');
+      saveMockDismissed(actor.email, [...mockDismissed(actor.email), id]);
+    });
+  },
+
   /** The mock's copy of P2's priority change: admins only, while it is worked on, with a reason. */
   async changePriority(actor: Actor, id: string, priority: Priority, reason: string): Promise<void> {
     return simulate(() => {

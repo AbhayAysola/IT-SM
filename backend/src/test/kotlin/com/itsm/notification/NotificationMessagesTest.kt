@@ -108,6 +108,13 @@ class NotificationMessagesTest {
         assertEquals(emptyList<Notification>(), NotificationMessages.forPriorityChange(incident.copy(assigneeId = null), Priority.P3, Priority.P1, 90))
     }
 
+    @Test fun `a priority suggestion tells each admin once, with the first reason`() {
+        val n = NotificationMessages.forPrioritySuggestion(incident, Priority.P3, Priority.P1, listOf("3 new reports look like duplicates of it."), listOf(90, 91, 90))
+        assertEquals(listOf(NotificationType.PRIORITY_SUGGESTED to 90L, NotificationType.PRIORITY_SUGGESTED to 91L), n.summary())
+        assertEquals("INC1001: consider raising it to P1 (now P3)", n[0].title)
+        assertTrue(n[0].body.endsWith("3 new reports look like duplicates of it."), n[0].body)
+    }
+
     @Test fun `an escalation tells everyone it reached, with the reason`() {
         val n = NotificationMessages.forEscalation(EscalationRecorded("INC1001", EscalationTrigger.RESOLUTION_OVERDUE, listOf(20, 21)), incident)
         assertEquals(listOf(NotificationType.ESCALATED to 20L, NotificationType.ESCALATED to 21L), n.summary())
