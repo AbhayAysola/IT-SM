@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { NotificationBell } from '@/features/notifications/notification-bell';
 import {
   ClipboardList,
   LayoutDashboard,
@@ -129,6 +130,10 @@ export default function Navbar() {
 
           {/* Account menu */}
           <div className="flex items-center gap-1">
+            {user?.email && (
+              <NotificationBell email={user.email}
+                className={cn('text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent', navFocus)} />
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

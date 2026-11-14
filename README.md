@@ -2,7 +2,7 @@
 
 > An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
 
-> **Status:** P1 (access and administration) is complete and merged, with P2 intake, P3 lifecycle/assignment and the incident workspace on `main` too. P4 has started: SLA tracking is built; escalation, notifications and analytics are not. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
+> **Status:** P1 (access and administration) is complete and merged, with P2 intake, P3 lifecycle/assignment and the incident workspace on `main` too. P4 is built: priority calculation, SLA tracking, escalation, notifications and analytics. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
 
 ## 📚 Documentation
 
@@ -18,6 +18,7 @@
 | [docs/architecture/audit-retrieval.md](docs/architecture/audit-retrieval.md) | Audit retrieval API and its privacy rules |
 | [docs/architecture/admin-frontend-contract.md](docs/architecture/admin-frontend-contract.md) | The admin frontend's contract with the backend |
 | [docs/architecture/p3.md](docs/architecture/p3.md) | P3: lifecycle, assignment, investigation, feedback |
+| [docs/architecture/p4.md](docs/architecture/p4.md) | P4: priority, SLA, escalation, notifications, analytics (design) |
 | [docs/migrations.md](docs/migrations.md) | Flyway version blocks |
 | [frontend/e2e/README.md](frontend/e2e/README.md) | Fake-API Playwright suite (hermetic and live modes) |
 | [frontend/e2e-real/README.md](frontend/e2e-real/README.md) | Real frontend + backend + PostgreSQL 16 Playwright suite |
@@ -34,8 +35,11 @@
 | Audit trail (`audit_events`, append-only trigger) and admin retrieval API | **Done** (P1) |
 | Incident intake (`/api/incidents`, catalog, AI analysis) | On `main` (P2) |
 | Incident lifecycle, assignment, investigation timeline, feedback | On `main` (P3), including the strategy catalog and workload provider P1 consumes |
+| Priority calculation | **Done** (P4 with P2): the report form asks impact and urgency, and P4's `PriorityPolicy` derives the priority (service criticality and dependent services included). See [p4.md](docs/architecture/p4.md) section 1 |
 | SLA timers and breach detection | **Done** (P4): `V40`, a scheduled monitor, `GET /api/incidents/{id}/sla`, `GET /api/sla/incidents`, and the incident page's "Service level" card. See the integration guide's P4 section |
-| Escalation, notifications, analytics | **Not built** (P4) |
+| Escalation | **Done** (P4): `V41`, an escalation monitor (breach to the team lead, 150 %/200 % of the target further up, unassigned to the admins), the admin "Escalation" page and the incident's escalation history. See [p4.md](docs/architecture/p4.md) section 3 |
+| Notifications | **Done** (P4): `V42`, an in-app inbox (bell and `/notifications`) with simulated email/SMS by priority, for assignments, questions, fixes, reopens, SLA warnings and breaches, and escalations. See [p4.md](docs/architecture/p4.md) section 4 |
+| Analytics | **Done** (P4): the admin "Analytics" page and `GET /api/admin/analytics/summary` (SLA compliance by priority, service and category, response and resolution times, escalations, daily volumes, technician workload and ratings). See [p4.md](docs/architecture/p4.md) section 5 |
 | Kubernetes / Helm | HTTPS only, build-time API origin, separate liveness/readiness probes. Production hardening is assigned to the deployment owners: [handoff section 5](docs/p1-handoff.md) |
 | Redis / RabbitMQ | In the compose stack and config; no P1 feature uses them (health groups account for that) |
 | CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |

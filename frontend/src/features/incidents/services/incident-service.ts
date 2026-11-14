@@ -9,7 +9,7 @@ import {
 } from '../model/recommender';
 import {
   IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
-  type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
+  type EscalationView, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { mockSla } from '../model/sla';
 import { loadWorld, saveWorld, simulate } from './store';
@@ -98,6 +98,8 @@ export interface IncidentDetail {
   similar: SimilarResolution[];
   /** The incident's SLA clocks; null when they cannot be shown (the page then hides the panel). */
   sla: SlaSummary | null;
+  /** Escalations, for staff only (always empty for reporters, and in the mock, which has no escalation monitor). */
+  escalations: EscalationView[];
 }
 
 const PRIORITY_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;
@@ -173,6 +175,7 @@ export const mockIncidentService = {
         canGiveFeedback: same(incident.reporterEmail, actor.email) && hasPermission(actor.role, 'INCIDENT_VERIFY_OWN') && FEEDBACK_STATES.includes(incident.state) && !feedback,
         similar: staff && active.includes(incident.state) ? similarResolutions(w, incident) : [],
         sla: incident.state === 'NEW' ? null : mockSla(incident, Date.now()),
+        escalations: [],
       };
     });
   },

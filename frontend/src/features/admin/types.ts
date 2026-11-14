@@ -154,6 +154,19 @@ export interface AssignmentOverride {
  */
 export type StrategyCatalogStatus = 'AVAILABLE' | 'ABSENT' | 'FAILED';
 
+/** When SLA escalation fires (P4, GET/PUT /api/admin/escalation-settings). */
+export interface EscalationSettings {
+  /** An incident nobody picked up goes to the admins this many minutes after it was reported. */
+  unassignedMinutes: number;
+  /** An open incident goes one level up the reporting line at this % of its resolution target... */
+  secondLevelPct: number;
+  /** ...and to the admins at this %. Always greater than `secondLevelPct`. */
+  adminLevelPct: number;
+  version: number;
+  updatedAt: string | null;
+  updatedByUserId: number | null;
+}
+
 export interface AssignmentSettings {
   activeStrategy: string;
   defaultMaxWorkload: number;
@@ -191,4 +204,27 @@ export class ServiceError extends Error {
     this.status = opts.status;
     this.fieldErrors = opts.fieldErrors ?? {};
   }
+}
+
+/** P4's analytics summary (GET /api/admin/analytics/summary). Dates are inclusive UTC days (YYYY-MM-DD). */
+export interface SlaCounts {
+  tracked: number;
+  responseMet: number;
+  responseBreached: number;
+  responseCompliancePct: number | null;
+  resolutionMet: number;
+  resolutionBreached: number;
+  resolutionCompliancePct: number | null;
+}
+export interface SlaGroup { id: string | null; name: string; counts: SlaCounts }
+export interface DurationStats { count: number; meanMinutes: number | null; p90Minutes: number | null }
+export interface AnalyticsSummary {
+  from: string;
+  to: string;
+  incidents: { reported: number; resolved: number; openNow: number; unassignedNow: number; openByState: Record<string, number>; openByPriority: Record<string, number> };
+  sla: { overall: SlaCounts; byPriority: SlaGroup[]; byService: SlaGroup[]; byCategory: SlaGroup[] };
+  times: { toRespond: DurationStats; toResolve: DurationStats };
+  escalations: { total: number; byTrigger: Record<string, number> };
+  perDay: { date: string; reported: number; resolved: number; breaches: number; escalations: number }[];
+  technicians: { userId: number; name: string; maxWorkload: number; activeIncidents: number; resolved: number; ratings: number; averageRating: number | null }[];
 }

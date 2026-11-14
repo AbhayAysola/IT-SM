@@ -1,4 +1,4 @@
-import { LayoutDashboard, ScrollText, Server, Shuffle, Tags, Timer, UserCog, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, LayoutDashboard, ScrollText, Server, Shuffle, Siren, Tags, Timer, UserCog, Users, type LucideIcon } from 'lucide-react';
 
 export interface AdminNavItem {
   title: string;
@@ -13,7 +13,13 @@ export interface AdminNavGroup {
 
 /** Only routes that exist. Later batches append their pages here. */
 export const ADMIN_NAV: AdminNavGroup[] = [
-  { label: 'Overview', items: [{ title: 'Admin overview', href: '/admin', icon: LayoutDashboard }] },
+  {
+    label: 'Overview',
+    items: [
+      { title: 'Admin overview', href: '/admin', icon: LayoutDashboard },
+      { title: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+    ],
+  },
   {
     label: 'People',
     items: [
@@ -27,6 +33,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       { title: 'Categories', href: '/admin/categories', icon: Tags },
       { title: 'IT services', href: '/admin/services', icon: Server },
       { title: 'SLA policies', href: '/admin/sla-policies', icon: Timer },
+      { title: 'Escalation', href: '/admin/escalation-settings', icon: Siren },
       { title: 'Assignment settings', href: '/admin/assignment-settings', icon: Shuffle },
     ],
   },

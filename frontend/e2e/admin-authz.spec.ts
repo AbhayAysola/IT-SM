@@ -14,6 +14,8 @@ const ADMIN_ROUTES: Array<[path: string, heading: string]> = [
   ['/admin/categories', 'Incident categories'],
   ['/admin/services', 'IT services'],
   ['/admin/sla-policies', 'SLA policies'],
+  ['/admin/escalation-settings', 'Escalation settings'],
+  ['/admin/analytics', 'Analytics'],
   ['/admin/assignment-settings', 'Assignment settings'],
   ['/admin/audit-logs', 'Audit logs'],
 ];

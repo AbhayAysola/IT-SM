@@ -64,6 +64,8 @@ tasks.withType<Test> {
     // P4's SLA monitor would otherwise run every minute in each test context and write audit rows other tests count;
     // the SLA tests call the monitor directly instead.
     systemProperty("app.sla.monitor.enabled", "false")
+    systemProperty("app.escalation.monitor.enabled", "false")
+    systemProperty("app.notification.monitor.enabled", "false")
     systemProperty("app.rate-limit.login-pair.max-failures", "100000")
     systemProperty("app.rate-limit.login-ip.max-failures", "100000")
     systemProperty("app.rate-limit.register-ip.max-attempts", "100000")

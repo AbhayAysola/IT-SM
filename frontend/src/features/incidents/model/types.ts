@@ -133,3 +133,13 @@ export interface SlaSummary {
   /** When the backend last evaluated it (statuses can lag by up to a minute); null for mock data. */
   evaluatedAt: string | null;
 }
+
+/** One escalation of an incident (P4, GET /api/incidents/{id}/escalations; staff only). */
+export interface EscalationView {
+  /** Why: a breached clock, a resolution far past its target, or nobody assigned in time. */
+  description: string;
+  tier: 'TEAM_LEAD' | 'NEXT_LEVEL' | 'ADMINS';
+  /** Names of the people it went to; empty when nobody qualified. */
+  targets: string[];
+  createdAt: string;
+}

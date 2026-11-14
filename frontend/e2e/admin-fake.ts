@@ -38,6 +38,7 @@ export class AdminFake {
   services: (Row & Record<string, any>)[] = [];
   sla: (Row & Record<string, any>)[] = [];
   assignment: Record<string, any> = {};
+  escalation: Record<string, any> = {};
   /**
    * The strategy catalog, as B9's contract reports it. `null` = ABSENT (GET: `strategyCatalogStatus: 'ABSENT'`,
    * `availableStrategies: null`; PUT: 503). An array = AVAILABLE (possibly empty: nothing registered, every PUT 400).
@@ -68,6 +69,7 @@ export class AdminFake {
     this.addSla(null, 'P1', 15, 120); this.addSla(null, 'P2', 30, 240); this.addSla(null, 'P3', 60, 480); this.addSla(null, 'P4', 120, 1440); this.addSla(2, 'P1', 5, 60);
     this.addTechnician(3, 5, 4, [{ categoryId: 1, proficiency: 4 }], true); this.addTechnician(4, 8, 10, [{ categoryId: 2, proficiency: 5 }, { categoryId: 3, proficiency: 2 }]);
     this.assignment = { activeStrategy: 'ROUND_ROBIN', defaultMaxWorkload: 5, categoryOverrides: [], version: 0, updatedAt: now(), updatedByUserId: null };
+    this.escalation = { unassignedMinutes: 30, secondLevelPct: 150, adminLevelPct: 200, version: 0, updatedAt: now(), updatedByUserId: null };
   }
 
   addUser(name: string, role: string, email = `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@example.test`) {
@@ -144,6 +146,8 @@ export class AdminFake {
       case 'services': return this.servicesApi(req, id, action);
       case 'sla-policies': return this.slaApi(req, id, action);
       case 'assignment-settings': return this.assignmentApi(req);
+      case 'escalation-settings': return this.escalationApi(req);
+      case 'analytics': return this.analyticsApi(req);
       default: return problem(404, 'RESOURCE_NOT_FOUND', 'Not found');
     }
   }
@@ -410,5 +414,54 @@ export class AdminFake {
     if (badIdx >= 0) return invalid(`categoryOverrides[${badIdx}].strategy`, `'${overrides[badIdx].strategy}' is not a registered strategy`);
     Object.assign(this.assignment, { activeStrategy: b.activeStrategy, defaultMaxWorkload: b.defaultMaxWorkload, categoryOverrides: overrides, version: this.assignment.version + 1, updatedAt: now(), updatedByUserId: 1 });
     return { status: 200, body: this.assignmentView() };
+  }
+
+  // ---- escalation settings (P4): the same rules as EscalationSettings.validate ----
+  private escalationApi({ method, body }: RecordedRequest): FakeResult {
+    if (method === 'GET') return { status: 200, body: { ...this.escalation } };
+    if (method !== 'PUT') return problem(405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
+    const b = (body ?? {}) as Record<string, any>;
+    const errors: { field: string; message: string }[] = [];
+    if (!(Number.isInteger(b.unassignedMinutes) && b.unassignedMinutes >= 1 && b.unassignedMinutes <= 10080)) errors.push({ field: 'unassignedMinutes', message: 'must be between 1 and 10080 minutes (one week)' });
+    if (!(Number.isInteger(b.secondLevelPct) && b.secondLevelPct >= 101 && b.secondLevelPct <= 1000)) errors.push({ field: 'secondLevelPct', message: 'must be between 101 and 1000' });
+    if (!(Number.isInteger(b.adminLevelPct) && b.adminLevelPct >= 101 && b.adminLevelPct <= 1000)) errors.push({ field: 'adminLevelPct', message: 'must be between 101 and 1000' });
+    else if (b.adminLevelPct <= b.secondLevelPct) errors.push({ field: 'adminLevelPct', message: 'must be greater than secondLevelPct' });
+    if (errors.length) return problem(400, 'INVALID_INPUT', 'Invalid escalation settings', errors);
+    if (b.version !== this.escalation.version) return stale('escalation configuration');
+    Object.assign(this.escalation, { unassignedMinutes: b.unassignedMinutes, secondLevelPct: b.secondLevelPct, adminLevelPct: b.adminLevelPct, version: this.escalation.version + 1, updatedAt: now(), updatedByUserId: 1 });
+    return { status: 200, body: { ...this.escalation } };
+  }
+
+  // ---- analytics (P4): a deterministic summary for whatever range is asked, validated like the backend ----
+  private analyticsApi({ method, query: q }: RecordedRequest): FakeResult {
+    if (method !== 'GET') return problem(405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
+    const from = q.get('from') ?? '2026-11-01', to = q.get('to') ?? '2026-11-30';
+    const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
+    if (!(days >= 1)) return invalid('from', 'must not be after to');
+    if (days > 366) return invalid('to', 'the range can be at most 366 days');
+    const counts = (rm: number, rb: number, sm: number, sb: number) => ({
+      tracked: rm + rb, responseMet: rm, responseBreached: rb, responseCompliancePct: rm + rb ? Math.round((rm * 1000) / (rm + rb)) / 10 : null,
+      resolutionMet: sm, resolutionBreached: sb, resolutionCompliancePct: sm + sb ? Math.round((sm * 1000) / (sm + sb)) / 10 : null,
+    });
+    const perDay = Array.from({ length: days }, (_, k) => ({
+      date: new Date(Date.parse(from) + k * 86_400_000).toISOString().slice(0, 10), reported: (k * 7) % 5, resolved: (k * 3) % 4, breaches: k % 3 === 0 ? 1 : 0, escalations: k % 4 === 0 ? 1 : 0,
+    }));
+    return {
+      status: 200,
+      body: {
+        from, to,
+        incidents: { reported: perDay.reduce((n, d) => n + d.reported, 0), resolved: perDay.reduce((n, d) => n + d.resolved, 0), openNow: 12, unassignedNow: 3, openByState: { CLASSIFIED: 3, IN_PROGRESS: 9 }, openByPriority: { P1: 2, P2: 4, P3: 6 } },
+        sla: {
+          overall: counts(40, 10, 36, 9),
+          byPriority: [{ id: 'P1', name: 'P1', counts: counts(5, 3, 4, 4) }, { id: 'P2', name: 'P2', counts: counts(15, 3, 12, 3) }, { id: 'P3', name: 'P3', counts: counts(20, 4, 20, 2) }],
+          byService: [{ id: '2', name: 'VPN', counts: counts(10, 2, 9, 3) }, { id: '1', name: 'Email', counts: counts(30, 8, 27, 6) }],
+          byCategory: [{ id: '1', name: 'Network', counts: counts(25, 6, 22, 5) }],
+        },
+        times: { toRespond: { count: 50, meanMinutes: 18.4, p90Minutes: 41 }, toResolve: { count: 45, meanMinutes: 312, p90Minutes: 1500 } },
+        escalations: { total: perDay.reduce((n, d) => n + d.escalations, 0), byTrigger: { RESPONSE_BREACHED: 4, UNASSIGNED: 2, RESOLUTION_OVERDUE: 1 } },
+        perDay,
+        technicians: [{ userId: 3, name: 'Linus Torvalds', maxWorkload: 5, activeIncidents: 4, resolved: 11, ratings: 6, averageRating: 4.5 }, { userId: 4, name: 'Margaret Hamilton', maxWorkload: 8, activeIncidents: 2, resolved: 7, ratings: 0, averageRating: null }],
+      },
+    };
   }
 }

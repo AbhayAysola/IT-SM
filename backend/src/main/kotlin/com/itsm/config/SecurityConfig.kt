@@ -108,8 +108,12 @@ class SecurityConfig(
                 it.requestMatchers("/api/admin/users/**", "/api/admin/technicians/**").hasAuthority(Permission.USER_MANAGE.name)
                 it.requestMatchers("/api/admin/categories/**", "/api/admin/services/**").hasAuthority(Permission.CATALOG_MANAGE.name)
                 it.requestMatchers("/api/admin/sla-policies/**").hasAuthority(Permission.SLA_CONFIGURE.name)
+                // P4: when SLA escalation fires (docs/architecture/p4.md section 3). Same permission as the SLA policies.
+                it.requestMatchers("/api/admin/escalation-settings/**").hasAuthority(Permission.SLA_CONFIGURE.name)
                 it.requestMatchers("/api/admin/assignment-settings/**").hasAuthority(Permission.ASSIGNMENT_CONFIGURE.name)
                 it.requestMatchers("/api/admin/audit-events/**").hasAuthority(Permission.AUDIT_VIEW.name)
+                // P4: the analytics dashboard (docs/architecture/p4.md section 5).
+                it.requestMatchers("/api/admin/analytics/**").hasAuthority(Permission.ANALYTICS_VIEW.name)
                 it.requestMatchers("/api/admin/**").hasRole("ADMIN")
                 it.anyRequest().authenticated()
             }
