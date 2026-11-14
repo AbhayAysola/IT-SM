@@ -85,7 +85,7 @@ against this table).
 | P3 | Confirm the technician contract (`available` is an admin flag, not workload; `maxWorkload` is a ceiling; `escalationChain` nearest-first) and the `defaultMaxWorkload` cap of 100 | pending (a confirmation, not code) |
 | P4 | SLA timers, breach detection, escalation, notifications, analytics | **built** (`sla/`, `escalation/`, `notification/`, `analytics/`); `unassignedEscalationMinutes` is owned by P4 (`escalation_settings`, `V41`) |
 | All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; P2 to P4 publish through it |
-| P2 | Incident AI analysis sends the incident text to the Anthropic API when `anthropic.api-key` is set | **open decision:** confirm this is acceptable for the deployment's data policy (off when no key is set) |
+| P2 | Incident AI features (analysis, chatbot) send the incident text to the Google Gemini API when `gemini.api-key` is set | **open decision:** confirm this is acceptable for the deployment's data policy, and check Google's terms for the key's tier (free-tier terms differ from paid ones on how prompts may be used). Off when no key is set |
 
 ## 8. Integration: `feat/p1-b18-final-integration` (P1 + `main` + P3's PR #10), merged to `main` as PR #11
 
