@@ -10,10 +10,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /**
  * Delivers notifications through the channels each one asks for. Transactional channels (the in-app inbox) run now, in
  * the caller's transaction; external ones (email, SMS) run only after it commits, and a failure there is logged, never
- * propagated: a notification must not undo the change it reports.
+ * propagated: a notification must not undo the change it reports. Committed in-app notifications are also pushed to the
+ * recipient's open browsers ([NotificationStreamHub]).
  */
 @Service
-class NotificationService(channels: List<NotificationChannel>) {
+class NotificationService(
+    channels: List<NotificationChannel>,
+    /** Pushes committed in-app notifications to open browsers; null in unit tests. */
+    private val live: NotificationLiveUpdates? = null
+) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val byKey: Map<ChannelKey, NotificationChannel> = channels.associateBy { it.key }
 
@@ -29,6 +34,14 @@ class NotificationService(channels: List<NotificationChannel>) {
                 val channel = byKey.getValue(key)
                 if (channel.transactional) channel.deliver(n) else later += channel to n
             }
+        }
+        val inApp = notifications.filter { ChannelKey.IN_APP in it.channels }
+        if (live != null && inApp.isNotEmpty()) {
+            TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try { live.published(inApp) } catch (e: Exception) { log.warn("Live notification push failed", e) }
+                }
+            })
         }
         if (later.isNotEmpty()) {
             TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {

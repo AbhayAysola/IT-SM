@@ -238,6 +238,7 @@ P2/P3 events can be turned off with `P4_EVENT_LISTENERS_ENABLED=false` (the swee
 | `GET /api/notifications/unread-count` | any signed-in user | 200 `{count}` |
 | `POST /api/notifications/{id}/read` | the recipient | 200 the notification (idempotent); 404 if it is not theirs |
 | `POST /api/notifications/read-all` | any signed-in user | 200 `{updated}` |
+| `GET /api/notifications/stream` | any signed-in user | 200 `text/event-stream`: `ready` `{unreadCount}`, then `notification` `{type, incidentId, priority, title, body, unreadCount}` for each new committed in-app notification; 401 without a session |
 
 **Analytics (implemented, `analytics/`).** Definitions in [p4.md](p4.md) section 5.
 

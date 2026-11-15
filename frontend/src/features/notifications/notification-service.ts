@@ -1,4 +1,4 @@
-import { request } from '@/lib/api';
+import { API_URL, request } from '@/lib/api';
 
 /**
  * The signed-in user's notification inbox (P4, docs/architecture/p4.md section 4). The live service calls
@@ -38,12 +38,32 @@ export const toNotification = (d: ApiNotification): NotificationItem =>
 /** Where a notification leads: its incident, if it has one. */
 export const notificationHref = (n: NotificationItem) => (n.incidentId ? `/incidents/${encodeURIComponent(n.incidentId)}` : null);
 
+/** A notification pushed in real time (P4's `GET /api/notifications/stream`), with the recipient's new unread count. */
+export interface LiveNotification {
+  type: NotificationType;
+  incidentId: string | null;
+  priority: NotificationItem['priority'];
+  title: string;
+  body: string;
+  unreadCount: number;
+}
+
+export interface StreamHandlers {
+  /** Connected (again), with the current unread count. */
+  onReady: (unreadCount: number) => void;
+  onNotification: (n: LiveNotification) => void;
+  /** The connection dropped; the browser retries by itself. */
+  onDisconnect: () => void;
+}
+
 interface NotificationService {
   /** `page` is 1-based, like the incident list. */
   list(email: string, unreadOnly: boolean, page: number, size?: number): Promise<NotificationPage>;
   unreadCount(email: string): Promise<number>;
   markRead(email: string, id: number): Promise<void>;
   markAllRead(email: string): Promise<void>;
+  /** Subscribes to real-time notifications; returns the unsubscribe function. A no-op where there is no stream (the mock). */
+  stream(handlers: StreamHandlers): () => void;
 }
 
 // ---- live ----------------------------------------------------------------------------------------------------------
@@ -64,6 +84,16 @@ export const liveNotificationService: NotificationService = {
   async markAllRead() {
     await request('/api/notifications/read-all', { method: 'POST' });
     announceChange();
+  },
+  stream(handlers) {
+    if (typeof EventSource === 'undefined') return () => undefined;
+    // The session cookie authenticates it (withCredentials). EventSource reconnects by itself after a drop.
+    const source = new EventSource(`${API_URL}/api/notifications/stream`, { withCredentials: true });
+    const parse = <T,>(e: MessageEvent): T | null => { try { return JSON.parse(e.data as string) as T; } catch { return null; } };
+    source.addEventListener('ready', (e) => { const d = parse<{ unreadCount: number }>(e as MessageEvent); if (d) handlers.onReady(d.unreadCount); });
+    source.addEventListener('notification', (e) => { const d = parse<LiveNotification>(e as MessageEvent); if (d) { handlers.onNotification(d); announceChange(); } });
+    source.onerror = () => handlers.onDisconnect();
+    return () => source.close();
   },
 };
 
@@ -121,6 +151,8 @@ export const mockNotificationService: NotificationService = {
     save(email, load(email).map((n) => (n.readAt ? n : { ...n, readAt: now })));
     announceChange();
   },
+  /** The mock has no server to push from: the bell keeps polling. */
+  stream() { return () => undefined; },
 };
 
 export const notificationService: NotificationService =
