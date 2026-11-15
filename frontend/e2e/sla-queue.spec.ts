@@ -1,6 +1,6 @@
 /**
  * P4's SLA queue on the dashboard (mock services): staff see the open incidents closest to their resolution deadline,
- * breached first; reporters keep their account overview only. The ordering and the live mapper are pure and tested last.
+ * breached first; reporters get their own dashboard without it. The ordering and the live mapper are pure and tested last.
  */
 import type { Page } from '@playwright/test';
 import { test, expect, newUser, type TestRole } from './fixtures';
@@ -10,7 +10,6 @@ import { toQueueItem } from '../src/features/incidents/services/incident-mappers
 
 async function dashboard(page: Page, api: Parameters<typeof signIn>[1], role: TestRole) {
   await signIn(page, api, newUser(`queue-${role.toLowerCase()}`, role));
-  await page.getByRole('heading', { name: 'Dashboard', level: 1 }).waitFor();
 }
 
 const queue = (page: Page) => page.getByTestId('sla-queue');
@@ -39,9 +38,9 @@ test.describe('SLA queue on the dashboard', () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test('reporters keep the account overview only', async ({ page, api }) => {
+  test('reporters get their own dashboard without the queue', async ({ page, api }) => {
     await dashboard(page, api, 'EMPLOYEE');
-    await expect(page.locator('dd').first()).toBeVisible();
+    await expect(page.getByText('Waiting on you', { exact: true }).first()).toBeVisible();
     await expect(queue(page)).toHaveCount(0);
   });
 });

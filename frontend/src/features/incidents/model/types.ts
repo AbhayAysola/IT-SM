@@ -55,6 +55,23 @@ export type Visibility = 'INTERNAL' | 'REPORTER_VISIBLE';
 export type EntryType =
   | 'NOTE' | 'FINDING' | 'ACTION_TAKEN' | 'INFO_REQUEST' | 'INFO_RESPONSE' | 'RESOLUTION' | 'REOPEN_REASON' | 'REASSIGNMENT';
 
+/**
+ * One row of an incident's audit trail (what the system recorded, as opposed to what people wrote in the investigation).
+ * `description` is only present for administrators: the backend gives everyone else the reduced entry.
+ */
+export interface HistoryEntry {
+  id: string;
+  occurredAt: string;
+  /** Machine code such as `INCIDENT_ASSIGNED`; `history.tsx` turns it into words. */
+  action: string;
+  actorType: 'USER' | 'SYSTEM';
+  /** `ADMIN`, `TECHNICIAN` or `EMPLOYEE` for a person; null for the system. */
+  actorRole: string | null;
+  previousState: string | null;
+  newState: string | null;
+  description: string | null;
+}
+
 export interface TimelineEntry {
   id: string;
   incidentId: string;

@@ -8,7 +8,7 @@ export async function uiLogin(page: Page, who: Pick<Persona, 'email' | 'password
   await page.getByLabel('Password').fill(who.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL('**/dashboard');
-  await page.locator('dd').first().waitFor();
+  await page.getByRole('heading', { level: 1, name: /^Welcome back/ }).waitFor();
 }
 
 export async function openAdminAs(page: Page, who: Pick<Persona, 'email' | 'password'>, path: string) {

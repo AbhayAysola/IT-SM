@@ -77,8 +77,9 @@ test.describe('admin: analytics', () => {
   });
 
   test('a failed load offers a retry', async ({ page, api }) => {
+    await openAdmin(page, api, '/admin'); // signs in through the dashboard, which reads the summary too
     api.admin.failures.push({ match: 'GET /api/admin/analytics/summary', status: 500, code: 'INTERNAL_ERROR', detail: 'boom', times: 1 });
-    await openAdmin(page, api, PATH);
+    await page.goto(PATH);
     await page.getByRole('button', { name: /try again|retry/i }).click();
     await expect(page.getByTestId('kpi-reported')).toBeVisible();
   });

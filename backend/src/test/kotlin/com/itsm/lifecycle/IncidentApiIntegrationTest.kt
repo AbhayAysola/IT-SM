@@ -104,6 +104,18 @@ class IncidentApiIntegrationTest {
         move(admin, id, "CLOSE").andExpect(status().isOk).andExpect(jsonPath("$.state").value("CLOSED"))
     }
 
+    @Test fun `a technician reads their own workload and anyone without a technician profile gets 404`() {
+        val reporter = account("EMPLOYEE"); val tech = account("TECHNICIAN"); val admin = account("ADMIN")
+        directory.technicians = listOf(TechnicianSummary(tech.id, "Tech", "t@campus.example", true, 4, 3, false, null, mapOf(7L to 3)))
+        call(tech, "GET", "/api/incidents/workload/me").andExpect(status().isOk)
+            .andExpect(jsonPath("$.active").value(0)).andExpect(jsonPath("$.maxWorkload").value(4))
+        val id = incident(reporter.id)
+        call(admin, "POST", "/api/incidents/$id/assignment", """{"technicianId":${tech.id}}""").andExpect(status().isOk)
+        call(tech, "GET", "/api/incidents/workload/me").andExpect(status().isOk).andExpect(jsonPath("$.active").value(1))
+        call(reporter, "GET", "/api/incidents/workload/me").andExpect(status().isNotFound)
+        mvc.perform(get("/api/incidents/workload/me")).andExpect(status().isUnauthorized)
+    }
+
     @Test fun `errors are problem json with stable codes`() {
         val reporter = account("EMPLOYEE"); val tech = account("TECHNICIAN"); val stranger = account("EMPLOYEE"); val admin = account("ADMIN")
         val id = incident(reporter.id)

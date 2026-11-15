@@ -52,7 +52,7 @@ export async function signIn(page: Page, api: ApiHelper, user: TestUser) {
   await page.getByLabel('Password').fill(user.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL('**/dashboard');
-  await page.locator('dd').first().waitFor();
+  await page.getByRole('heading', { level: 1, name: /^Welcome back/ }).waitFor();
 }
 
 /**

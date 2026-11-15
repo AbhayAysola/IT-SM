@@ -1,10 +1,11 @@
 /** Pure checks of the live-API mappers (no browser, no backend): what the pages get from the backend's JSON. */
 import { test, expect } from '@playwright/test';
+import { actionLabel, actorLabel } from '../src/features/incidents/components/history';
 import { needsAttention } from '../src/features/incidents/services/attention';
 import { TABS } from '../src/features/incidents/services/tabs';
 import type { Actor } from '../src/features/incidents/model/types';
 import {
-  liveEmail, liveId, toIncident, toIncidentFromSummary, toIncidentError, toRecommendation, toSimilar, toTimelineEntry, who, type ApiIncident, type Me,
+  liveEmail, liveId, toHistoryEntry, toIncident, toIncidentFromSummary, toIncidentError, toRecommendation, toSimilar, toTimelineEntry, who, type ApiIncident, type Me,
 } from '../src/features/incidents/services/incident-mappers';
 
 const me: Me = { id: 12, email: 'rita@campus.example', name: 'Rita' };
@@ -95,5 +96,22 @@ test.describe('live API mappers', () => {
     expect(needsAttention(emp, row('VERIFIED'), false)).toBe(true);
     expect(needsAttention(emp, row('VERIFIED'), true)).toBe(false);
     expect(needsAttention({ ...emp, role: 'ADMIN' }, row('CLASSIFIED'), false)).toBe(true);
+  });
+});
+
+test.describe('incident history mapper', () => {
+  test('the reduced entry (no description) and the admin row both map, and a system actor has no role', async () => {
+    const reduced = toHistoryEntry({ id: 'h1', occurredAt: 't', action: 'INCIDENT_ASSIGNED', actor: { type: 'USER', role: 'ADMIN' }, previousState: 'CLASSIFIED', newState: 'ASSIGNED' });
+    expect(reduced).toEqual({ id: 'h1', occurredAt: 't', action: 'INCIDENT_ASSIGNED', actorType: 'USER', actorRole: 'ADMIN', previousState: 'CLASSIFIED', newState: 'ASSIGNED', description: null });
+    const full = toHistoryEntry({ id: 'h2', occurredAt: 't', action: 'SLA_BREACHED', actor: { type: 'SYSTEM', role: null }, previousState: null, newState: null, description: 'Resolution target missed' });
+    expect(full).toMatchObject({ actorType: 'SYSTEM', actorRole: null, description: 'Resolution target missed' });
+  });
+
+  test('actions read as words, unknown codes still read sensibly, and the actor is never an id', () => {
+    expect(actionLabel('INCIDENT_ASSIGNED')).toBe('Assigned to a technician');
+    expect(actionLabel('SOME_NEW_ACTION')).toBe('Some new action');
+    expect(actorLabel({ actorType: 'SYSTEM', actorRole: null })).toBe('System');
+    expect(actorLabel({ actorType: 'USER', actorRole: 'TECHNICIAN' })).toBe('Technician');
+    expect(actorLabel({ actorType: 'USER', actorRole: null })).toBe('A user');
   });
 });

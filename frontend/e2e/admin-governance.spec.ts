@@ -189,6 +189,27 @@ test.describe('audit logs (backend API)', () => {
     await expect(dialog(page)).toBeHidden();
   });
 
+  test('events can be filtered by incident, and an incident link opens the log already filtered', async ({ page, api }) => {
+    const base = makeAuditEvents(1)[0];
+    api.audit.events = [
+      { ...base, id: 'a1', action: 'INCIDENT_CREATED', entityType: 'INCIDENT', entityId: 'INC7', incidentId: 'INC7', metadata: {} },
+      { ...base, id: 'a2', action: 'SLA_STARTED', entityType: 'INCIDENT_SLA', entityId: 'INC7', incidentId: 'INC7', metadata: {} },
+      { ...base, id: 'a3', action: 'INCIDENT_CREATED', entityType: 'INCIDENT', entityId: 'INC9', incidentId: 'INC9', metadata: {} },
+    ];
+    await openAdmin(page, api, path);
+    await expect(eventRows(page)).toHaveCount(3);
+    await page.getByLabel('Incident ID', { exact: true }).fill('INC7');
+    await expect.poll(() => lastList(api).get('incidentId')).toBe('INC7');
+    await expect(eventRows(page)).toHaveCount(2);
+    await page.getByLabel('Incident ID', { exact: true }).fill('bad id');
+    await expect(page.getByText('Use up to 30 letters, digits, hyphens or underscores, e.g. INC1024.')).toBeVisible();
+
+    await page.goto(`${path}?incidentId=INC9`);
+    await expect(page.getByLabel('Incident ID', { exact: true })).toHaveValue('INC9');
+    await expect.poll(() => lastList(api).get('incidentId')).toBe('INC9');
+    await expect(eventRows(page)).toHaveCount(1);
+  });
+
   test('state changes and incident ids from the API are displayed', async ({ page, api }) => {
     api.audit.events = [{ ...makeAuditEvents(1)[0], action: 'INCIDENT_ASSIGNED', entityType: 'INCIDENT', entityId: '7', incidentId: 'INC7',
       previousState: 'OPEN', newState: 'IN_PROGRESS', description: 'Assigned to a technician', metadata: {} }];
