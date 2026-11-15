@@ -62,7 +62,8 @@ test.describe('audit logs (backend API)', () => {
     expect(lastList(api).get('page')).toBe('2');
     await expect(page.getByRole('button', { name: /Next/ })).toBeDisabled();
     await page.getByRole('button', { name: /Previous/ }).click();
-    expect(lastList(api).get('page')).toBe('1');
+    await expect(summary(page)).toHaveText('Showing 11–20 of 25 entries');
+    await expect.poll(() => lastList(api).get('page')).toBe('1');
   });
 
   test('every filter is sent to the API as the documented query parameter, and clearing resets them', async ({ page, api }) => {
@@ -104,15 +105,15 @@ test.describe('audit logs (backend API)', () => {
     await page.getByLabel('From', { exact: true }).fill('2026-11-05');
     await page.getByLabel('To', { exact: true }).fill('2026-11-05');
     await expect(summary(page)).toHaveText('Showing 1–10 of 13 entries');
+    await expect.poll(() => lastList(api).get('to')).toBe('2026-11-06T00:00:00.000Z');
     expect(lastList(api).get('from')).toBe('2026-11-05T00:00:00.000Z');
-    expect(lastList(api).get('to')).toBe('2026-11-06T00:00:00.000Z');
     await page.getByLabel('To', { exact: true }).fill('2026-11-04');
     await page.getByLabel('From', { exact: true }).fill('2026-11-04');
     await expect(summary(page)).toHaveText('Showing 1–10 of 12 entries');
     expect(lastList(api).get('to')).toBe('2026-11-05T00:00:00.000Z');
     await page.getByLabel('To', { exact: true }).fill('2026-12-31'); // month boundary handled by Date, not string maths
-    expect(lastList(api).get('from')).toBe('2026-11-04T00:00:00.000Z');
     await expect.poll(() => lastList(api).get('to')).toBe('2027-01-01T00:00:00.000Z');
+    expect(lastList(api).get('from')).toBe('2026-11-04T00:00:00.000Z');
   });
 
   test('invalid filters are explained in the form and are never sent to the API', async ({ page, api }) => {
@@ -138,7 +139,7 @@ test.describe('audit logs (backend API)', () => {
 
     await page.getByLabel('To', { exact: true }).fill('2026-11-05');
     await expect(eventRows(page).first()).toBeVisible();
-    expect(api.audit.requests.length).toBeGreaterThan(sent);
+    await expect.poll(() => api.audit.requests.length).toBeGreaterThan(sent);
   });
 
   test('sorting maps the column headers to the backend sort keys and directions', async ({ page, api }) => {
@@ -158,7 +159,7 @@ test.describe('audit logs (backend API)', () => {
     await expect.poll(() => lastList(api).get('sort')).toBe('entityType');
     await page.getByRole('button', { name: 'Actor', exact: true }).click();
     await expect.poll(() => lastList(api).get('sort')).toBe('actorRole');
-    await expect(lastList(api).get('page')).toBe('0'); // changing the sort returns to the first page
+    expect(lastList(api).get('page')).toBe('0'); // changing the sort returns to the first page
   });
 
   test('detail loads by id and shows recorded details as plain text; entries without details say so', async ({ page, api }) => {
@@ -166,8 +167,8 @@ test.describe('audit logs (backend API)', () => {
     await eventRows(page).first().getByRole('button', { name: /View details/ }).click();
     const dlg = dialog(page);
     await expect(dlg.getByRole('heading', { name: 'Audit entry' })).toBeVisible();
-    expect(api.audit.detailRequests).toEqual(['/api/admin/audit-events/00000000-0000-4000-8000-000000000001']);
     await expect(dlg).toContainText('Event number 1');
+    expect(api.audit.detailRequests).toEqual(['/api/admin/audit-events/00000000-0000-4000-8000-000000000001']);
     await expect(dlg).toContainText('Administrator #10');
     await expect(dlg).toContainText('USER_CREATED');
     await expect(dlg).toContainText('100');
@@ -221,7 +222,7 @@ test.describe('audit logs (backend API)', () => {
     await expect(dialog(page).getByRole('button', { name: /^(edit|delete|remove|save)/i })).toHaveCount(0);
     await expect(dialog(page).getByRole('textbox')).toHaveCount(0);
     await page.keyboard.press('Escape');
-    expect(methods.length).toBeGreaterThan(2);
+    await expect.poll(() => methods.length).toBeGreaterThan(2);
     expect(new Set(methods)).toEqual(new Set(['GET']));
   });
 
