@@ -102,6 +102,7 @@ class AnalyticsIntegrationTest {
         assertEquals("2001-03-01", s["from"].asText()); assertEquals("2001-03-03", s["to"].asText())
 
         assertEquals(3, s["incidents"]["reported"].asLong())
+        assertEquals(mapOf("P2" to 3L), s["incidents"]["reportedByPriority"].fields().asSequence().associate { it.key to it.value.asLong() }, "all three are P2")
         assertEquals(2, s["incidents"]["resolved"].asLong())
         assertTrue(s["incidents"]["unassignedNow"].asLong() >= 1, "open counts are a snapshot of now")
 

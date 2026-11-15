@@ -25,6 +25,12 @@ class AnalyticsQueries(private val jdbc: NamedParameterJdbcTemplate) {
     fun reported(from: Instant, to: Instant): Long =
         jdbc.queryForObject("SELECT count(*) FROM incidents WHERE created_at >= :from AND created_at < :to", range(from, to), Long::class.java)!!
 
+    /** Incidents reported in the range, by priority ("NONE" for an incident not yet classified). */
+    fun reportedByPriority(from: Instant, to: Instant): Map<String, Long> = jdbc.query(
+        "SELECT COALESCE(priority, 'NONE') AS p, count(*) AS n FROM incidents WHERE created_at >= :from AND created_at < :to GROUP BY 1",
+        range(from, to)
+    ) { rs, _ -> rs.getString("p") to rs.getLong("n") }.toMap()
+
     fun resolved(from: Instant, to: Instant): Long =
         jdbc.queryForObject("SELECT count(*) FROM incidents WHERE resolved_at >= :from AND resolved_at < :to", range(from, to), Long::class.java)!!
 

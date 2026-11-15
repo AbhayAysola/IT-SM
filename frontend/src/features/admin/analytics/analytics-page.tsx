@@ -90,7 +90,8 @@ export default function AnalyticsPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <StatTile testId="kpi-reported" label="Reported" value={compact(data.incidents.reported)} />
             <StatTile testId="kpi-resolved" label="Resolved" value={compact(data.incidents.resolved)} />
-            <StatTile testId="kpi-open" label="Open now" value={compact(data.incidents.openNow)} sub={`${compact(data.incidents.unassignedNow)} not assigned`} />
+            <StatTile testId="kpi-open" label="Open now" value={compact(data.incidents.openNow)}
+              sub={`${compact(data.incidents.openByPriority.P1 ?? 0)} critical (P1) · ${compact(data.incidents.unassignedNow)} not assigned`} />
             <StatTile testId="kpi-sla" label="Resolution SLA met" value={pct(data.sla.overall.resolutionCompliancePct)} sub={metDetail(data.sla.overall)} />
             <StatTile testId="kpi-escalations" label="Escalations" value={compact(data.escalations.total)} />
           </div>
@@ -139,6 +140,17 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">By priority</CardTitle>
+              <CardDescription>Incidents reported in these days, and open right now. P1 is critical.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SimpleTable caption="Incidents by priority" head={['Priority', 'Reported', 'Open now']}
+                rows={PRIORITY_ROWS.map(([p, name]) => [name, compact(data.incidents.reportedByPriority?.[p] ?? 0), compact(data.incidents.openByPriority[p] ?? 0)])} />
+            </CardContent>
+          </Card>
+
           <div className="grid gap-4 lg:grid-cols-2">
             <SlaTableCard title="By service" groups={data.sla.byService} />
             <SlaTableCard title="By category" groups={data.sla.byCategory} />
@@ -158,12 +170,15 @@ export default function AnalyticsPage() {
   );
 }
 
+/** Fixed order: priorities are a scale, not a ranking. */
+const PRIORITY_ROWS = [['P1', 'P1 Critical'], ['P2', 'P2 High'], ['P3', 'P3 Medium'], ['P4', 'P4 Low']] as const;
+
 function SlaTableCard({ title, groups }: { title: string; groups: AnalyticsSummary['sla']['byService'] }) {
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">SLA {title.toLowerCase()}</CardTitle></CardHeader>
       <CardContent>
-        <SimpleTable caption={`SLA ${title.toLowerCase()}`} head={[title.replace('By ', '').replace(/^./, (c) => c.toUpperCase()), 'Tracked', 'Response met', 'Resolution met']}
+        <SimpleTable caption={`SLA ${title.toLowerCase()}`} head={[title.replace('By ', '').replace(/^./, (c) => c.toUpperCase()), 'Incidents', 'Response met', 'Resolution met']}
           rows={groups.map((g) => [g.name, compact(g.counts.tracked), pct(g.counts.responseCompliancePct), pct(g.counts.resolutionCompliancePct)])}
           empty="No SLA was tracked in these days." />
       </CardContent>

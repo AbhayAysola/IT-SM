@@ -52,8 +52,7 @@ class NotificationMessagesTest {
     @Test fun `moves nobody needs to hear about send nothing`() {
         assertEquals(emptyList<Notification>(), NotificationMessages.forChange(change("ACKNOWLEDGED", "ASSIGNED"), now))
         assertEquals(emptyList<Notification>(), NotificationMessages.forChange(change("IN_PROGRESS", "ACKNOWLEDGED"), now))
-        assertEquals(emptyList<Notification>(), NotificationMessages.forChange(change("CLOSED", "VERIFIED"), now))
-        assertEquals(emptyList<Notification>(), NotificationMessages.forChange(change("VERIFIED", "RESOLVED"), now), "verified, not reopened")
+        // Confirming and closing are news now (see the test below); acknowledging and starting work are not.
     }
 
     @Test fun `a first-seen incident is a silent baseline, except a fresh assignment`() {
@@ -63,6 +62,22 @@ class NotificationMessagesTest {
         assertEquals(2, NotificationMessages.forChange(fresh, now).size)
         val stale = change("ASSIGNED", previousState = null, previousAssignee = null, assignedAt = now.minus(Duration.ofMinutes(16)))
         assertEquals(emptyList<Notification>(), NotificationMessages.forChange(stale, now))
+    }
+
+    @Test fun `a confirmed fix tells the technician, and closing tells the reporter`() {
+        assertEquals(listOf(NotificationType.INCIDENT_VERIFIED to 7L), NotificationMessages.forChange(change("VERIFIED", "RESOLVED"), now).summary())
+        assertEquals("INC1001: the reporter confirmed your fix", NotificationMessages.forChange(change("VERIFIED", "RESOLVED"), now)[0].title)
+        val closed = NotificationMessages.forChange(change("CLOSED", "VERIFIED"), now)
+        assertEquals(listOf(NotificationType.INCIDENT_CLOSED to 1L), closed.summary(), "the technician already heard at confirmation")
+        assertTrue(closed[0].body.endsWith("Report a new incident if the problem comes back."))
+    }
+
+    @Test fun `confirmed and closed between two looks still tells both, and a first sight of a finished incident tells nobody`() {
+        assertEquals(
+            listOf(NotificationType.INCIDENT_VERIFIED to 7L, NotificationType.INCIDENT_CLOSED to 1L),
+            NotificationMessages.forChange(change("CLOSED", "RESOLVED"), now).summary()
+        )
+        assertEquals(emptyList<Notification>(), NotificationMessages.forChange(change("CLOSED", previousState = null, previousAssignee = null), now))
     }
 
     // --- SLA and escalation -------------------------------------------------------------------------------------------

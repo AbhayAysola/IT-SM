@@ -98,6 +98,19 @@ class NotificationIntegrationTest {
 
     // --- lifecycle ----------------------------------------------------------------------------------------------------
 
+    @Test fun `a confirmed fix tells the technician and closing tells the reporter, once each`() {
+        val reporter = t.caller(Role.EMPLOYEE); val tech = t.caller(Role.TECHNICIAN)
+        val id = incident(reporter.id, assignee = tech.id, createdAt = Instant.now())
+        lifecycle.runAt(Instant.now()) // first sight: the fresh assignment
+        move(id, "RESOLVED", tech.id, resolved = true); lifecycle.runAt(Instant.now())
+        jdbc.update("UPDATE incidents SET state = 'VERIFIED', updated_at = now() WHERE id = ?", id); lifecycle.runAt(Instant.now())
+        assertEquals(listOf("INCIDENT_ASSIGNED", "INCIDENT_VERIFIED"), inboxOf(tech.id, id))
+        jdbc.update("UPDATE incidents SET state = 'CLOSED', closed_at = now(), updated_at = now() WHERE id = ?", id); lifecycle.runAt(Instant.now())
+        lifecycle.runAt(Instant.now())
+        assertEquals(listOf("ASSIGNMENT_MADE", "INCIDENT_RESOLVED", "INCIDENT_CLOSED"), inboxOf(reporter.id, id))
+        assertEquals(listOf("INCIDENT_ASSIGNED", "INCIDENT_VERIFIED"), inboxOf(tech.id, id), "the technician is not told twice")
+    }
+
     @Test fun `each lifecycle step tells the person who must act, once`() {
         val reporter = t.caller(Role.EMPLOYEE); val tech = t.caller(Role.TECHNICIAN)
         val id = incident(reporter.id, assignee = tech.id, createdAt = Instant.now()) // a fresh assignment P4 has not seen yet

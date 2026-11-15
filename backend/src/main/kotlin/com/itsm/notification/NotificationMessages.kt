@@ -39,6 +39,13 @@ object NotificationMessages {
             if (change.previousState == "RESOLVED" && change.state in REOPENED_STATES && c.assigneeId != null) {
                 add(make(c, c.assigneeId, NotificationType.INCIDENT_REOPENED, "${c.incidentId} was reopened by the reporter", c.title))
             }
+            // Finished. If confirming and closing both happened since the last look, both people are still told.
+            if (change.state in FINISHED_STATES && change.previousState !in FINISHED_STATES && c.assigneeId != null && c.assigneeId != c.reporterId) {
+                add(make(c, c.assigneeId, NotificationType.INCIDENT_VERIFIED, "${c.incidentId}: the reporter confirmed your fix", c.title))
+            }
+            if (change.state == "CLOSED" && change.previousState != "CLOSED") {
+                add(make(c, c.reporterId, NotificationType.INCIDENT_CLOSED, "${c.incidentId} is closed", "${c.title}. Report a new incident if the problem comes back."))
+            }
         }
     }
 
@@ -92,6 +99,7 @@ object NotificationMessages {
     // --- helpers ------------------------------------------------------------------------------------------------------
 
     private val REOPENED_STATES = setOf("ASSIGNED", "ACKNOWLEDGED", "IN_PROGRESS", "PENDING_INFO")
+    private val FINISHED_STATES = setOf("VERIFIED", "CLOSED")
     private val TIME = DateTimeFormatter.ofPattern("d MMM, HH:mm 'UTC'").withZone(ZoneOffset.UTC)
 
     private fun clockName(clock: SlaClock?) = if (clock == SlaClock.RESPONSE) "response" else "resolution"

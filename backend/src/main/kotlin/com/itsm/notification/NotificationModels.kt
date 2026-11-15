@@ -28,7 +28,11 @@ enum class NotificationType {
     /** To the assignee: an admin changed the incident's priority (V44). */
     PRIORITY_CHANGED,
     /** To every active admin: P4 suggests a different priority (V45). */
-    PRIORITY_SUGGESTED
+    PRIORITY_SUGGESTED,
+    /** To the assignee: the reporter confirmed the fix (V46). */
+    INCIDENT_VERIFIED,
+    /** To the reporter: the incident was closed (V46). */
+    INCIDENT_CLOSED
 }
 
 /** Where a notification is delivered. */
