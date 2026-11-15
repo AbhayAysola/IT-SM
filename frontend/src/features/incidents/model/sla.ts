@@ -143,3 +143,24 @@ export function escalationAudience(e: EscalationView): string {
   if (e.tier === 'ADMINS') return `sent to the administrators (${e.targets.join(', ')})`;
   return `sent to ${e.targets.join(', ')} (${TIER_LABEL[e.tier]})`;
 }
+
+// ---- the SLA queue (dashboard, staff) -----------------------------------------------------------------------------
+
+/** One open incident in the caller's SLA queue (GET /api/sla/incidents): breached first, then nearest resolution deadline. */
+export interface SlaQueueItem {
+  incidentId: string;
+  title: string;
+  priority: Priority;
+  sla: RowSla;
+}
+
+/** How many rows the dashboard asks for. */
+export const SLA_QUEUE_SIZE = 8;
+
+/** Breached first, then the nearest resolution deadline, then the id: the backend's order, used by the mock. */
+export function queueOrder(a: SlaQueueItem, b: SlaQueueItem): number {
+  const breached = Number(b.sla.status === 'BREACHED') - Number(a.sla.status === 'BREACHED');
+  if (breached) return breached;
+  const due = (i: SlaQueueItem) => (i.sla.resolutionDueAt ? Date.parse(i.sla.resolutionDueAt) : Number.POSITIVE_INFINITY);
+  return due(a) - due(b) || a.incidentId.localeCompare(b.incidentId);
+}

@@ -4,10 +4,11 @@ import { IncidentError, type Actor, type Audience, type IncidentState, type Prio
 import type { AnalysisResult, FilterOptions, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
 import type { PrioritySuggestionView } from '../model/priority';
+import { SLA_QUEUE_SIZE, type SlaQueueItem } from '../model/sla';
 import { technicianApi } from '@/features/admin/services/technician-api';
 import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toRowSla, toSimilar, toSla, toTimelineEntry,
+  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toQueueItem, toRecommendation, toEscalation, toRowSla, toSimilar, toSla, toTimelineEntry,
   type ApiEscalation, type ApiFeedback, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
@@ -131,6 +132,19 @@ export const liveIncidentService = {
     const technicianId = liveId(technicianEmail);
     if (technicianId === null) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
     await call('POST', `/${enc(id)}/assignment`, { technicianId, reason: reason ?? null });
+  },
+
+  /** P4's SLA queue (`GET /api/sla/incidents`): technicians get their own incidents, admins everything. */
+  async slaQueue(_actor: Actor): Promise<SlaQueueItem[]> {
+    const q = new URLSearchParams({ open: 'true', unresolved: 'true', size: String(SLA_QUEUE_SIZE) });
+    for (const s of ['BREACHED', 'WARNING', 'RUNNING']) q.append('status', s);
+    try {
+      const page = await request<{ items: ApiSla[] }>(`/api/sla/incidents?${q}`);
+      return page.items.map(toQueueItem);
+    } catch (e) {
+      if (e instanceof ApiErrorResponse) throw toIncidentError(e.status, { detail: e.message });
+      throw new IncidentError('UNAVAILABLE', 'The SLA service is unreachable. Please try again.');
+    }
   },
 
   /** P4's open suggestion, or null (204). Admins only. */

@@ -68,7 +68,9 @@ data class SlaDto(
     val pausedSeconds: Long,
     val evaluatedAt: Instant?,
     /** Null unless the resolution deadline was predicted to be missed. */
-    val risk: SlaRiskDto? = null
+    val risk: SlaRiskDto? = null,
+    /** The incident's title: in the queue (`GET /api/sla/incidents`) only. */
+    val title: String? = null
 ) {
     companion object {
         fun pending(incidentId: String) = SlaDto(incidentId, PENDING, null, null, null, null, null, null, 0, null)
@@ -117,12 +119,12 @@ class SlaQueryService(
     }
 
     /** Admins see every incident; technicians only those currently assigned to them. */
-    fun list(user: CurrentUser, statuses: Set<SlaStatus>, openOnly: Boolean, query: PageQuery): PageResponse<SlaDto> {
+    fun list(user: CurrentUser, statuses: Set<SlaStatus>, openOnly: Boolean, query: PageQuery, unresolvedOnly: Boolean = false): PageResponse<SlaDto> {
         val assignee = if (user.has(Permission.INCIDENT_VIEW_ALL)) null else user.id
-        val (items, total) = store.list(statuses, openOnly, assignee, query.page, query.size)
-        val risk = risks.findAll(items.map { it.incidentId })
+        val (items, total) = store.list(statuses, openOnly, assignee, query.page, query.size, unresolvedOnly)
+        val risk = risks.findAll(items.map { it.first.incidentId })
         return PageResponse(
-            items = items.map { SlaDto.of(it, null, risk[it.incidentId]) },
+            items = items.map { (r, title) -> SlaDto.of(r, null, risk[r.incidentId]).copy(title = title) },
             page = query.page,
             size = query.size,
             totalItems = total,
@@ -144,16 +146,18 @@ class SlaController(private val service: SlaQueryService, private val currentUse
 
     /**
      * SLA records for the caller's queue: `status` filters by overall status (repeatable, e.g. `status=BREACHED&status=WARNING`),
-     * `open=true` (default) hides incidents that are verified or closed.
+     * `open=true` (default) hides incidents that are verified or closed; `unresolved=true` also hides resolved ones (their
+     * resolution clock has stopped, even if it was breached), which is what the dashboard's queue shows.
      */
     @GetMapping("${ApiPaths.API}/sla/incidents")
     @PreAuthorize("hasAnyAuthority('INCIDENT_VIEW_ALL', 'INCIDENT_VIEW_ASSIGNED')")
     fun list(
         @RequestParam(required = false) status: List<String>?,
         @RequestParam(defaultValue = "true") open: Boolean,
+        @RequestParam(defaultValue = "false") unresolved: Boolean,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
-    ): PageResponse<SlaDto> = service.list(currentUser.current(), parseStatuses(status), open, PageQuery(page, size))
+    ): PageResponse<SlaDto> = service.list(currentUser.current(), parseStatuses(status), open, PageQuery(page, size), unresolved)
 
     private fun parseStatuses(values: List<String>?): Set<SlaStatus> = values.orEmpty().map { v ->
         SlaStatus.entries.firstOrNull { it.name.equals(v.trim(), ignoreCase = true) }
