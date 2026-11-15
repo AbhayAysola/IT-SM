@@ -108,6 +108,37 @@ services:
     networks:
       - itsm-network
 
+  # One-shot: creates the FIRST administrator, then exits. Not started by `up`; run it once after the stack is healthy:
+  #   ITSM_BOOTSTRAP_ADMIN_EMAIL=admin@example.com ITSM_BOOTSTRAP_ADMIN_PASSWORD='choose-a-strong-one' \
+  #     docker compose --profile bootstrap run --rm bootstrap-admin
+  # It refuses when an administrator already exists, so running it twice is harmless.
+  bootstrap-admin:
+    profiles: ["bootstrap"]
+    image: itsm-backend-bootstrap
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: ["--itsm.bootstrap-admin=true", "--server.port=0", "--management.server.port=0"]
+    environment:
+      SPRING_PROFILES_ACTIVE: docker,dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/itsm
+      SPRING_DATASOURCE_USERNAME: itsm
+      SPRING_DATASOURCE_PASSWORD: itsm_password
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: redis_password
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: itsm
+      SPRING_RABBITMQ_PASSWORD: rabbitmq_password
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to at least 32 bytes of random secret material}
+      ITSM_BOOTSTRAP_ADMIN_EMAIL: ${ITSM_BOOTSTRAP_ADMIN_EMAIL:-}
+      ITSM_BOOTSTRAP_ADMIN_PASSWORD: ${ITSM_BOOTSTRAP_ADMIN_PASSWORD:-}
+      ITSM_BOOTSTRAP_ADMIN_NAME: ${ITSM_BOOTSTRAP_ADMIN_NAME:-Administrator}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - itsm-network
+
   frontend:
     build:
       context: ../frontend

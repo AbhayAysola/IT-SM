@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { CircleCheck, CircleOff, MoreHorizontal, Pencil, Plus, Server } from 'lucide-react';
+import { CircleCheck, CircleOff, List, MoreHorizontal, Network, Pencil, Plus, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,6 +19,7 @@ import { useListState } from '../hooks/use-list';
 import { useResource } from '../hooks/use-resource';
 import { itServiceApi, type ServiceSort } from '../services/it-service-api';
 import { CRITICALITY_LABEL, CRITICALITY_LEVELS, ServiceError, type ItService, type ServiceRef } from '../types';
+import { DependencyMap } from './dependency-map';
 import { ServiceFormDialog } from './service-form-dialog';
 
 const PAGE_SIZE = 10;
@@ -41,6 +42,8 @@ export default function ServicesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ItService | null>(null);
   const [toggling, setToggling] = useState<ItService | null>(null);
+  const [view, setView] = useState<'list' | 'map'>('list');
+  const [mapKey, setMapKey] = useState(0);
 
   const { data, loading, error, reload } = useResource(
     () => itServiceApi.list({
@@ -58,6 +61,11 @@ export default function ServicesPage() {
     <>
       <PageHeader title="IT services" description="The services incidents are raised against, with how critical they are and what they depend on. Services are deactivated, never deleted."
         actions={<Button onClick={openAdd}><Plus aria-hidden="true" /> Add service</Button>} />
+      <div role="group" aria-label="View" className="mb-3 inline-flex gap-1">
+        <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" aria-pressed={view === 'list'} onClick={() => setView('list')}><List aria-hidden="true" /> List</Button>
+        <Button variant={view === 'map' ? 'default' : 'outline'} size="sm" aria-pressed={view === 'map'} onClick={() => setView('map')}><Network aria-hidden="true" /> Dependency map</Button>
+      </div>
+      {view === 'map' ? <Card><DependencyMap refreshKey={mapKey} /></Card> : (
       <Card>
         <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center">
           <SearchBox value={list.search} onChange={list.setSearch} label="Search services" placeholder="Search by name or owner team" />
@@ -125,8 +133,9 @@ export default function ServicesPage() {
           </div>
         )}
       </Card>
+      )}
       <ServiceFormDialog open={formOpen} onOpenChange={setFormOpen} service={editing}
-        onSaved={(s, mode) => { toast.success(mode === 'created' ? `Service “${s.name}” was added.` : `Service “${s.name}” was updated.`); reload(); }} />
+        onSaved={(s, mode) => { toast.success(mode === 'created' ? `Service “${s.name}” was added.` : `Service “${s.name}” was updated.`); reload(); setMapKey((k) => k + 1); }} />
       <ConfirmDialog
         open={!!toggling} onOpenChange={(o) => !o && setToggling(null)}
         title={`${toggling?.active ? 'Deactivate' : 'Activate'} “${toggling?.name ?? ''}”?`}
@@ -135,7 +144,7 @@ export default function ServicesPage() {
           : 'It becomes available again. The server refuses this while a service it depends on is inactive.'}
         confirmLabel={toggling?.active ? 'Deactivate service' : 'Activate service'} destructive={!!toggling?.active}
         onConfirm={async () => {
-          try { const s = await itServiceApi.setActive(toggling!.id, !toggling!.active); toast.success(`Service “${s.name}” was ${s.active ? 'activated' : 'deactivated'}.`); reload(); }
+          try { const s = await itServiceApi.setActive(toggling!.id, !toggling!.active); toast.success(`Service “${s.name}” was ${s.active ? 'activated' : 'deactivated'}.`); reload(); setMapKey((k) => k + 1); }
           catch (e) { throw new Error(e instanceof ServiceError ? e.message : 'Could not change the service.'); }
         }}
       />

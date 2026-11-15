@@ -21,7 +21,14 @@ CHART_DIR="$(dirname $0)/../infra/helm"
 : "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
 : "${REDIS_PASSWORD:?set REDIS_PASSWORD}"
 : "${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}"
+#   GRAFANA_ADMIN_PASSWORD (optional)
+#                   when set, also deploys in-cluster Prometheus and Grafana (reach Grafana with kubectl port-forward, see the output below)
 : "${TRUSTED_PROXY_CIDRS:?set TRUSTED_PROXY_CIDRS to the ingress controller pod CIDR (Kind: 10.244.0.0/16)}"
+
+MONITORING_ARGS=()
+if [ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
+  MONITORING_ARGS=(--set monitoring.prometheus.enabled=true --set monitoring.grafana.enabled=true --set "monitoring.grafana.adminPassword=$GRAFANA_ADMIN_PASSWORD")
+fi
 
 echo "Deploying $RELEASE_NAME..."
 helm upgrade --install $RELEASE_NAME $CHART_DIR \
@@ -34,6 +41,7 @@ helm upgrade --install $RELEASE_NAME $CHART_DIR \
   --set redis.password="$REDIS_PASSWORD" \
   --set rabbitmq.password="$RABBITMQ_PASSWORD" \
   --set backend.trustedProxy.cidrs="$TRUSTED_PROXY_CIDRS" \
+  "${MONITORING_ARGS[@]}" \
   --wait \
   --timeout 5m
 
@@ -44,3 +52,6 @@ echo "API: https://$PUBLIC_HOST/api"
 echo "The frontend image must have been built with --build-arg NEXT_PUBLIC_API_URL=https://$PUBLIC_HOST (scripts/setup-kind.sh does this)."
 echo "Pods:"
 kubectl get pods -n it-sm
+if [ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
+  echo "Grafana: kubectl -n it-sm port-forward svc/it-sm-grafana 3001:3000   (then http://localhost:3001, user admin)"
+fi
