@@ -7,8 +7,8 @@ import type { PrioritySuggestionView } from '../model/priority';
 import { technicianApi } from '@/features/admin/services/technician-api';
 import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toRowSla, toSimilar, toSla, toTimelineEntry,
-  type ApiEscalation, type ApiFeedback, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
+  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toRecommendation, toEscalation, toHistoryEntry, toRowSla, toSimilar, toSla, toTimelineEntry,
+  type ApiEscalation, type ApiFeedback, type ApiHistoryEntry, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
 /**
@@ -84,7 +84,7 @@ export const liveIncidentService = {
     const incident = toIncident(dto, who);
     const staff = hasPermission(actor.role, 'INCIDENT_WORK');
     const wantsSimilar = staff && ACTIVE.includes(dto.state);
-    const [timeline, feedback, similar, sla, escalations] = await Promise.all([
+    const [timeline, feedback, similar, sla, escalations, history] = await Promise.all([
       call<ApiTimelineEntry[]>('GET', `/${enc(id)}/timeline`),
       call<ApiFeedback>('GET', `/${enc(id)}/feedback`).catch((e: unknown) => {
         if (e instanceof IncidentError && e.code === 'NOT_FOUND') return null; // no feedback yet is normal
@@ -95,6 +95,11 @@ export const liveIncidentService = {
       call<ApiSla>('GET', `/${enc(id)}/sla`).then(toSla, () => null),
       // Escalations name the people involved, so the backend shows them to staff only; also extra information.
       staff ? call<ApiEscalation[]>('GET', `/${enc(id)}/escalations`).then((l) => l.map(toEscalation), () => []) : Promise.resolve([]),
+      // The audit trail is for staff: it records system steps (SLA clocks, AI flags, escalations) a reporter has no use for.
+      // It is extra information too (it answers 503 while the access policy is not deployed), so a failure hides the card only.
+      staff
+        ? call<{ items: ApiHistoryEntry[] }>('GET', `/${enc(id)}/audit?size=100`).then((p) => p.items.map(toHistoryEntry), () => null)
+        : Promise.resolve(null),
     ]);
 
     // The backend lists the moves it accepts on /transitions; assignment is a separate call, offered to admins here.
@@ -115,6 +120,7 @@ export const liveIncidentService = {
       similar: similar.map(toSimilar),
       sla,
       escalations,
+      history,
     };
   },
 

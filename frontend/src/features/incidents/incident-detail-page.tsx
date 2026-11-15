@@ -20,6 +20,7 @@ import { PrioritySuggestionCard } from './components/priority-suggestion-card';
 import { ReasonDialog } from './components/reason-dialog';
 import { SimilarPanel } from './components/similar-panel';
 import { SlaPanel } from './components/sla-panel';
+import { AuditLink, History } from './components/history';
 import { Timeline } from './components/timeline';
 import { useActor } from './components/workspace-shell';
 import { TRANSITION_LABEL, WORKLOAD_STATES as WORK_IN_PROGRESS } from './model/lifecycle';
@@ -94,7 +95,7 @@ export default function IncidentDetailPage() {
     );
   }
 
-  const { incident: i, audience, timeline, feedback, actions, canAddNote, canGiveFeedback, similar, sla, escalations } = data;
+  const { incident: i, audience, timeline, feedback, actions, canAddNote, canGiveFeedback, similar, sla, escalations, history } = data;
   const label = (t: TransitionName) => TRANSITION_LABEL[t][audience];
   const perform = async (t: TransitionName, reason = '') => {
     await incidentService.perform(actor, i.id, t, reason);
@@ -160,6 +161,19 @@ export default function IncidentDetailPage() {
               {canAddNote && <NoteForm actor={actor} incidentId={i.id} onAdded={reload} />}
             </CardContent>
           </Card>
+
+          {history && (
+            <Card>
+              <CardHeader>
+                <CardHeading>History</CardHeading>
+                <CardDescription>What the system recorded, oldest first: creation, priority, assignment, status changes, SLA and escalation steps.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <History entries={history} />
+                {actor.role === 'ADMIN' && <AuditLink href={`/admin/audit-logs?incidentId=${encodeURIComponent(i.id)}`} />}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-4">

@@ -1,4 +1,4 @@
-import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type RowSla, type SimilarResolution, type EscalationView, type SlaClockView, type SlaRiskView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
+import { IncidentError, type Feedback, type HistoryEntry, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type RowSla, type SimilarResolution, type EscalationView, type SlaClockView, type SlaRiskView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
 
 /**
  * Pure translation between the backend's JSON (`IncidentController` DTOs) and the UI model. No network, so it is
@@ -27,6 +27,11 @@ export interface ApiIncidentList {
   slaAttention?: ApiSlaAttention | null;
 }
 export interface ApiTimelineEntry { type: TimelineEntry['type']; authorId: number; visibility: TimelineEntry['visibility']; body: string; incidentState: IncidentState; createdAt: string }
+/** GET /api/incidents/{id}/audit: the full row for admins, the reduced entry (no `description`) for everyone else. */
+export interface ApiHistoryEntry {
+  id: string; occurredAt: string; action: string; actor: { type: 'USER' | 'SYSTEM'; role: string | null };
+  previousState: string | null; newState: string | null; description?: string | null;
+}
 export interface ApiFeedback { rating: number; comment: string | null; submittedAt: string }
 export interface ApiRecommendation { technicianId: number; name: string; score: number; reasons: string[] }
 /** GET /api/incidents/{id}/sla (P4's `SlaDto`). Only the fields the UI uses are listed. */
@@ -82,6 +87,11 @@ export function toTimelineEntry(d: ApiTimelineEntry, me: Me, incidentId: string,
     visibility: d.visibility, body: d.body, incidentState: d.incidentState, createdAt: d.createdAt,
   };
 }
+
+export const toHistoryEntry = (d: ApiHistoryEntry): HistoryEntry => ({
+  id: d.id, occurredAt: d.occurredAt, action: d.action, actorType: d.actor.type, actorRole: d.actor.role,
+  previousState: d.previousState, newState: d.newState, description: d.description ?? null,
+});
 
 export const toFeedback = (d: ApiFeedback, me: Me, incidentId: string): Feedback =>
   ({ incidentId, reporterEmail: me.email, rating: d.rating, comment: d.comment, submittedAt: d.submittedAt });
