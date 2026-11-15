@@ -47,15 +47,37 @@ test.describe('installable app', () => {
 });
 
 test.describe('desktop notifications', () => {
-  test('are off until the person turns them on, and say so in words', async ({ page, api, context }) => {
+  /**
+   * Browsers start in different states (headless Chromium on CI says "denied", a desktop one "default"), so the test sets
+   * the Notification API's state itself and checks what the page says and does in each.
+   */
+  const withPermission = (page: import('@playwright/test').Page, initial: 'default' | 'denied', answer: 'granted' | 'denied' = 'granted') =>
+    page.addInitScript(([start, reply]) => {
+      let state: string = start;
+      const N = function () { /* never constructed in these tests */ } as unknown as typeof Notification;
+      Object.defineProperty(N, 'permission', { get: () => state });
+      (N as unknown as { requestPermission: () => Promise<string> }).requestPermission = async () => { state = reply; return state; };
+      Object.defineProperty(window, 'Notification', { value: N, configurable: true, writable: true });
+    }, [initial, answer] as const);
+
+  test('are off until the person turns them on, and say so in words', async ({ page, api }) => {
+    await withPermission(page, 'default');
     await signIn(page, api, newUser('desktop'));
     await page.goto('/notifications');
     const box = page.getByTestId('desktop-notifications');
     await expect(box).toContainText('Get a desktop notification when something new arrives');
     expect(await axeViolations(page)).toEqual([]);
-    await context.grantPermissions(['notifications']);
-    await page.reload();
+    await box.getByRole('button', { name: 'Turn on desktop notifications' }).click();
     await expect(box).toContainText('Desktop notifications are on');
+    await expect(box.getByRole('button')).toHaveCount(0);
+  });
+
+  test('a refusal or a blocked browser is explained, with no button that cannot work', async ({ page, api }) => {
+    await withPermission(page, 'denied');
+    await signIn(page, api, newUser('desktop-blocked'));
+    await page.goto('/notifications');
+    const box = page.getByTestId('desktop-notifications');
+    await expect(box).toContainText('Desktop notifications are blocked. Allow them for this site in your browser settings');
     await expect(box.getByRole('button')).toHaveCount(0);
   });
 
