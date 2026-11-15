@@ -8,7 +8,10 @@ import com.itsm.common.security.CurrentUser
 import com.itsm.common.security.CurrentUserProvider
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import jakarta.servlet.http.HttpServletResponse
+import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -64,7 +67,23 @@ class InboxService(private val store: NotificationStore, private val clock: Cloc
 
 @RestController
 @RequestMapping("${ApiPaths.API}/notifications")
-class NotificationController(private val inbox: InboxService, private val currentUser: CurrentUserProvider) {
+class NotificationController(
+    private val inbox: InboxService,
+    private val currentUser: CurrentUserProvider,
+    private val stream: NotificationStreamHub
+) {
+
+    /**
+     * Server-sent events for the signed-in user: `ready` (with the unread count) when connected, then `notification` for
+     * each new one. Browsers reconnect by themselves; the session cookie authenticates each connection.
+     */
+    @GetMapping("/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    fun stream(response: HttpServletResponse): SseEmitter {
+        response.setHeader("Cache-Control", "no-cache")
+        response.setHeader("X-Accel-Buffering", "no") // no proxy buffering: events must arrive as they happen
+        return stream.open(currentUser.current().id)
+    }
+
 
     /** Newest first; `unreadOnly=true` hides the read ones. */
     @GetMapping

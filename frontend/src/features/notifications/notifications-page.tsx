@@ -12,6 +12,7 @@ import { useActor } from '@/features/incidents/components/workspace-shell';
 import { cn } from '@/lib/utils';
 import { notificationHref, notificationService, type NotificationPage } from './notification-service';
 import { relativeTime } from './notification-time';
+import { DesktopNotificationsToggle } from './desktop-toggle';
 
 /** Everything the signed-in person has been told about: newest first, unread marked in words, not only by colour. */
 export default function NotificationsPage() {
@@ -47,6 +48,8 @@ export default function NotificationsPage() {
           <Button size="sm" variant="outline" onClick={markAll} disabled={!anyUnread}><CheckCheck aria-hidden="true" /> Mark all as read</Button>
         </div>
       </div>
+
+      <DesktopNotificationsToggle />
 
       <Card>
         <CardContent className="p-0">

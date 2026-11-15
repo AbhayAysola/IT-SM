@@ -133,6 +133,7 @@ jobs:
               'com.itsm.sla.SlaRiskIntegrationTest': 3,
               'com.itsm.escalation.EscalationIntegrationTest': 6,
               'com.itsm.notification.NotificationIntegrationTest': 6,
+              'com.itsm.notification.NotificationStreamIntegrationTest': 2,
               'com.itsm.analytics.AnalyticsIntegrationTest': 2,
               'com.itsm.intake.IncidentIntakePriorityIntegrationTest': 6,
               'com.itsm.integration.IncidentEventReactionsIntegrationTest': 3,

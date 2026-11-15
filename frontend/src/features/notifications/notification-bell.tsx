@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,18 +10,25 @@ import {
 import { cn } from '@/lib/utils';
 import { NOTIFICATIONS_CHANGED, notificationHref, notificationService, type NotificationItem } from './notification-service';
 import { relativeTime } from './notification-time';
+import { desktopPermission, shouldShowDesktop, showDesktop } from './desktop';
 
+/** Without the real-time stream the count is polled every minute; with it, only every five minutes as a safety net. */
 const POLL_MS = 60_000;
+const POLL_STREAMING_MS = 300_000;
 
 /**
- * The top bar's bell: how many notifications are unread, and the latest five. The count is refreshed every minute and
- * whenever the menu closes; opening the menu loads the latest. Errors keep the last known state quietly (the inbox page
- * shows them).
+ * The top bar's bell: how many notifications are unread, and the latest five. New notifications arrive in real time
+ * (P4's notification stream): the count updates at once, a screen reader hears the title, and a desktop notification is
+ * shown if the person allowed it and is not looking at the app. The count is also polled as a fallback and refreshed
+ * whenever the menu closes; opening the menu loads the latest. Errors keep the last known state quietly.
  */
 export function NotificationBell({ email, className }: { email: string; className?: string }) {
   const [unread, setUnread] = useState(0);
   const [latest, setLatest] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+  const seq = useRef(0);
 
   const refreshCount = useCallback(() => {
     notificationService.unreadCount(email).then(setUnread, () => undefined);
@@ -29,10 +36,23 @@ export function NotificationBell({ email, className }: { email: string; classNam
 
   useEffect(() => {
     refreshCount();
-    const id = setInterval(refreshCount, POLL_MS);
+    const id = setInterval(refreshCount, streaming ? POLL_STREAMING_MS : POLL_MS);
     window.addEventListener(NOTIFICATIONS_CHANGED, refreshCount);
     return () => { clearInterval(id); window.removeEventListener(NOTIFICATIONS_CHANGED, refreshCount); };
-  }, [refreshCount]);
+  }, [refreshCount, streaming]);
+
+  useEffect(() => notificationService.stream({
+    onReady: (count) => { setStreaming(true); setUnread(count); },
+    onDisconnect: () => setStreaming(false),
+    onNotification: (n) => {
+      setUnread(n.unreadCount);
+      setAnnouncement(`New notification: ${n.title}`);
+      if (shouldShowDesktop(desktopPermission(), document.visibilityState)) {
+        const href = n.incidentId ? `/incidents/${encodeURIComponent(n.incidentId)}` : null;
+        showDesktop(n.title, n.body, href, `itsm-${seq.current++}`).catch(() => undefined);
+      }
+    },
+  }), []);
 
   useEffect(() => {
     if (open) notificationService.list(email, false, 1, 5).then((p) => setLatest(p.items), () => undefined);
@@ -48,6 +68,8 @@ export function NotificationBell({ email, className }: { email: string; classNam
   const label = unread === 0 ? 'Notifications, none unread' : `Notifications, ${unread} unread`;
 
   return (
+    <>
+    <span role="status" aria-live="polite" className="sr-only" data-testid="notification-announcer">{announcement}</span>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label={label} title={label} data-testid="notification-bell" className={cn('relative h-10 w-10', className)}>
@@ -96,5 +118,6 @@ export function NotificationBell({ email, className }: { email: string; classNam
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    </>
   );
 }
