@@ -221,7 +221,11 @@ export interface DurationStats { count: number; meanMinutes: number | null; p90M
 export interface AnalyticsSummary {
   from: string;
   to: string;
-  incidents: { reported: number; resolved: number; openNow: number; unassignedNow: number; openByState: Record<string, number>; openByPriority: Record<string, number> };
+  incidents: {
+    reported: number; resolved: number; openNow: number; unassignedNow: number; openByState: Record<string, number>; openByPriority: Record<string, number>;
+    /** Reported in the range, by priority (P1 is critical). Absent from older backends. */
+    reportedByPriority?: Record<string, number>;
+  };
   sla: { overall: SlaCounts; byPriority: SlaGroup[]; byService: SlaGroup[]; byCategory: SlaGroup[] };
   times: { toRespond: DurationStats; toResolve: DurationStats };
   escalations: { total: number; byTrigger: Record<string, number> };

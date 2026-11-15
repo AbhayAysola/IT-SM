@@ -16,6 +16,7 @@ test.describe('admin: analytics', () => {
     await expect(page.getByRole('heading', { name: 'Analytics', level: 1 })).toBeVisible();
     await expect(page.getByTestId('kpi-open')).toContainText('12');
     await expect(page.getByTestId('kpi-open')).toContainText('3 not assigned');
+    await expect(page.getByTestId('kpi-open')).toContainText('2 critical (P1)');
     await expect(page.getByTestId('kpi-sla')).toContainText('80%');
     await expect(page.getByTestId('kpi-sla')).toContainText('36 met · 9 breached');
     await expect(page.getByRole('button', { name: 'Last 30 days' })).toHaveAttribute('aria-pressed', 'true');
@@ -25,6 +26,17 @@ test.describe('admin: analytics', () => {
     await expect(page.getByText('Response SLA breached')).toBeVisible(); // escalations by reason
     expect(await axeViolations(page)).toEqual([]);
     expect(errors).toEqual([]);
+  });
+
+  test('shows incidents by priority in priority order, and counts incidents per service', async ({ page, api }) => {
+    await openAdmin(page, api, PATH);
+    const byPriority = page.getByRole('table', { name: 'Incidents by priority' });
+    await expect(byPriority).toBeVisible();
+    const rows = byPriority.getByRole('row');
+    await expect(rows.nth(1)).toHaveText(/P1 Critical\s*3\s*2/); // reported in the range, open now
+    await expect(rows.nth(2)).toHaveText(/P2 High\s*9\s*4/);
+    await expect(rows.nth(4)).toHaveText(/P4 Low\s*6\s*0/); // nothing open: shown as 0, not left out
+    await expect(page.getByRole('table', { name: 'SLA by service' }).getByRole('columnheader', { name: 'Incidents' })).toBeVisible();
   });
 
   test('a preset or a custom range rescopes everything; a backwards range is refused before any request', async ({ page, api }) => {

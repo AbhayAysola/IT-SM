@@ -50,7 +50,9 @@ data class AnalyticsSummary(
         val openNow: Long,
         val unassignedNow: Long,
         val openByState: Map<String, Long>,
-        val openByPriority: Map<String, Long>
+        val openByPriority: Map<String, Long>,
+        /** Reported in the range, by priority (P1 is critical). */
+        val reportedByPriority: Map<String, Long> = emptyMap()
     )
     data class SlaSection(val overall: SlaCountsDto, val byPriority: List<SlaGroupDto>, val byService: List<SlaGroupDto>, val byCategory: List<SlaGroupDto>)
     data class Times(val toRespond: DurationStats, val toResolve: DurationStats)
@@ -95,7 +97,8 @@ class AnalyticsService(
                 openNow = openByState.values.sum(),
                 unassignedNow = openByState["CLASSIFIED"] ?: 0,
                 openByState = openByState,
-                openByPriority = openByPriority
+                openByPriority = openByPriority,
+                reportedByPriority = queries.reportedByPriority(start, end)
             ),
             sla = AnalyticsSummary.SlaSection(
                 overall = SlaCountsDto.of(queries.slaTotal(start, end)),

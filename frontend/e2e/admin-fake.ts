@@ -450,7 +450,7 @@ export class AdminFake {
       status: 200,
       body: {
         from, to,
-        incidents: { reported: perDay.reduce((n, d) => n + d.reported, 0), resolved: perDay.reduce((n, d) => n + d.resolved, 0), openNow: 12, unassignedNow: 3, openByState: { CLASSIFIED: 3, IN_PROGRESS: 9 }, openByPriority: { P1: 2, P2: 4, P3: 6 } },
+        incidents: { reported: perDay.reduce((n, d) => n + d.reported, 0), resolved: perDay.reduce((n, d) => n + d.resolved, 0), openNow: 12, unassignedNow: 3, openByState: { CLASSIFIED: 3, IN_PROGRESS: 9 }, openByPriority: { P1: 2, P2: 4, P3: 6 }, reportedByPriority: { P1: 3, P2: 9, P3: 14, P4: 6 } },
         sla: {
           overall: counts(40, 10, 36, 9),
           byPriority: [{ id: 'P1', name: 'P1', counts: counts(5, 3, 4, 4) }, { id: 'P2', name: 'P2', counts: counts(15, 3, 12, 3) }, { id: 'P3', name: 'P3', counts: counts(20, 4, 20, 2) }],
