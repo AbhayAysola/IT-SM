@@ -4,11 +4,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { clearSession, setCachedUser } from '@/lib/auth';
-import { endSession } from '@/lib/session';
 import { api, ApiErrorResponse } from '@/lib/api';
 import type { Role } from '@/types';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Loader2, ShieldX } from 'lucide-react';
+import Navbar from '@/components/Navbar';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -78,33 +78,32 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
   );
 }
 
-function Notice({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Notice({ icon, title, children, withNav = false }: { icon: React.ReactNode; title: string; children: React.ReactNode; withNav?: boolean }) {
+  const card = (
+    <div className="w-full max-w-md rounded-lg border bg-card p-6 text-center shadow-sm sm:p-8">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">{icon}</div>
+      <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+      {children}
+    </div>
+  );
+  if (!withNav) return <main className="flex min-h-screen items-center justify-center bg-background p-4">{card}</main>;
+  // Signed in but not allowed here: keep the app's own header, so the page is clearly part of the same app.
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-lg border bg-card p-6 text-center shadow-sm sm:p-8">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">{icon}</div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
-        {children}
-      </div>
-    </main>
+    <div className="flex min-h-screen flex-col bg-background">
+      <Navbar />
+      <main className="flex flex-1 items-center justify-center p-4">{card}</main>
+    </div>
   );
 }
 
 function AccessDenied() {
-  const router = useRouter();
-  const signOut = async () => {
-    await endSession();
-    router.replace('/');
-  };
+  // The app header above the card already offers "Sign out", so the card only points back to somewhere useful.
   return (
-    <Notice icon={<ShieldX className="h-6 w-6 text-destructive" aria-hidden="true" />} title="Access denied">
+    <Notice withNav icon={<ShieldX className="h-6 w-6 text-destructive" aria-hidden="true" />} title="Access denied">
       <p className="mt-2 text-sm text-muted-foreground">
         Your account doesn&apos;t have permission to view this page. If you need access, ask an administrator.
       </p>
-      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
-        <Button variant="outline" onClick={signOut}>
-          Sign out
-        </Button>
+      <div className="mt-6 flex justify-center">
         <Button asChild>
           <Link href="/dashboard">Go to my dashboard</Link>
         </Button>

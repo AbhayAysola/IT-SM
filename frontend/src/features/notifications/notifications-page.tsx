@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, Mail, MessageSquare } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, ErrorState } from '@/features/admin/components/states';
 import { useActor } from '@/features/incidents/components/workspace-shell';
 import { cn } from '@/lib/utils';
-import { notificationHref, notificationService, type NotificationPage } from './notification-service';
+import { externalChannels, notificationHref, notificationService, type NotificationPage } from './notification-service';
 import { relativeTime } from './notification-time';
 
 /** Everything the signed-in person has been told about: newest first, unread marked in words, not only by colour. */
@@ -37,7 +37,7 @@ export default function NotificationsPage() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Assignments, questions, fixes to confirm, SLA warnings and escalations.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Assignments, questions, fixes to confirm, SLA warnings and escalations. Urgent ones also go out by email (P1, P2) and SMS (P1); in this system both are simulated.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <div role="group" aria-label="Show" className="flex gap-1">
@@ -63,6 +63,12 @@ export default function NotificationsPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           {!n.readAt && <Badge variant="default">Unread</Badge>}
                           {n.priority && <Badge variant="outline">{n.priority}</Badge>}
+                          {externalChannels(n).map((c) => (
+                            <Badge key={c} variant="secondary" title={`Also sent by ${c} (simulated)`} className="gap-1">
+                              {c === 'SMS' ? <MessageSquare className="size-3" aria-hidden="true" /> : <Mail className="size-3" aria-hidden="true" />}
+                              <span>Sent by {c}</span>
+                            </Badge>
+                          ))}
                           <span className="text-xs text-muted-foreground">{relativeTime(n.createdAt, Date.now())}</span>
                         </div>
                         <p className={cn('mt-1 break-words text-sm', !n.readAt && 'font-semibold')}>

@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ArrowLeft, ChevronDown, LogOut, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ClipboardList, LogOut, ShieldCheck } from 'lucide-react';
+import { NotificationBell } from '@/features/notifications/notification-bell';
 import AuthGuard from '@/components/AuthGuard';
 import { getCachedUser } from '@/lib/auth';
 import { endSession } from '@/lib/session';
@@ -81,6 +82,14 @@ function Shell({ children }: { children: React.ReactNode }) {
         <SidebarFooter className="border-t border-sidebar-border">
           <SidebarMenu>
             <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Incidents">
+                <Link href="/incidents">
+                  <ClipboardList aria-hidden="true" />
+                  <span>Incidents</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="My dashboard">
                 <Link href="/dashboard">
                   <ArrowLeft aria-hidden="true" />
@@ -96,7 +105,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-svh min-w-0 flex-1 flex-col bg-background">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card px-4">
           <SidebarTrigger aria-label="Toggle navigation" className="-ml-1" />
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            {user?.email && <NotificationBell email={user.email} />}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="h-10 gap-2.5 px-2">

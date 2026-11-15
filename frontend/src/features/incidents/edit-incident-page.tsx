@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/features/admin/components/page-header';
 import { useToast } from '@/features/admin/components/toast';
-import { ErrorState } from '@/features/admin/components/states';
+import { EmptyState, ErrorState } from '@/features/admin/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CardHeading } from './components/card-heading';
 import { useActor } from './components/workspace-shell';
@@ -29,6 +29,8 @@ export default function EditIncidentPage() {
   const [description, setDescription] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Loaded fine, but this person may not edit it (any more): a rule, not a failure, so it is not shown as an error. */
+  const [locked, setLocked] = useState<{ title: string; description: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -37,11 +39,14 @@ export default function EditIncidentPage() {
       .then((detail) => {
         const i = detail.incident;
         if (i.state !== 'NEW' && i.state !== 'CLASSIFIED') {
-          setLoadError('This incident can no longer be edited — it has already been assigned.');
+          setLocked({
+            title: 'This incident can no longer be edited',
+            description: 'It has already been assigned to a technician. To add information, reply when the technician asks a question.',
+          });
           return;
         }
         if (actor.role !== 'ADMIN' && i.reporterEmail !== actor.email) {
-          setLoadError('Only the reporter or an admin can edit this incident.');
+          setLocked({ title: 'You can’t edit this incident', description: 'Only the person who reported it, or an administrator, can edit it.' });
           return;
         }
         setTitle(i.title);
@@ -87,6 +92,15 @@ export default function EditIncidentPage() {
       <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to incident
     </Link>
   );
+
+  if (locked) {
+    return (
+      <>
+        {back}
+        <Card className="max-w-2xl"><EmptyState icon={Lock} title={locked.title} description={locked.description} /></Card>
+      </>
+    );
+  }
 
   if (!loaded && !loadError) {
     return (

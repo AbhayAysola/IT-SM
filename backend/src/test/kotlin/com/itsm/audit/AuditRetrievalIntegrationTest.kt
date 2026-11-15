@@ -144,6 +144,18 @@ class AuditRetrievalIntegrationTest {
         assertFalse(row.toString().contains("@"))
     }
 
+    @Test fun `an admin sees the acting user's current name, never their email, and system actors get none`() {
+        val tech = t.caller(Role.TECHNICIAN)
+        insert(actorId = tech.id, actorRole = "TECHNICIAN", occurredAt = T0.plusSeconds(2))
+        insert(actorId = 999_999_999L, occurredAt = T0.plusSeconds(1)) // no such user: the name stays null
+        insert(actorType = "SYSTEM", actorId = null, actorRole = null, actorName = "SLA_MONITOR", occurredAt = T0)
+        val rows = items(list())
+        assertEquals("Test TECHNICIAN", rows[0].at("/actor/displayName").asText())
+        assertTrue(rows[1].at("/actor/displayName").isNull)
+        assertTrue(rows[2].at("/actor/displayName").isNull)
+        assertFalse(rows.toString().contains(tech.email))
+    }
+
     @Test fun `system actors are included and shown by job name`() {
         insert(actorType = "SYSTEM", actorId = null, actorRole = null, actorName = "SLA_MONITOR", action = "SLA_WARNING_RAISED")
         val row = items(list())[0]

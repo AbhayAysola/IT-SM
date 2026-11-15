@@ -16,6 +16,7 @@ import { compact, formatMinutes, pct, shortDay, TRIGGER_LABEL } from './format';
 
 const PRESETS = [7, 30, 90] as const;
 const metDetail = (c: SlaCounts) => `${c.resolutionMet} met · ${c.resolutionBreached} breached`;
+const incidents = (n: number) => `${compact(n)} ${n === 1 ? 'incident' : 'incidents'}`;
 
 /**
  * P4's analytics dashboard (docs/architecture/p4.md section 5). One filter row (the date range) scopes everything below
@@ -112,8 +113,8 @@ export default function AnalyticsPage() {
             <Card>
               <CardHeader><CardTitle className="text-base">Time taken</CardTitle><CardDescription>From report to first response and to resolution (elapsed time, pauses included).</CardDescription></CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2">
-                <StatTile label="To respond, on average" value={formatMinutes(data.times.toRespond.meanMinutes)} sub={`90% within ${formatMinutes(data.times.toRespond.p90Minutes)} · ${compact(data.times.toRespond.count)} incidents`} />
-                <StatTile label="To resolve, on average" value={formatMinutes(data.times.toResolve.meanMinutes)} sub={`90% within ${formatMinutes(data.times.toResolve.p90Minutes)} · ${compact(data.times.toResolve.count)} incidents`} />
+                <StatTile label="To respond, on average" value={formatMinutes(data.times.toRespond.meanMinutes)} sub={`90% within ${formatMinutes(data.times.toRespond.p90Minutes)} · ${incidents(data.times.toRespond.count)}`} />
+                <StatTile label="To resolve, on average" value={formatMinutes(data.times.toResolve.meanMinutes)} sub={`90% within ${formatMinutes(data.times.toResolve.p90Minutes)} · ${incidents(data.times.toResolve.count)}`} />
               </CardContent>
             </Card>
           </div>
@@ -123,7 +124,11 @@ export default function AnalyticsPage() {
               <CardHeader><CardTitle className="text-base">Resolution SLA met, by priority</CardTitle><CardDescription>Share of decided resolution clocks that were met.</CardDescription></CardHeader>
               <CardContent>
                 <MeterList empty="No SLA was decided in these days."
-                  rows={data.sla.byPriority.map((g) => ({ name: g.name, value: g.counts.resolutionCompliancePct, detail: metDetail(g.counts) }))} />
+                  rows={data.sla.byPriority.length === 0 ? [] : PRIORITY_ROWS.map(([p]) => {
+                    // Every priority gets a row, so one with nothing decided reads "none decided" instead of vanishing.
+                    const g = data.sla.byPriority.find((x) => x.id === p);
+                    return g ? { name: g.name, value: g.counts.resolutionCompliancePct, detail: metDetail(g.counts) } : { name: p, value: null, detail: 'None decided' };
+                  })} />
                 <p className="mt-4 text-xs text-muted-foreground">Response SLA met overall: <span className="font-semibold text-foreground">{pct(data.sla.overall.responseCompliancePct)}</span> ({data.sla.overall.responseMet} met · {data.sla.overall.responseBreached} breached)</p>
               </CardContent>
             </Card>

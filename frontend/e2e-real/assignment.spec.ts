@@ -60,7 +60,7 @@ test.describe('admin: assignment settings with the real strategy catalog', () =>
     await expect(page.getByRole('button', { name: 'Add override' })).toBeEnabled();
     await expect(page.getByTestId('catalog-unavailable')).toHaveCount(0);
     await select.click();
-    await expect(page.getByRole('option')).toHaveText(REGISTERED);
+    await expect(page.getByRole('option')).toHaveText(['Load-based (LOAD_BASED)', 'Manual (MANUAL)', 'Round robin (ROUND_ROBIN)', 'Skill-based (SKILL_BASED)']);
     await page.keyboard.press('Escape');
   });
 

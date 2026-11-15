@@ -11,6 +11,8 @@ export interface AuditActor {
   role: string | null;
   /** Job name of a system actor, e.g. SLA_MONITOR. */
   name: string | null;
+  /** A user's current name, resolved by the backend for administrators only. Absent from older backends. */
+  displayName?: string | null;
 }
 
 export interface AuditEvent {
@@ -75,10 +77,14 @@ export function humanize(code: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Role and id only, which is all the backend stores about a person: "Administrator #12", "System: SLA monitor". */
+/**
+ * "Dev Technician (Technician)" when the backend resolved the person's name, otherwise role and id, which is all the
+ * table stores: "Administrator #12". System jobs: "System: SLA monitor".
+ */
 export function actorLabel(actor: AuditActor): string {
   if (actor.type === 'SYSTEM') return `System: ${humanize(actor.name ?? 'unknown')}`;
   const role = actor.role ? ROLE_FILTER_LABEL[actor.role as keyof typeof ROLE_FILTER_LABEL] ?? humanize(actor.role) : 'User';
+  if (actor.displayName) return `${actor.displayName} (${role})`;
   return actor.id === null ? role : `${role} #${actor.id}`;
 }
 

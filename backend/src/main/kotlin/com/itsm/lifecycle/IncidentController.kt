@@ -39,7 +39,9 @@ data class IncidentDto(
     /** What the caller can do right now (drives which buttons to show). Moves are `POST .../transitions`. */
     val availableTransitions: List<String>,
     /** Display names for the ids above; null when the id is unset or its directory is unavailable. */
-    val reporterName: String? = null, val assigneeName: String? = null, val categoryName: String? = null, val serviceName: String? = null
+    val reporterName: String? = null, val assigneeName: String? = null, val categoryName: String? = null, val serviceName: String? = null,
+    /** True once the reporter has rated it, so a client asks for `/feedback` only when there is something to read. */
+    val hasFeedback: Boolean = false
 )
 
 /** A row of the list: no transitions or description, so a page stays small. */
@@ -67,7 +69,9 @@ data class IncidentListDto(
 )
 
 data class TimelineEntryDto(
-    val type: String, val authorId: Long, val visibility: String, val body: String, val incidentState: String, val createdAt: Instant
+    val type: String, val authorId: Long, val visibility: String, val body: String, val incidentState: String, val createdAt: Instant,
+    /** The author's display name; null when the user directory is unavailable or the user is unknown. */
+    val authorName: String? = null
 )
 
 data class FeedbackDto(val rating: Int, val comment: String?, val submittedAt: Instant)
@@ -190,13 +194,15 @@ class IncidentController(
         recommendations(assignment.recommendations(id, currentUser.current()))
 
     @GetMapping("/{id}/timeline")
-    fun timeline(@PathVariable id: String): List<TimelineEntryDto> =
-        lifecycle.timeline(id, currentUser.current()).map(::dto)
+    fun timeline(@PathVariable id: String): List<TimelineEntryDto> {
+        val names = Names()
+        return lifecycle.timeline(id, currentUser.current()).map { dto(it, names) }
+    }
 
     @PostMapping("/{id}/timeline")
     @ResponseStatus(HttpStatus.CREATED)
     fun addNote(@PathVariable id: String, @Valid @RequestBody body: NoteRequest): TimelineEntryDto =
-        dto(lifecycle.addNote(id, body.type!!, body.body, body.visibility, currentUser.current()))
+        dto(lifecycle.addNote(id, body.type!!, body.body, body.visibility, currentUser.current()), Names())
 
     @GetMapping("/{id}/feedback")
     fun feedback(@PathVariable id: String): FeedbackDto =
@@ -215,7 +221,8 @@ class IncidentController(
         return IncidentDto(
             r.id, r.title, r.description, r.createdAt, r.updatedAt, r.state.name, r.reporterId, r.assigneeId, r.categoryId, r.serviceId, r.priority, r.assignedAt, r.firstResponseAt,
             r.resolvedAt, r.closedAt, lifecycle.availableTransitions(r, currentUser.current()).map { it.name },
-            names.user(r.reporterId), names.user(r.assigneeId), names.category(r.categoryId), names.service(r.serviceId)
+            names.user(r.reporterId), names.user(r.assigneeId), names.category(r.categoryId), names.service(r.serviceId),
+            hasFeedback = lifecycle.hasFeedback(r.id)
         )
     }
 
@@ -254,7 +261,8 @@ class IncidentController(
         fun service(id: Long?): String? = id?.let { serviceNames.getOrPut(it) { runCatching { services.ifAvailable?.findById(it)?.name }.getOrNull() } }
     }
 
-    private fun dto(e: InvestigationEntry) = TimelineEntryDto(e.type.name, e.authorId, e.visibility.name, e.body, e.incidentState.name, e.createdAt)
+    private fun dto(e: InvestigationEntry, names: Names) =
+        TimelineEntryDto(e.type.name, e.authorId, e.visibility.name, e.body, e.incidentState.name, e.createdAt, names.user(e.authorId))
     private fun dto(f: Feedback) = FeedbackDto(f.rating, f.comment, f.submittedAt)
     private fun recommendations(d: AssignmentDecision) =
         d.recommendations.map { RecommendationDto(it.technician.userId, it.technician.name, it.score, it.reasons) }

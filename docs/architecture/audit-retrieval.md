@@ -24,7 +24,7 @@ foundation.md).
 {
   "id": "2f0c…",                       // the row's event_id (UUID). The internal bigint id is never exposed.
   "occurredAt": "2026-03-10T12:00:00Z",
-  "actor": { "type": "USER", "id": 12, "role": "ADMIN", "name": null },
+  "actor": { "type": "USER", "id": 12, "role": "ADMIN", "name": null, "displayName": "Asha Admin" },
   "action": "SLA_POLICY_UPDATED",
   "entityType": "SLA_POLICY",
   "entityId": "7",
@@ -37,8 +37,11 @@ foundation.md).
 ```
 
 * **Actor.** Exactly what the table stores: a user is `type=USER` with stable `id` and `role` (no email, no name — they
-  are not stored); a system job is `type=SYSTEM` with `name` (e.g. `SLA_MONITOR`) and null id/role. Names of people are
-  **not** resolved: a viewer shows "Administrator #12". Resolving ids to people is deferred (see below).
+  are not stored); a system job is `type=SYSTEM` with `name` (e.g. `SLA_MONITOR`) and null id/role. For AUDIT_VIEW
+  holders (administrators, who can already read every user's name on the admin Users page) a user actor also carries
+  `displayName`: the person's **current** name from the user directory, resolved at read time (null if unknown). The
+  viewer shows "Dev Technician (Technician)", falling back to "Technician #12". Emails are never returned. The reduced
+  incident projection is unchanged: kind and role only.
 * **System-generated events are included** in the admin list. Filter them with `actorType=SYSTEM` or exclude them with
   `actorType=USER`.
 * **Metadata.** Stored as JSONB, validated on write (scalars and flat lists of scalars). On read it is re-normalised to
@@ -177,7 +180,7 @@ fake of the endpoint in `e2e/fixtures.ts` (the real semantics are covered by the
   role (reporters usually know the technician), (d) whether some actions are internal-only (e.g. internal notes or
   routing details) and must be hidden from reporters. Until decided, only the reduced projection is exposed.
 * **P2:** an incident UI that calls the trail endpoint.
-* Resolving actor ids to display names (needs a deliberate decision about exposing personal data to the audit viewer).
+* Actor display names beyond AUDIT_VIEW holders (the reduced incident projection still shows the role only).
 * Exposing `recorded_at` (requires mapping the column on the B2 entity).
 * A "distinct actions / entity types" endpoint so filters can be dropdowns.
 * Keyset pagination / approximate counts if the table grows very large.

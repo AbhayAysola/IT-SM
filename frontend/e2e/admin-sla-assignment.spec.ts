@@ -148,17 +148,17 @@ test.describe('admin: assignment settings', () => {
     await openAdmin(page, api, PATH);
     await expect(page.getByLabel('Default maximum workload')).toHaveValue('5');
     await page.getByRole('combobox', { name: 'Active strategy' }).click();
-    await expect(page.getByRole('option')).toHaveText(['ROUND_ROBIN', 'SKILL_BASED']);
+    await expect(page.getByRole('option')).toHaveText(['Round robin (ROUND_ROBIN)', 'Skill-based (SKILL_BASED)']);
     expect((await page.locator('main').innerText())).not.toMatch(/MANUAL|fallback|team pool/i);
   });
 
   test('replaces the whole configuration after a confirmation, sending the version and complete overrides', async ({ page, api }) => {
     await openAdmin(page, api, PATH);
     await expect(page.getByRole('button', { name: 'Save settings' })).toBeDisabled();
-    await pick(page, 'Active strategy', 'SKILL_BASED');
+    await pick(page, 'Active strategy', 'Skill-based (SKILL_BASED)');
     await page.getByLabel('Default maximum workload').fill('7');
     await page.getByRole('button', { name: 'Add override' }).click();
-    await pick(page, /Strategy for Email|Strategy for Hardware|Strategy for Network/, 'SKILL_BASED');
+    await pick(page, /Strategy for Email|Strategy for Hardware|Strategy for Network/, 'Skill-based (SKILL_BASED)');
     await page.getByRole('button', { name: 'Save settings' }).click();
     await expect(dialog(page)).toContainText('replaces the whole configuration');
     expect(api.admin.count('PUT', '/api/admin/assignment-settings')).toBe(0);
@@ -268,7 +268,7 @@ test.describe('admin: assignment settings', () => {
     await expect(active).toContainText('ROUND_ROBIN (not registered)');
     await expect(page.getByText('no longer registered').first()).toBeVisible();
     await active.click();
-    await expect(page.getByRole('option', { name: 'SKILL_BASED', exact: true })).toBeEnabled();
+    await expect(page.getByRole('option', { name: 'Skill-based (SKILL_BASED)', exact: true })).toBeEnabled();
     await expect(page.getByRole('option', { name: 'ROUND_ROBIN (not registered)' })).toBeDisabled();
     expect(await page.getByRole('option').count()).toBe(2); // the registered key and the disabled saved one; nothing else is offered
     await page.keyboard.press('Escape');
@@ -281,8 +281,8 @@ test.describe('admin: assignment settings', () => {
     await expect(page.getByText('“ROUND_ROBIN” is not registered. Choose a registered strategy.').first()).toBeVisible();
     await expect(dialog(page)).toHaveCount(0);
     expect(api.admin.count('PUT', '/api/admin/assignment-settings')).toBe(0);
-    await pick(page, 'Active strategy', 'SKILL_BASED');
-    await pick(page, 'Strategy for Network', 'SKILL_BASED');
+    await pick(page, 'Active strategy', 'Skill-based (SKILL_BASED)');
+    await pick(page, 'Strategy for Network', 'Skill-based (SKILL_BASED)');
     await page.getByRole('button', { name: 'Save settings' }).click();
     await dialog(page).getByRole('button', { name: 'Save settings' }).click();
     await toast(page, 'Assignment settings were saved.');

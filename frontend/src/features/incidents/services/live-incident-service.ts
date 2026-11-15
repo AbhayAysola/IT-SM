@@ -91,8 +91,9 @@ export const liveIncidentService = {
     const wantsSimilar = staff && ACTIVE.includes(dto.state);
     const [timeline, feedback, similar, sla, escalations, history] = await Promise.all([
       call<ApiTimelineEntry[]>('GET', `/${enc(id)}/timeline`),
-      call<ApiFeedback>('GET', `/${enc(id)}/feedback`).catch((e: unknown) => {
-        if (e instanceof IncidentError && e.code === 'NOT_FOUND') return null; // no feedback yet is normal
+      // Only ask when there is something to read, so an unrated incident leaves no 404 in the console.
+      dto.hasFeedback === false ? Promise.resolve(null) : call<ApiFeedback>('GET', `/${enc(id)}/feedback`).catch((e: unknown) => {
+        if (e instanceof IncidentError && e.code === 'NOT_FOUND') return null; // no feedback yet is normal (older backends)
         throw e;
       }),
       wantsSimilar ? call<ApiResolved[]>('GET', `/${enc(id)}/similar?limit=3`) : Promise.resolve([] as ApiResolved[]),

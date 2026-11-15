@@ -19,6 +19,8 @@ export interface NotificationItem {
   body: string;
   createdAt: string;
   readAt: string | null;
+  /** Where else it was sent besides the inbox: simulated `EMAIL` and `SMS`, chosen by priority. Absent from older data. */
+  channels?: string[];
 }
 
 export interface NotificationPage { items: NotificationItem[]; total: number; page: number; pageSize: number }
@@ -29,11 +31,16 @@ export const NOTIFICATION_PAGE_SIZE = 20;
 export const NOTIFICATIONS_CHANGED = 'itsm:notifications-changed';
 const announceChange = () => { try { window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED)); } catch { /* no window (tests) */ } };
 
-/** The backend's `NotificationDto` (channels are left out: the inbox does not show them). */
+/** The backend's `NotificationDto`. */
 export interface ApiNotification extends NotificationItem { channels: string[] }
 
 export const toNotification = (d: ApiNotification): NotificationItem =>
-  ({ id: d.id, type: d.type, incidentId: d.incidentId, priority: d.priority, title: d.title, body: d.body, createdAt: d.createdAt, readAt: d.readAt });
+  ({ id: d.id, type: d.type, incidentId: d.incidentId, priority: d.priority, title: d.title, body: d.body, createdAt: d.createdAt, readAt: d.readAt, channels: d.channels ?? [] });
+
+const CHANNEL_LABEL: Record<string, string> = { EMAIL: 'Email', SMS: 'SMS' };
+/** The simulated outside channels a notification also went to ("Email", "SMS"), in that order. The inbox itself is implied. */
+export const externalChannels = (n: NotificationItem): string[] =>
+  ['EMAIL', 'SMS'].filter((c) => n.channels?.includes(c)).map((c) => CHANNEL_LABEL[c]);
 
 /** Where a notification leads: its incident, if it has one. */
 export const notificationHref = (n: NotificationItem) => (n.incidentId ? `/incidents/${encodeURIComponent(n.incidentId)}` : null);
@@ -75,9 +82,9 @@ const storageKey = (email: string) => `itsm_p4_v1_notifications_${email.toLowerC
 function seed(): NotificationItem[] {
   const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
   return [
-    { id: 3, type: 'SLA_WARNING', incidentId: 'INC1002', priority: 'P1', title: 'INC1002: resolution SLA at risk', body: 'VPN rejects every staff login. The deadline is close.', createdAt: ago(5), readAt: null },
-    { id: 2, type: 'INFO_REQUESTED', incidentId: 'INC1001', priority: 'P2', title: 'The technician has a question about INC1001', body: 'Open the incident to answer: Wi-Fi drops every few minutes in the library reading room', createdAt: ago(40), readAt: null },
-    { id: 1, type: 'ASSIGNMENT_MADE', incidentId: 'INC1001', priority: 'P2', title: 'A technician is working on INC1001', body: 'Wi-Fi drops every few minutes in the library reading room', createdAt: ago(180), readAt: ago(170) },
+    { id: 3, type: 'SLA_WARNING', incidentId: 'INC1002', priority: 'P1', title: 'INC1002: resolution SLA at risk', body: 'VPN rejects every staff login. The deadline is close.', createdAt: ago(5), readAt: null, channels: ['IN_APP', 'EMAIL', 'SMS'] },
+    { id: 2, type: 'INFO_REQUESTED', incidentId: 'INC1001', priority: 'P2', title: 'The technician has a question about INC1001', body: 'Open the incident to answer: Wi-Fi drops every few minutes in the library reading room', createdAt: ago(40), readAt: null, channels: ['IN_APP', 'EMAIL'] },
+    { id: 1, type: 'ASSIGNMENT_MADE', incidentId: 'INC1001', priority: 'P2', title: 'A technician is working on INC1001', body: 'Wi-Fi drops every few minutes in the library reading room', createdAt: ago(180), readAt: ago(170), channels: ['IN_APP', 'EMAIL'] },
   ];
 }
 
