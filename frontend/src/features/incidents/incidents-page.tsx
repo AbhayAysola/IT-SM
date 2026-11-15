@@ -2,13 +2,14 @@
 
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, CalendarClock, Inbox } from 'lucide-react';
+import { ArrowUpDown, CalendarClock, Inbox, SlidersHorizontal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState, ErrorState, TableSkeleton } from '@/features/admin/components/states';
 import { Pagination } from '@/features/admin/components/pagination';
@@ -93,6 +94,8 @@ export default function IncidentsPage() {
   const [sort, setSort] = useState<IncidentSort>('URGENCY');
   const opener = useRef<HTMLElement | null>(null);
   const [filters, setFilters] = useState<IncidentFilters>({});
+  /** Phones only: the filter row starts folded away so the first screen shows incidents, not controls. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const debounced = useDebounced(search);
   const filterKey = JSON.stringify(filters);
   const filterCount = activeFilterCount(filters);
@@ -186,7 +189,12 @@ export default function IncidentsPage() {
           </div>
         )}
 
-        <div role="group" aria-label="Filter incidents" className="mb-3 flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" className="mb-3 sm:hidden" aria-expanded={filtersOpen} aria-controls="incident-filters"
+          onClick={() => setFiltersOpen((o) => !o)}>
+          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+          {filtersOpen ? 'Hide filters' : 'Filters'}{filterCount > 0 ? ` (${filterCount})` : ''}
+        </Button>
+        <div id="incident-filters" role="group" aria-label="Filter incidents" className={cn('mb-3 flex-wrap items-center gap-2 sm:flex', filtersOpen ? 'flex' : 'hidden')}>
           <FilterSelect label="Priority" allLabel="All priorities" value={filters.priority ?? 'ALL'} options={PRIORITY_OPTIONS}
             onChange={(v) => setFilter('priority', v === 'ALL' ? undefined : (v as IncidentFilters['priority']))} />
           <FilterSelect label="Category" allLabel="All categories" value={filters.categoryId === undefined ? 'ALL' : String(filters.categoryId)}

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { strategyLabel, strategySummary } from './strategy-info';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '../components/confirm-dialog';
 import { FormError, withServerFields } from '../components/form-error';
@@ -68,10 +69,10 @@ export default function AssignmentSettingsPage() {
   // Selectable options are the registered keys, and nothing else. A saved key that is not among them is listed as a
   // disabled entry so its current value stays visible (and is never silently replaced), but it cannot be picked.
   const saveable = (key: string) => status === 'AVAILABLE' && registered.includes(key);
-  const labelFor = (key: string) => (status === 'AVAILABLE' ? (registered.includes(key) ? key : `${key} (not registered)`) : `${key} (unverified)`);
+  const labelFor = (key: string) => (status === 'AVAILABLE' ? (registered.includes(key) ? strategyLabel(key) : `${key} (not registered)`) : `${key} (unverified)`);
   const optionsFor = (current: string) => (
     <>
-      {registered.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+      {registered.map((k) => <SelectItem key={k} value={k}>{strategyLabel(k)}</SelectItem>)}
       {!registered.includes(current) && <SelectItem value={current} disabled>{labelFor(current)}</SelectItem>}
     </>
   );
@@ -123,7 +124,7 @@ export default function AssignmentSettingsPage() {
   return (
     <>
       <PageHeader title="Assignment settings"
-        description="Which strategy routes new incidents to technicians, the default workload ceiling, and per-category strategy overrides. This records configuration only; the routing engine applies it." />
+        description="Which strategy routes new incidents to technicians, the default workload ceiling, and per-category strategy overrides. New incidents are routed with these settings as soon as they are saved." />
       <div className="space-y-6">
         {notice && (
           <div role="status" data-testid="catalog-unavailable" data-catalog-status={status} data-catalog-notice={notice}
@@ -148,6 +149,9 @@ export default function AssignmentSettingsPage() {
                   <SelectTrigger id="as-strategy" aria-invalid={!!errors.activeStrategy}><SelectValue /></SelectTrigger>
                   <SelectContent>{optionsFor(form.activeStrategy)}</SelectContent>
                 </Select>
+                {strategySummary(form.activeStrategy) && saveable(form.activeStrategy) && (
+                  <p data-testid="strategy-summary" className="text-xs text-muted-foreground"><strong className="font-medium text-foreground">How it picks:</strong> {strategySummary(form.activeStrategy)}</p>
+                )}
               </FormField>
               <FormField id="as-workload" label="Default maximum workload" error={errors.defaultMaxWorkload} hint="Whole number 1–100. A configured ceiling, not live workload.">
                 <Input id="as-workload" inputMode="numeric" value={form.defaultMaxWorkload} disabled={disabled} aria-invalid={!!errors.defaultMaxWorkload}
@@ -194,7 +198,7 @@ export default function AssignmentSettingsPage() {
         </Card>
       </div>
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title="Save assignment settings?"
-        description="This replaces the whole configuration and changes how new incidents are routed once the routing engine reads it."
+        description="This replaces the whole configuration and changes how new incidents are routed from now on."
         confirmLabel="Save settings" onConfirm={async () => { await save(); }} />
     </>
   );

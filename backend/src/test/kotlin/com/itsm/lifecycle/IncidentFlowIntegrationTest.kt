@@ -52,7 +52,9 @@ class IncidentFlowIntegrationTest {
 
     class MutableDirectory : UserDirectory {
         @Volatile var technicians: List<TechnicianSummary> = emptyList()
-        override fun findById(userId: Long): UserSummary? = null
+        /** Accounts [findById] knows, by id; empty unless a test needs display names. */
+        @Volatile var users: Map<Long, UserSummary> = emptyMap()
+        override fun findById(userId: Long): UserSummary? = users[userId]
         override fun findTechnician(userId: Long) = technicians.firstOrNull { it.userId == userId }
         override fun listAvailableTechnicians(categoryId: Long?) = technicians.filter { it.available }
         override fun escalationChain(technicianId: Long) = emptyList<UserSummary>()

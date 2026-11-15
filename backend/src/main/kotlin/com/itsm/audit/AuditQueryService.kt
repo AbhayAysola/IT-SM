@@ -12,6 +12,7 @@ import com.itsm.common.security.CurrentUser
 import com.itsm.common.security.CurrentUserProvider
 import com.itsm.common.security.Permission
 import com.itsm.common.spi.IncidentAccessPolicy
+import com.itsm.common.spi.UserDirectory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
@@ -47,7 +48,8 @@ data class AuditSearchParams(
 class AuditQueryService(
     private val reader: AuditEventReader,
     private val currentUser: CurrentUserProvider,
-    private val incidentAccess: ObjectProvider<IncidentAccessPolicy>
+    private val incidentAccess: ObjectProvider<IncidentAccessPolicy>,
+    private val users: ObjectProvider<UserDirectory>
 ) {
 
     @Transactional(readOnly = true)
@@ -55,7 +57,8 @@ class AuditQueryService(
         requireAuditView()
         val filter = parseFilter(params)
         val pageable = page.toPageable(sorting(params.sort, params.dir, Sort.Direction.DESC))
-        return PageResponse.from(reader.search(filter, pageable)) { AuditEventResponse.from(it) }
+        val names = ActorNames()
+        return PageResponse.from(reader.search(filter, pageable)) { names.response(it) }
     }
 
     @Transactional(readOnly = true)
@@ -67,7 +70,7 @@ class AuditQueryService(
             throw InvalidInput("Invalid audit event id", listOf(FieldError("id", "must be a UUID")))
         }
         val entity = reader.findByEventId(id) ?: throw ResourceNotFound("Audit event", id)
-        return AuditEventResponse.from(entity)
+        return ActorNames().response(entity)
     }
 
     @Transactional(readOnly = true)
@@ -89,8 +92,24 @@ class AuditQueryService(
             throw InvalidInput("Unsupported sort", listOf(FieldError("sort", "must be one of ${VIEWER_SORTS.sorted()}")))
         }
         val pageable = page.toPageable(sorting(sort, dir, Sort.Direction.ASC))
+        val names = ActorNames()
         return PageResponse.from(reader.search(AuditEventFilter(incidentId = incidentId), pageable)) {
-            if (full) AuditEventResponse.from(it) else IncidentHistoryEntry.from(it)
+            if (full) names.response(it) else IncidentHistoryEntry.from(it)
+        }
+    }
+
+    /**
+     * The full row with the acting user's current name, for AUDIT_VIEW holders only. One directory lookup per distinct
+     * user per response; a missing directory or unknown user just leaves the name null.
+     */
+    private inner class ActorNames {
+        private val cache = HashMap<Long, String?>()
+        fun response(e: AuditEventEntity): AuditEventResponse {
+            val id = e.actorId
+            val name = if (e.actorType == "USER" && id != null) {
+                cache.getOrPut(id) { runCatching { users.ifAvailable?.findById(id)?.name }.getOrNull() }
+            } else null
+            return AuditEventResponse.from(e, actorDisplayName = name)
         }
     }
 

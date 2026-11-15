@@ -1,7 +1,7 @@
 /** P4's notification bell and inbox, against the mock inbox (the backend's NotificationIntegrationTest proves the real rules). */
 import { test, expect, newUser } from './fixtures';
 import { axeViolations, expectNoHorizontalOverflow, signIn, trackErrors } from './helpers';
-import { notificationHref, toNotification } from '../src/features/notifications/notification-service';
+import { externalChannels, notificationHref, toNotification } from '../src/features/notifications/notification-service';
 import { relativeTime } from '../src/features/notifications/notification-time';
 
 const bell = (page: import('@playwright/test').Page) => page.getByTestId('notification-bell');
@@ -38,6 +38,9 @@ test.describe('notifications', () => {
     const list = page.getByRole('list', { name: 'Notifications' });
     await expect(list.getByRole('listitem')).toHaveCount(3);
     await expect(list.getByText('Unread', { exact: true })).toHaveCount(2);
+    // the simulated outside channels are visible: the P1 one went by email and SMS, the P2 ones by email
+    await expect(list.getByRole('listitem').first()).toContainText('Sent by Email');
+    await expect(list.getByRole('listitem').first()).toContainText('Sent by SMS');
 
     await page.getByRole('button', { name: 'Unread', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Unread', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -69,7 +72,9 @@ test.describe('notifications', () => {
 test.describe('notification rules', () => {
   test('the live mapper keeps what the inbox shows', () => {
     const n = toNotification({ id: 4, type: 'ESCALATED', incidentId: 'INC7', priority: 'P1', title: 't', body: 'b', createdAt: '2026-11-14T10:00:00Z', readAt: null, channels: ['IN_APP', 'EMAIL', 'SMS'] });
-    expect(n).toEqual({ id: 4, type: 'ESCALATED', incidentId: 'INC7', priority: 'P1', title: 't', body: 'b', createdAt: '2026-11-14T10:00:00Z', readAt: null });
+    expect(n).toEqual({ id: 4, type: 'ESCALATED', incidentId: 'INC7', priority: 'P1', title: 't', body: 'b', createdAt: '2026-11-14T10:00:00Z', readAt: null, channels: ['IN_APP', 'EMAIL', 'SMS'] });
+    expect(externalChannels(n)).toEqual(['Email', 'SMS']);
+    expect(externalChannels({ ...n, channels: ['IN_APP'] })).toEqual([]);
     expect(notificationHref(n)).toBe('/incidents/INC7');
     expect(notificationHref({ ...n, incidentId: null })).toBeNull();
   });

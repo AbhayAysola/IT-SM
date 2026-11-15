@@ -2,7 +2,9 @@ package com.itsm.lifecycle
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.itsm.common.model.Role
 import com.itsm.common.spi.TechnicianSummary
+import com.itsm.common.spi.UserSummary
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -77,6 +79,7 @@ class IncidentApiIntegrationTest {
     @Test fun `an incident is worked from assignment to rated feedback over HTTP`() {
         val reporter = account("EMPLOYEE"); val tech = account("TECHNICIAN"); val admin = account("ADMIN")
         directory.technicians = listOf(TechnicianSummary(tech.id, "Tech", "t@campus.example", true, 5, 3, false, null, mapOf(7L to 3)))
+        directory.users = mapOf(tech.id to UserSummary(tech.id, "t@campus.example", "Dev Technician", Role.TECHNICIAN, true))
         val id = incident(reporter.id)
 
         val assigned = call(admin, "POST", "/api/incidents/$id/assignment", "{}").andExpect(status().isOk).body()
@@ -96,11 +99,14 @@ class IncidentApiIntegrationTest {
 
         call(reporter, "GET", "/api/incidents/$id/timeline").andExpect(status().isOk)
             .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].type").value("RESOLUTION"))
+            .andExpect(jsonPath("$[0].authorId").value(tech.id)).andExpect(jsonPath("$[0].authorName").value("Dev Technician"))
+        call(reporter, "GET", "/api/incidents/$id").andExpect(jsonPath("$.hasFeedback").value(false))
         call(reporter, "GET", "/api/incidents/$id/feedback").andExpect(status().isNotFound)
         move(reporter, id, "VERIFY").andExpect(status().isOk).andExpect(jsonPath("$.state").value("VERIFIED"))
         call(reporter, "POST", "/api/incidents/$id/feedback", """{"rating":5,"comment":"Quick"}""").andExpect(status().isCreated).andExpect(jsonPath("$.rating").value(5))
         call(reporter, "POST", "/api/incidents/$id/feedback", """{"rating":1}""").andExpect(status().isConflict).andExpect(jsonPath("$.code").value("DUPLICATE_RESOURCE"))
         call(reporter, "GET", "/api/incidents/$id/feedback").andExpect(status().isOk).andExpect(jsonPath("$.rating").value(5))
+        call(reporter, "GET", "/api/incidents/$id").andExpect(jsonPath("$.hasFeedback").value(true))
         move(admin, id, "CLOSE").andExpect(status().isOk).andExpect(jsonPath("$.state").value("CLOSED"))
     }
 

@@ -3,8 +3,8 @@ import { IncidentError, type Feedback, type HistoryEntry, type Incident, type In
 
 /**
  * Pure translation between the backend's JSON (`IncidentController` DTOs) and the UI model. No network, so it is
- * unit-tested without a backend. The backend identifies people by id and returns no names: until it does, the UI
- * model's email/name fields are filled by `who()` (see the "bridge" note in docs/architecture/p3.md).
+ * unit-tested without a backend. The backend identifies people by id plus a display name (never another person's email),
+ * so the UI model's email/name fields are filled by `who()` (see the "bridge" note in docs/architecture/p3.md).
  */
 
 export interface ApiIncident {
@@ -13,6 +13,8 @@ export interface ApiIncident {
   assignedAt: string | null; firstResponseAt: string | null; resolvedAt: string | null; closedAt: string | null;
   availableTransitions: string[];
   reporterName?: string | null; assigneeName?: string | null; categoryName?: string | null; serviceName?: string | null;
+  /** True once the reporter has rated it. Absent from older backends, which means "unknown": ask `/feedback`. */
+  hasFeedback?: boolean;
 }
 export interface ApiIncidentSummary {
   id: string; title: string; state: IncidentState; priority: Priority | null; reporterId: number; assigneeId: number | null;
@@ -27,7 +29,7 @@ export interface ApiIncidentList {
   items: ApiIncidentSummary[]; page: number; size: number; totalItems: number; totalPages: number; stateCounts: Partial<Record<IncidentState, number>>;
   slaAttention?: ApiSlaAttention | null;
 }
-export interface ApiTimelineEntry { type: TimelineEntry['type']; authorId: number; visibility: TimelineEntry['visibility']; body: string; incidentState: IncidentState; createdAt: string }
+export interface ApiTimelineEntry { type: TimelineEntry['type']; authorId: number; visibility: TimelineEntry['visibility']; body: string; incidentState: IncidentState; createdAt: string; authorName?: string | null }
 /** GET /api/incidents/{id}/audit: the full row for admins, the reduced entry (no `description`) for everyone else. */
 export interface ApiHistoryEntry {
   id: string; occurredAt: string; action: string; actor: { type: 'USER' | 'SYSTEM'; role: string | null };
@@ -82,7 +84,7 @@ export const toRowSla = (d: ApiRowSla | null | undefined): RowSla | null =>
   d ? { status: d.status, resolutionStatus: d.resolutionStatus, resolutionDueAt: d.resolutionDueAt, predictedMiss: d.predictedMiss } : null;
 
 export function toTimelineEntry(d: ApiTimelineEntry, me: Me, incidentId: string, index: number): TimelineEntry {
-  const author = who(me, d.authorId)!;
+  const author = who(me, d.authorId, d.authorName)!;
   return {
     id: `${incidentId}-${index}`, incidentId, authorEmail: author.email, authorName: author.name, type: d.type,
     visibility: d.visibility, body: d.body, incidentState: d.incidentState, createdAt: d.createdAt,

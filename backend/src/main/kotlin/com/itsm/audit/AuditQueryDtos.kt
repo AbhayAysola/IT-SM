@@ -6,15 +6,18 @@ import java.util.Collections
 import java.util.UUID
 
 /**
- * Who performed an audited action. Mirrors what the table stores and nothing more: a user is identified by stable id
- * and role (never email or name); a system actor by its job name. `id` is withheld (null) from callers who only hold
- * incident access and not the AUDIT_VIEW permission.
+ * Who performed an audited action. The table stores a user by stable id and role (never email or name) and a system
+ * actor by its job name (`name`). `id` is withheld (null) from callers who only hold incident access and not the
+ * AUDIT_VIEW permission. `displayName` is the user's current name from the user directory, resolved at read time for
+ * AUDIT_VIEW holders only (administrators, who can already see every user's name); null for system actors, for
+ * anyone else, or when the user cannot be resolved.
  */
 data class AuditActorResponse(
     val type: String,
     val id: Long?,
     val role: String?,
-    val name: String?
+    val name: String?,
+    val displayName: String? = null
 )
 
 /** Anything the incident trail endpoint may return; which shape a caller gets depends on AUDIT_VIEW, see [IncidentHistoryEntry]. */
@@ -35,14 +38,15 @@ data class AuditEventResponse(
     val metadata: Map<String, Any>
 ) : IncidentAuditItem {
     companion object {
-        fun from(entity: AuditEventEntity, includeActorId: Boolean = true) = AuditEventResponse(
+        fun from(entity: AuditEventEntity, includeActorId: Boolean = true, actorDisplayName: String? = null) = AuditEventResponse(
             id = entity.eventId,
             occurredAt = entity.occurredAt,
             actor = AuditActorResponse(
                 type = entity.actorType,
                 id = if (includeActorId) entity.actorId else null,
                 role = entity.actorRole,
-                name = entity.actorName
+                name = entity.actorName,
+                displayName = actorDisplayName
             ),
             action = entity.action,
             entityType = entity.entityType,

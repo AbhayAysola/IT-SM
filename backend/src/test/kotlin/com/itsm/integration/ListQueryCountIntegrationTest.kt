@@ -122,9 +122,9 @@ class ListQueryCountIntegrationTest {
         Listing("sla-policies by priority", "$ADMIN/sla-policies?size=100&priority=P2", 3),
         Listing("sla-policies global only", "$ADMIN/sla-policies?size=100&global=true", 2, grows = false), // 2: no service references to resolve, so one statement fewer
         Listing("sla-policies active only", "$ADMIN/sla-policies?size=100&active=true", 3),
-        Listing("audit-events", "$ADMIN/audit-events?size=100", 3),
-        Listing("audit-events by actor", "$ADMIN/audit-events?size=100&actorId=${admin.id}", 3),
-        Listing("audit-events by time, sorted by action", "$ADMIN/audit-events?size=100&from=2000-01-01T00:00:00Z&sort=action&dir=asc", 3)
+        Listing("audit-events", "$ADMIN/audit-events?size=100", 4),
+        Listing("audit-events by actor", "$ADMIN/audit-events?size=100&actorId=${admin.id}", 4),
+        Listing("audit-events by time, sorted by action", "$ADMIN/audit-events?size=100&from=2000-01-01T00:00:00Z&sort=action&dir=asc", 4)
     )
 
     @Test fun `every admin listing, plain or filtered, issues the same pinned number of statements for 3 rows as for 20 rows`() {

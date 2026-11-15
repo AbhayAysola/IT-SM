@@ -158,6 +158,10 @@ class IncidentLifecycleService(
         return feedbacks.find(incidentId)
     }
 
+    /** Whether the incident has been rated. No access check: callers only use it for an incident they already returned. */
+    @Transactional(readOnly = true)
+    fun hasFeedback(incidentId: String): Boolean = feedbacks.find(incidentId) != null
+
     /** Past fixes in the same category, for a technician deciding how to start. Needs the work permission. */
     @Transactional(readOnly = true)
     fun similarResolved(incidentId: String, user: CurrentUser, limit: Int = 5): List<ResolvedIncident> {
