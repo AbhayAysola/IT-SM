@@ -45,7 +45,7 @@
 | Redis / RabbitMQ | In the compose stack, Helm chart and health checks, but **no feature uses them yet**: events travel through Spring's in-process publisher. Using them (or dropping them) is an open decision |
 | CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |
 
-The incident AI analysis calls the Anthropic API with the incident text when `anthropic.api-key` is set; without a key it is off.
+The incident AI features (categorisation, duplicate hints, chatbot intake) call the Google Gemini API with the incident text when `gemini.api-key` (env `GEMINI_API_KEY`) is set; without a key they are off and the report form is manual.
 
 ---
 
@@ -68,7 +68,7 @@ The incident AI analysis calls the Anthropic API with the incident text when `an
 │  (JPA)   │  │(unused) │  │ (unused)    │
 └──────────┘  └─────────┘  └─────────────┘
 
-Optional outbound call: Anthropic API (incident categorisation, duplicate hints, chatbot), only when `anthropic.api-key` is set.
+Optional outbound call: Google Gemini API (incident categorisation, duplicate hints, chatbot), only when `gemini.api-key` is set.
 ```
 
 ---
@@ -325,7 +325,7 @@ Self-registration is off unless `REGISTRATION_ENABLED=true` (then `POST /api/aut
 | `spring.rabbitmq.host` | `localhost` | RabbitMQ host |
 | `management.server.port` (env `MANAGEMENT_SERVER_PORT`) | unset (actuator on 8080) | Set to `8081` (compose, Kubernetes and Helm do) to serve actuator on an unpublished port Prometheus can scrape without credentials |
 | `spring.flyway.baseline-on-migrate` (env `FLYWAY_BASELINE_ON_MIGRATE`) | `false` | `true` only to adopt an existing database that has no Flyway history |
-| `anthropic.api-key` | empty | Enables AI categorisation, duplicate hints and the chatbot. Without it those endpoints answer 400 and the report form falls back to manual entry |
+| `gemini.api-key` (env `GEMINI_API_KEY`) | empty | Enables AI categorisation, duplicate hints and the chatbot (Google Gemini). Without it those endpoints answer 400 and the report form falls back to manual entry. Compose passes it through; in Kubernetes set `backend.gemini.apiKey` (Helm) or `GEMINI_API_KEY` in `backend-secret.yaml` |
 
 ### Frontend (`.env.local`)
 

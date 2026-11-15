@@ -25,6 +25,9 @@ backend:
   # Actuator (health probes and /actuator/prometheus) is served on this separate port. It is never published by the Service or the
   # Ingress; the NetworkPolicy lets only the kubelet and the Prometheus pods in `networkPolicy.prometheus` reach it.
   managementPort: 8081
+  # Optional: enables AI categorisation, duplicate hints and the chatbot (Google Gemini). Empty = those features are off.
+  gemini:
+    apiKey: ""
   jwt:
     secret: ""   # REQUIRED: >= 32 bytes of random secret (set via --set / a secret manager); the chart fails without it
     expiration: 86400000
