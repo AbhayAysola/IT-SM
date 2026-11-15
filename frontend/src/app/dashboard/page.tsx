@@ -8,6 +8,7 @@ import { User } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DashboardSummary } from '@/features/incidents/dashboard-summary';
 import { User as UserIcon, Mail, ShieldCheck, Calendar } from 'lucide-react';
 
 /**
@@ -51,7 +52,7 @@ function DashboardContent() {
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Your account overview.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Your account and your incidents.</p>
         </div>
 
         {loading ? (
@@ -107,6 +108,8 @@ function DashboardContent() {
         ) : (
           <p className="text-muted-foreground">Could not load user profile.</p>
         )}
+
+        {user && <DashboardSummary user={user} />}
       </main>
     </div>
   );
