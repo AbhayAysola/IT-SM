@@ -52,6 +52,7 @@ class SlaMonitor(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    @Transactional
     fun runOnce(): SlaRunResult = runAt(Instant.now(clock))
 
     @Transactional
