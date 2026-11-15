@@ -120,7 +120,7 @@ function auditPage(events: FakeAuditEvent[], q: URLSearchParams) {
   const eq = (v: string | null, f: string | null) => !f || v === f;
   const from = q.get('from'), to = q.get('to');
   const rows = events.filter((e) =>
-    eq(e.action, q.get('action')) && eq(e.entityType, q.get('entityType')) && eq(e.entityId, q.get('entityId')) &&
+    eq(e.action, q.get('action')) && eq(e.entityType, q.get('entityType')) && eq(e.entityId, q.get('entityId')) && eq(e.incidentId, q.get('incidentId')) &&
     eq(e.actor.role, q.get('actorRole')) && eq(e.actor.type, q.get('actorType')) &&
     (!q.get('actorId') || String(e.actor.id) === q.get('actorId')) &&
     (!from || Date.parse(e.occurredAt) >= Date.parse(from)) && (!to || Date.parse(e.occurredAt) < Date.parse(to)));

@@ -121,7 +121,7 @@ The profile-creation picker uses only these capabilities: `GET /users?role=TECHN
 
 ## Audit (unchanged from B7) — `AUDIT_VIEW` — `/api/admin/audit-events`
 
-`GET /` (filters `action, actorType, actorId, actorRole, entityType, entityId, incidentId, from, to, sort, dir`) and `GET /{eventId}`; read-only. See [audit-retrieval.md](audit-retrieval.md). The incident trail (`/api/incidents/{id}/audit`) has no admin UI.
+`GET /` (filters `action, actorType, actorId, actorRole, entityType, entityId, incidentId, from, to, sort, dir`) and `GET /{eventId}`; read-only. See [audit-retrieval.md](audit-retrieval.md). The audit page filters by every parameter above, including **Incident ID** (`incidentId`: all events of one incident, unlike Entity ID, which matches the event's own entity), and opens pre-filtered from `/admin/audit-logs?incidentId=INC1024`: the incident page's History card links there for administrators. The incident trail endpoint itself (`/api/incidents/{id}/audit`) is used by that card, see [p3.md](p3.md).
 
 ## How the frontend maps failures (`services/http.ts`)
 

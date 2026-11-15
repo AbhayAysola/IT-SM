@@ -40,6 +40,12 @@ function TextFilter({ id, label, value, onChange, error, placeholder, className 
 
 export default function AuditLogsPage() {
   const [filters, setFilters] = useState<AuditFilters>(EMPTY_AUDIT_FILTERS);
+  // Arriving from an incident's History card (`?incidentId=INC1024`) starts with that incident's events. Read after mount so the
+  // server-rendered markup and the first client render agree.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('incidentId');
+    if (id) setFilters((f) => ({ ...f, incidentId: id }));
+  }, []);
   const [sort, setSort] = useState<AuditSortKey>('occurredAt');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -86,9 +92,10 @@ export default function AuditLogsPage() {
         ) : (
           <>
             <div className="space-y-3 border-b p-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <TextFilter id="audit-action" label="Action" value={filters.action} onChange={(v) => set('action', v)} error={errors.action} placeholder="e.g. USER_CREATED" />
                 <TextFilter id="audit-entity-type" label="Entity type" value={filters.entityType} onChange={(v) => set('entityType', v)} error={errors.entityType} placeholder="e.g. SLA_POLICY" />
+ <TextFilter id="audit-incident-id" label="Incident ID" value={filters.incidentId} onChange={(v) => set('incidentId', v)} error={errors.incidentId} placeholder="e.g. INC1024" />
                 <TextFilter id="audit-entity-id" label="Entity ID" value={filters.entityId} onChange={(v) => set('entityId', v)} error={errors.entityId} placeholder="Exact identifier" />
                 <TextFilter id="audit-actor-id" label="Actor ID" value={filters.actorId} onChange={(v) => set('actorId', v)} error={errors.actorId} placeholder="User number" />
               </div>

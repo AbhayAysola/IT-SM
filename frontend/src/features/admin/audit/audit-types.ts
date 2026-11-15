@@ -45,6 +45,8 @@ export interface AuditFilters {
   action: string;
   entityType: string;
   entityId: string;
+  /** Every event of one incident, whatever the entity it concerns (`incident_id`), unlike `entityId`, which matches the event's own entity. */
+  incidentId: string;
   actorId: string;
   actorRole: AuditRoleFilter;
   /** Inclusive UTC calendar dates, `YYYY-MM-DD`. */
@@ -53,7 +55,7 @@ export interface AuditFilters {
 }
 
 export const EMPTY_AUDIT_FILTERS: AuditFilters = {
-  action: '', entityType: '', entityId: '', actorId: '', actorRole: 'ALL', from: '', to: '',
+  action: '', entityType: '', entityId: '', incidentId: '', actorId: '', actorRole: 'ALL', from: '', to: '',
 };
 
 export const EMPTY_AUDIT_PAGE: AuditPage = { items: [], page: 0, size: 0, totalItems: 0, totalPages: 0 };
@@ -101,6 +103,7 @@ export function actionTone(action: string): EventTone {
 const ACTION_RE = /^[A-Z][A-Z0-9_]{2,59}$/;
 const ENTITY_TYPE_RE = /^[A-Z][A-Z0-9_]{1,39}$/;
 const ENTITY_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const INCIDENT_ID_RE = /^[A-Za-z0-9_-]{1,30}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** "user created" / "user-created" -> USER_CREATED. */
@@ -113,6 +116,7 @@ export function validateFilters(f: AuditFilters): FilterErrors {
   if (f.action.trim() && !ACTION_RE.test(toCode(f.action))) e.action = 'Use 3–60 letters, digits or underscores, e.g. USER_CREATED.';
   if (f.entityType.trim() && !ENTITY_TYPE_RE.test(toCode(f.entityType))) e.entityType = 'Use 2–40 letters, digits or underscores, e.g. SLA_POLICY.';
   if (f.entityId.trim() && !ENTITY_ID_RE.test(f.entityId.trim())) e.entityId = 'Use up to 40 letters, digits, hyphens or underscores.';
+  if (f.incidentId.trim() && !INCIDENT_ID_RE.test(f.incidentId.trim())) e.incidentId = 'Use up to 30 letters, digits, hyphens or underscores, e.g. INC1024.';
   if (f.actorId.trim() && !/^[1-9]\d{0,17}$/.test(f.actorId.trim())) e.actorId = 'Enter a positive whole number.';
   if (f.from && !isRealDate(f.from)) e.from = 'Enter a valid date.';
   if (f.to && !isRealDate(f.to)) e.to = 'Enter a valid date.';
@@ -149,6 +153,7 @@ export function toSearchParams({ filters: f, sort, dir, page, pageSize }: AuditQ
   set('action', f.action.trim() && toCode(f.action));
   set('entityType', f.entityType.trim() && toCode(f.entityType));
   set('entityId', f.entityId.trim());
+  set('incidentId', f.incidentId.trim());
   set('actorId', f.actorId.trim());
   if (f.actorRole === 'SYSTEM') p.set('actorType', 'SYSTEM');
   else if (f.actorRole !== 'ALL') p.set('actorRole', f.actorRole);
