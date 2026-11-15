@@ -34,6 +34,15 @@ spec:
               {{- toYaml .Values.networkPolicy.prometheus.podLabels | nindent 14 }}
       ports:
         - port: {{ .Values.backend.managementPort }}
+{{- if .Values.monitoring.prometheus.enabled }}
+    # The chart's own Prometheus (same namespace as the backend).
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.prometheus.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.backend.managementPort }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

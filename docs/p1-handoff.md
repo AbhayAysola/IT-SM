@@ -10,7 +10,7 @@ or integration. It links to the detailed documents instead of repeating them.
 | Authentication | Login (Bearer for scripts, HttpOnly `Secure` `SameSite=Strict` cookie for the web app), logout that revokes every token, malformed-`Origin` handling, CSRF header + exact Origin allow-list | [security.md](architecture/security.md) |
 | Users and roles | EMPLOYEE / TECHNICIAN / ADMIN, admin user management with optimistic locking, first-admin command-mode bootstrap, registration OFF by default | [integration-guide.md](architecture/integration-guide.md) |
 | Technician profiles | Skills, categories, workload ceiling, availability, escalation chain | integration-guide.md, "Technician profiles" |
-| Catalogs | Incident categories and IT services (active/inactive lifecycle) | integration-guide.md |
+| Catalogs | Incident categories and IT services (active/inactive lifecycle; the services page has a dependency map view) | integration-guide.md |
 | SLA policies and assignment settings | Stored and served; timers, breach detection and escalation are P4 | integration-guide.md |
 | Audit | Append-only audit trail (database trigger), admin retrieval API, incident trail gated by P2's `IncidentAccessPolicy` | [audit-retrieval.md](architecture/audit-retrieval.md) |
 | Admin frontend | Connected to the real API | [admin-frontend-contract.md](architecture/admin-frontend-contract.md) |

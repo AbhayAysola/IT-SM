@@ -1,0 +1,265 @@
+{{- define "it-sm.prometheusConfig" -}}
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+scrape_configs:
+  - job_name: it-sm-backend
+    metrics_path: /actuator/prometheus
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [{{ .Values.global.namespace | quote }}]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        regex: backend
+        action: keep
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        regex: '([^:]+)(?::\d+)?;(\d+)'
+        replacement: '$1:$2'
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: instance
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+{{- end }}
+{{- if or .Values.monitoring.prometheus.enabled .Values.monitoring.grafana.enabled }}
+{{- $ns := .Values.global.namespace }}
+{{- if .Values.monitoring.prometheus.enabled }}
+# In-cluster Prometheus: discovers the backend pods itself (namespaced Role, no cluster-wide permissions) and scrapes each pod's management
+# port, which is never published by a Service or the Ingress. The NetworkPolicy admits these pods (label app.kubernetes.io/name: prometheus).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "it-sm.fullname" . }}-prometheus
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "it-sm.fullname" . }}-prometheus
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "it-sm.fullname" . }}-prometheus
+  namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "it-sm.fullname" . }}-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "it-sm.fullname" . }}-prometheus
+    namespace: {{ $ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "it-sm.fullname" . }}-prometheus
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    {{- include "it-sm.prometheusConfig" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "it-sm.fullname" . }}-prometheus
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "it-sm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: prometheus
+  template:
+    metadata:
+      labels:
+        {{- include "it-sm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: prometheus
+        {{- toYaml .Values.networkPolicy.prometheus.podLabels | nindent 8 }}
+      annotations:
+        checksum/config: {{ include "it-sm.prometheusConfig" . | sha256sum | quote }}
+    spec:
+      serviceAccountName: {{ include "it-sm.fullname" . }}-prometheus
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: "{{ .Values.monitoring.prometheus.image.repository }}:{{ .Values.monitoring.prometheus.image.tag }}"
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time={{ .Values.monitoring.prometheus.retention }}
+          ports:
+            - containerPort: 9090
+          readinessProbe:
+            httpGet: {path: /-/ready, port: 9090}
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: 9090}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "it-sm.fullname" . }}-prometheus
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "it-sm.fullname" . }}-prometheus
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "it-sm.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+{{- end }}
+{{- if .Values.monitoring.grafana.enabled }}
+{{- $adminPassword := required "monitoring.grafana.adminPassword is required when Grafana is enabled (no default password is shipped)" .Values.monitoring.grafana.adminPassword }}
+# Grafana with the Prometheus datasource and the IT-SM operations dashboard provisioned. Not exposed by the Ingress: reach it with
+#   kubectl -n {{ $ns }} port-forward svc/{{ include "it-sm.fullname" . }}-grafana 3001:3000
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "it-sm.fullname" . }}-grafana
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  admin-password: {{ $adminPassword | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "it-sm.fullname" . }}-grafana
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+data:
+  datasource.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: itsm-prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ include "it-sm.fullname" . }}-prometheus:9090
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 15s
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: it-sm
+        folder: IT-SM
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana/dashboards
+  itsm-overview.json: |
+    {{- .Files.Get "dashboards/itsm-overview.json" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "it-sm.fullname" . }}-grafana
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "it-sm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grafana
+  template:
+    metadata:
+      labels:
+        {{- include "it-sm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grafana
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: "{{ .Values.monitoring.grafana.image.repository }}:{{ .Values.monitoring.grafana.image.tag }}"
+          env:
+            - {name: GF_SECURITY_ADMIN_USER, value: admin}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "it-sm.fullname" . }}-grafana
+                  key: admin-password
+            - {name: GF_USERS_ALLOW_SIGN_UP, value: "false"}
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet: {path: /api/health, port: 3000}
+          volumeMounts:
+            - {name: provisioning-datasources, mountPath: /etc/grafana/provisioning/datasources}
+            - {name: provisioning-dashboards, mountPath: /etc/grafana/provisioning/dashboards}
+            - {name: dashboards, mountPath: /var/lib/grafana/dashboards}
+            - {name: data, mountPath: /var/lib/grafana}
+      volumes:
+        - name: provisioning-datasources
+          configMap:
+            name: {{ include "it-sm.fullname" . }}-grafana
+            items: [{key: datasource.yml, path: datasource.yml}]
+        - name: provisioning-dashboards
+          configMap:
+            name: {{ include "it-sm.fullname" . }}-grafana
+            items: [{key: dashboards.yml, path: dashboards.yml}]
+        - name: dashboards
+          configMap:
+            name: {{ include "it-sm.fullname" . }}-grafana
+            items: [{key: itsm-overview.json, path: itsm-overview.json}]
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "it-sm.fullname" . }}-grafana
+  namespace: {{ $ns }}
+  labels:
+    {{- include "it-sm.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "it-sm.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+{{- end }}
+{{- end }}

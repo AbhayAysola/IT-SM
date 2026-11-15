@@ -31,7 +31,7 @@
 | Area | State |
 |---|---|
 | Auth, sessions (HttpOnly cookie for the web app, Bearer for scripts), first-admin bootstrap | **Done** (P1): [security.md](docs/architecture/security.md) |
-| Users and roles, technician profiles, categories, IT services, SLA policies, assignment settings | **Done** (P1), served by the real admin API and connected to the admin workspace |
+| Users and roles, technician profiles, categories, IT services (list and a visual dependency map), SLA policies, assignment settings | **Done** (P1), served by the real admin API and connected to the admin workspace |
 | Audit trail (`audit_events`, append-only trigger) and admin retrieval API | **Done** (P1) |
 | Incident intake (`/api/incidents`, catalog, AI analysis, chatbot intake) | **Done** (P2) |
 | Incident list filters | Priority, category, service, technician, reported-date range and SLA status, on top of state and text search: [p3.md](docs/architecture/p3.md). The incident UI uses the real backend in every Docker, Compose and Kind build; only `npm run dev` and the hermetic e2e suite use browser-only demo data |
@@ -170,7 +170,27 @@ This starts: PostgreSQL · Redis · RabbitMQ · Backend · Frontend
 | Health check | not published: actuator is on port 8081 inside the compose network (see [Monitoring](#-monitoring)) |
 | RabbitMQ UI | http://localhost:15672 (itsm / rabbitmq_password) |
 
-### 3. (Optional) Start monitoring stack
+The backend image is multi-architecture, so this builds natively on Apple Silicon as well as on x86 (no `DOCKER_DEFAULT_PLATFORM` needed).
+
+### 3. Create the first administrator and (optionally) demo data
+
+A fresh database has no accounts. Once the stack is healthy, run the one-shot bootstrap service (it refuses if an administrator already exists):
+
+```bash
+cd infra
+ITSM_BOOTSTRAP_ADMIN_EMAIL=admin@example.com ITSM_BOOTSTRAP_ADMIN_PASSWORD='<a strong password>' \
+  docker compose --profile bootstrap run --rm bootstrap-admin
+```
+
+For a demo, load sample data through the public API (idempotent, standard-library Python 3 only): 3 employees, 3 technicians (a team lead with two reports, skills in different categories), 6 services with dependencies, stricter per-service SLA policies for the critical ones, and 5 incidents (assigned or in progress).
+
+```bash
+ITSM_ADMIN_EMAIL=admin@example.com ITSM_ADMIN_PASSWORD='<the password>' python3 scripts/seed_demo.py   # --url for another backend, --no-incidents to skip incidents
+```
+
+Every demo account uses the password in `ITSM_DEMO_PASSWORD` (default `Demo-Pass-123`): `alice.employee@demo.itsm`, `tara.lead@demo.itsm`, and so on. Never run the seeder against a real deployment.
+
+### 4. (Optional) Start monitoring stack
 
 ```bash
 cd infra
@@ -226,13 +246,14 @@ chmod +x scripts/setup-kind.sh scripts/deploy.sh
 This will:
 1. Create a Kind cluster with 1 control-plane + 2 workers
 2. Install NGINX Ingress Controller
-3. Build and load Docker images into the cluster
+3. Create the `it-sm` namespace and a **self-signed** TLS Secret (`it-sm-tls`, override with `TLS_SECRET_NAME`) for `PUBLIC_HOST`: local demos only, the browser warns once
+4. Build and load Docker images into the cluster
 
 ### HTTPS and the public origin (read before deploying)
 
 The Kubernetes deployment is **HTTPS only**: the session cookie is `Secure`, and CORS allows only `https://<host>`. Two things are yours to provide; the repository contains no real domain, certificate or issuer (`it-sm.local` is only a placeholder):
 
-1. **A TLS Secret** (`kubernetes.io/tls`) in the `it-sm` namespace, valid for your host, **created before** the ingress can serve HTTPS:
+1. **A TLS Secret** (`kubernetes.io/tls`) in the `it-sm` namespace, valid for your host, **created before** the ingress can serve HTTPS (`scripts/setup-kind.sh` makes a self-signed one for Kind; for anything else):
    `kubectl -n it-sm create secret tls <name> --cert=<tls.crt> --key=<tls.key>` (or add your own certificate-issuer annotation: `ingress.annotations` in Helm, the annotations block in `infra/k8s/ingress.yaml`).
 2. **A frontend image built for that host.** `NEXT_PUBLIC_API_URL` is compiled into the client bundle by `next build`; **changing an environment variable on the running pod does nothing.** Build with the bare public origin (no `/api`, because every request path already starts with `/api`):
    `docker build --build-arg NEXT_PUBLIC_API_URL=https://<host> -t it-sm/frontend:latest frontend` (`scripts/setup-kind.sh` does this from `PUBLIC_HOST`). The default `http://localhost:8080` is for local development only; never deploy an image built with it.
@@ -250,6 +271,9 @@ export TRUSTED_PROXY_CIDRS=10.244.0.0/16   # the ingress controller's pod CIDR (
 The chart fails with a clear message if `ingress.host`, `ingress.tls.secretName`, any of the three passwords or `backend.trustedProxy.cidrs` is empty.
 It also installs NetworkPolicies (the ingress controller reaches the frontend and the backend API; only the backend reaches PostgreSQL, Redis and
 RabbitMQ; the backend's management port is open to Prometheus pods only), which need a CNI that enforces them (Kind's default does).
+Optional in-cluster observability: set `GRAFANA_ADMIN_PASSWORD` before `./scripts/deploy.sh` to also deploy Prometheus (it discovers the backend pods and scrapes their management port) and Grafana with the **IT-SM operations** dashboard provisioned; reach it with `kubectl -n it-sm port-forward svc/it-sm-grafana 3001:3000`. Neither is on the ingress, and storage is an emptyDir (demo grade). Helm: `monitoring.prometheus.enabled`, `monitoring.grafana.enabled`, `monitoring.grafana.adminPassword`.
+The first administrator and demo data: `kubectl -n it-sm exec deploy/it-sm-backend -- sh -c 'ITSM_BOOTSTRAP_ADMIN_EMAIL=... ITSM_BOOTSTRAP_ADMIN_PASSWORD=... java -jar app.jar --itsm.bootstrap-admin=true --server.port=0 --management.server.port=0'`, then `kubectl -n it-sm port-forward svc/it-sm-backend 8080:8080` and `scripts/seed_demo.py` as above.
+CI builds both images on every pull request, scans them with Trivy (fixable HIGH/CRITICAL fails the job) and publishes them to GHCR from `main` ([images.yml](.github/workflows/images.yml)); the published frontend image targets `http://localhost:8080`, so a deployment still builds its own for its host.
 For production also enable the restricted database role: [security.md, "Database roles"](docs/architecture/security.md#database-roles). `CORS_ALLOWED_ORIGINS` defaults to `https://<ingress.host>`, so it cannot drift from the ingress.
 
 ### Add local DNS entry (Kind)
