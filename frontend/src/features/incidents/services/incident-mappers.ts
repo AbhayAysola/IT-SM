@@ -1,3 +1,4 @@
+import type { SlaQueueItem } from '../model/sla';
 import { IncidentError, type Feedback, type Incident, type IncidentErrorCode, type IncidentState, type Priority, type Recommendation, type RowSla, type SimilarResolution, type EscalationView, type SlaClockView, type SlaRiskView, type SlaStatus, type SlaSummary, type TimelineEntry } from '../model/types';
 
 /**
@@ -32,7 +33,7 @@ export interface ApiRecommendation { technicianId: number; name: string; score: 
 /** GET /api/incidents/{id}/sla (P4's `SlaDto`). Only the fields the UI uses are listed. */
 export interface ApiSlaClock { status: SlaStatus; targetMinutes: number | null; dueAt: string | null; metAt: string | null; breachedAt: string | null }
 export interface ApiSlaRisk { raisedAt: string; dueAt: string; predictedFinishAt: string; basis: SlaRiskView['basis']; sampleSize: number; typicalRemainingMinutes: number; loadFactor: number }
-export interface ApiSla { status: SlaStatus; response: ApiSlaClock | null; resolution: ApiSlaClock | null; pausedSince: string | null; evaluatedAt: string | null; risk?: ApiSlaRisk | null }
+export interface ApiSla { incidentId?: string; title?: string | null; priority?: Priority | null; status: SlaStatus; response: ApiSlaClock | null; resolution: ApiSlaClock | null; pausedSince: string | null; evaluatedAt: string | null; risk?: ApiSlaRisk | null }
 /** GET /api/incidents/{id}/escalations (P4's `EscalationDto`). */
 export interface ApiEscalation { trigger: string; tier: EscalationView['tier']; description: string; targets: { id: number; name: string }[]; assigneeId: number | null; createdAt: string }
 export interface ApiResolved { incidentId: string; title: string; resolution: string; resolvedAt: string; sameService: boolean }
@@ -101,6 +102,22 @@ const toRisk = (r: ApiSlaRisk | null | undefined): SlaRiskView | null =>
 
 export const toSla = (d: ApiSla): SlaSummary =>
   ({ status: d.status, response: toClock(d.response), resolution: toClock(d.resolution), pausedSince: d.pausedSince, evaluatedAt: d.evaluatedAt, risk: toRisk(d.risk) });
+
+/** A row of P4's SLA queue. A predicted miss counts only while the resolution clock is running or warned, like the panel. */
+export function toQueueItem(d: ApiSla): SlaQueueItem {
+  const resolutionStatus = (d.resolution?.status ?? 'NO_POLICY') as RowSla['resolutionStatus'];
+  return {
+    incidentId: d.incidentId ?? '',
+    title: d.title ?? d.incidentId ?? '',
+    priority: d.priority ?? 'P4',
+    sla: {
+      status: (d.status === 'PENDING' ? 'RUNNING' : d.status) as RowSla['status'],
+      resolutionStatus,
+      resolutionDueAt: d.resolution?.dueAt ?? null,
+      predictedMiss: !!d.risk && (resolutionStatus === 'RUNNING' || resolutionStatus === 'WARNING'),
+    },
+  };
+}
 
 export const toEscalation = (d: ApiEscalation): EscalationView =>
   ({ description: d.description, tier: d.tier, targets: d.targets.map((t) => t.name), createdAt: d.createdAt });

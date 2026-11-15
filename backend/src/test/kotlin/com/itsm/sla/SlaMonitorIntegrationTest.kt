@@ -249,6 +249,13 @@ class SlaMonitorIntegrationTest {
         assertTrue(id in ids(admin)); assertTrue(id in ids(admin, "&status=BREACHED")); assertTrue(id in ids(admin, "&status=breached&status=WARNING"))
         assertFalse(id in ids(admin, "&status=RUNNING"))
         assertTrue(id in ids(tech)); assertFalse(id in ids(otherTech))
+        val row = getJson("/api/sla/incidents?size=100", tech, 200)["items"].single { it["incidentId"].asText() == id }
+        assertEquals("Printer offline", row["title"].asText(), "the queue names each incident")
+        assertTrue(getJson("/api/incidents/$id/sla", tech, 200)["title"].isNull, "the single-incident view needs no title")
+        assertTrue(id in ids(tech, "&unresolved=true"), "still being worked on")
+        move(id, "RESOLVED", 30, tech.id, firstResponse = 5, resolved = 30); monitor.runAt(at(31))
+        assertTrue(id in ids(tech, "&status=BREACHED"), "a breach is never undone")
+        assertFalse(id in ids(tech, "&unresolved=true"), "but a resolved incident is no longer in the working queue")
         getJson("/api/sla/incidents", reporter, 403)
         getJson("/api/sla/incidents", null, 401)
         assertEquals("INVALID_INPUT", getJson("/api/sla/incidents?status=LATE", admin, 400)["code"].asText())

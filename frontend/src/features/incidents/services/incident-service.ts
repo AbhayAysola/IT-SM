@@ -11,7 +11,7 @@ import {
   IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
   type EscalationView, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
-import { mockRowSla, mockSla } from '../model/sla';
+import { mockRowSla, mockSla, queueOrder, SLA_QUEUE_SIZE, type SlaQueueItem } from '../model/sla';
 import { canChangePriority, priorityChangeErrors, type PrioritySuggestionView } from '../model/priority';
 import { loadWorld, saveWorld, simulate } from './store';
 import { liveIncidentService } from './live-incident-service';
@@ -332,6 +332,24 @@ export const mockIncidentService = {
     return simulate(() => {
       if (actor.role !== 'ADMIN') throw new IncidentError('FORBIDDEN', 'Only administrators can dismiss priority suggestions.');
       saveMockDismissed(actor.email, [...mockDismissed(actor.email), id]);
+    });
+  },
+
+  /**
+   * The mock's SLA queue: unresolved incidents whose clocks are running, warned or breached (technicians: those assigned to
+   * them; admins: all), in the backend's order, from the same approximate clocks as the incident pages.
+   */
+  async slaQueue(actor: Actor): Promise<SlaQueueItem[]> {
+    return simulate(() => {
+      if (actor.role === 'EMPLOYEE') throw new IncidentError('FORBIDDEN', 'The SLA queue is for technicians and administrators.');
+      const now = Date.now();
+      return world(actor).incidents
+        .filter((i) => actor.role === 'ADMIN' || same(i.assigneeEmail, actor.email))
+        .map((i) => ({ i, sla: mockRowSla(i, now) }))
+        .filter(({ i, sla }) => sla && !i.resolvedAt && !['RESOLVED', 'VERIFIED', 'CLOSED'].includes(i.state) && ['BREACHED', 'WARNING', 'RUNNING'].includes(sla.status))
+        .map(({ i, sla }): SlaQueueItem => ({ incidentId: i.id, title: i.title, priority: i.priority, sla: sla! }))
+        .sort(queueOrder)
+        .slice(0, SLA_QUEUE_SIZE);
     });
   },
 

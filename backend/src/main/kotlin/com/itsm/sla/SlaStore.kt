@@ -60,14 +60,18 @@ class SlaStore(private val jdbc: JdbcTemplate, private val named: NamedParameter
     }
 
     /**
-     * One page of SLA records, newest deadline pressure first (breached, then nearest resolution deadline).
+     * One page of SLA records with their incident's title, newest deadline pressure first (breached, then nearest
+     * resolution deadline).
      * [assigneeId] restricts to incidents currently assigned to that user: the only other read of `incidents` in P4
      * besides [IncidentSnapshotReader].
      */
-    fun list(statuses: Set<SlaStatus>, openOnly: Boolean, assigneeId: Long?, page: Int, size: Int): Pair<List<SlaRecord>, Long> {
+    fun list(
+        statuses: Set<SlaStatus>, openOnly: Boolean, assigneeId: Long?, page: Int, size: Int, unresolvedOnly: Boolean = false
+    ): Pair<List<Pair<SlaRecord, String>>, Long> {
         val where = buildList {
             if (statuses.isNotEmpty()) add("s.status IN (:statuses)")
             if (openOnly) add("NOT s.complete")
+            if (unresolvedOnly) add("s.resolution_met_at IS NULL")
             if (assigneeId != null) add("i.assignee_id = :assignee")
         }.joinToString(" AND ").ifEmpty { "TRUE" }
         val params = MapSqlParameterSource()
@@ -78,9 +82,9 @@ class SlaStore(private val jdbc: JdbcTemplate, private val named: NamedParameter
         val from = "FROM incident_sla s JOIN incidents i ON i.id = s.incident_id WHERE $where"
         val total = named.queryForObject("SELECT count(*) $from", params, Long::class.java)!!
         val items = named.query(
-            "SELECT s.* $from ORDER BY (s.status = 'BREACHED') DESC, s.resolution_due_at NULLS LAST, s.incident_id LIMIT :limit OFFSET :offset",
+            "SELECT s.*, i.title AS incident_title $from ORDER BY (s.status = 'BREACHED') DESC, s.resolution_due_at NULLS LAST, s.incident_id LIMIT :limit OFFSET :offset",
             params
-        ) { rs, _ -> rs.toRecord() }
+        ) { rs, _ -> rs.toRecord() to rs.getString("incident_title") }
         return items to total
     }
 

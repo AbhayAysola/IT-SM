@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { User as UserIcon, Mail, ShieldCheck, Calendar } from 'lucide-react';
+import { SlaQueueCard } from '@/features/incidents/components/sla-queue-card';
+import { toActorRole } from '@/features/incidents/model/lifecycle';
 
 /**
  * Everything that talks to the API lives here, inside <AuthGuard>, so it only mounts (and only calls
@@ -53,6 +55,13 @@ function DashboardContent() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
           <p className="mt-1 text-sm text-muted-foreground">Your account overview.</p>
         </div>
+
+        {/* Staff see the deadlines they are working against first (P4). Reporters see their account only, as before. */}
+        {user && toActorRole(user.role) !== 'EMPLOYEE' && (
+          <div className="mb-6">
+            <SlaQueueCard actor={{ id: user.id, email: user.email, name: user.name, role: toActorRole(user.role) }} />
+          </div>
+        )}
 
         {loading ? (
           <Card role="status" aria-label="Loading profile">

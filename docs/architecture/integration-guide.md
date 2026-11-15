@@ -204,7 +204,7 @@ read-only through `IncidentSnapshotReader` (plus one join in `SlaStore.list` for
 | Method and path | Who | Result |
 |---|---|---|
 | `GET /api/incidents/{incidentId}/sla` | anyone P2's `IncidentAccessPolicy` lets see the incident | 200 `SlaDto`; `status: PENDING` until the first evaluation; 404 unknown, 403 not allowed, 503 if the access policy is not deployed |
-| `GET /api/sla/incidents?status&open&page&size` | `INCIDENT_VIEW_ALL` (everything) or `INCIDENT_VIEW_ASSIGNED` (own assigned incidents) | 200 `PageResponse<SlaDto>`, breached first then nearest resolution deadline; `status` repeatable (`BREACHED`, `WARNING`, `PAUSED`, `RUNNING`, `MET`, `NO_POLICY`); `open=true` by default hides verified/closed |
+| `GET /api/sla/incidents?status&open&unresolved&page&size` | `INCIDENT_VIEW_ALL` (everything) or `INCIDENT_VIEW_ASSIGNED` (own assigned incidents) | 200 `PageResponse<SlaDto>` (each row also has the incident's `title`), breached first then nearest resolution deadline; `status` repeatable (`BREACHED`, `WARNING`, `PAUSED`, `RUNNING`, `MET`, `NO_POLICY`); `open=true` by default hides verified/closed; `unresolved=true` also hides resolved ones. The dashboard's Service level queue uses it |
 
 `SlaDto` = `incidentId, status, priority, policy{id, scope}, noPolicyReason, response{status, targetMinutes, dueAt, warningAt,
 metAt, breachedAt}, resolution{...same}, pausedSince, pausedSeconds, evaluatedAt, risk`. `risk` is null unless a miss
