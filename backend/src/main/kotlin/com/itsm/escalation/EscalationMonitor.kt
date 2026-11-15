@@ -47,7 +47,6 @@ class EscalationMonitor(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Transactional
     fun runOnce(): EscalationRunResult = runAt(Instant.now(clock))
 
     @Transactional

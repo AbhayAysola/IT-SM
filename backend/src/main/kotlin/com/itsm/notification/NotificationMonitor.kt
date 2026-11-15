@@ -110,7 +110,6 @@ class NotificationMonitor(
     private val clock: Clock,
     @Value("\${app.notification.monitor.batch-size:500}") private val batchSize: Int
 ) {
-    @Transactional
     fun runOnce(): NotificationRunResult = runAt(Instant.now(clock))
 
     @Transactional

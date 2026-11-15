@@ -54,7 +54,6 @@ class PrioritySuggestionMonitor(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Transactional
     fun runOnce(): PrioritySuggestionRunResult = runAt(Instant.now(clock))
 
     @Transactional
