@@ -149,7 +149,7 @@ function AdminDashboard({ actor }: { actor: Actor }) {
           { label: 'Reported, 30 days', value: s.incidents.reported, hint: `${s.incidents.resolved} resolved in the same days`, href: '/admin/analytics' },
           { label: 'Open now', value: s.incidents.openNow, hint: `${s.incidents.unassignedNow} not assigned`, href: '/incidents' },
           { label: 'Critical open', value: criticalOpen, hint: 'P1 incidents not yet resolved', tone: criticalOpen ? 'bad' : undefined },
-          { label: 'SLA violations', value: breaches, hint: `Resolution SLA met: ${pct(s.sla.overall.resolutionCompliancePct)}`, tone: breaches ? 'bad' : undefined },
+          { label: 'SLA violations', value: breaches, hint: `${s.sla.overall.responseBreached} response, ${s.sla.overall.resolutionBreached} resolution targets missed`, tone: breaches ? 'bad' : undefined },
           { label: 'Escalations', value: s.escalations.total, hint: 'Raised in the last 30 days', href: '/admin/escalation-settings' },
         ] : []} />
       )}
@@ -200,7 +200,7 @@ function ServiceCard({ loading, rows }: { loading: boolean; rows: { id: string |
       <CardContent>
         {loading ? <Skeleton className="h-28 w-full" /> : top.length === 0 ? <p className="text-sm text-muted-foreground">No incidents in the last 30 days.</p> : (
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs text-muted-foreground"><th className="pb-2 font-medium">Service</th><th className="pb-2 text-right font-medium">Incidents</th><th className="pb-2 text-right font-medium">Breached</th><th className="pb-2 text-right font-medium">SLA met</th></tr></thead>
+            <thead><tr className="text-left text-xs text-muted-foreground"><th className="pb-2 font-medium">Service</th><th className="pb-2 text-right font-medium">Incidents</th><th className="pb-2 text-right font-medium">Resolution missed</th><th className="pb-2 text-right font-medium">SLA met</th></tr></thead>
             <tbody>
               {top.map((r) => (
                 <tr key={r.id ?? r.name} className="border-t">
@@ -244,8 +244,8 @@ function StatRow({ stats, loading }: { stats: Stat[]; loading: boolean }) {
 
 function SlaAttentionCard({ loading, attention, scope }: { loading: boolean; attention: SlaAttention | null; scope: string }) {
   const items = attention ? [
-    { label: 'Breached', value: attention.breached, desc: 'Past the resolution deadline', icon: AlertTriangle, tone: 'text-destructive' },
-    { label: 'At risk', value: attention.atRisk, desc: 'Past the warning point', icon: Clock, tone: 'text-warning-foreground' },
+    { label: 'Breached', value: attention.breached, desc: 'Missed a response or resolution target', icon: AlertTriangle, tone: 'text-destructive' },
+    { label: 'At risk', value: attention.atRisk, desc: 'Past the warning point of a target', icon: Clock, tone: 'text-warning-foreground' },
     { label: 'Predicted to miss', value: attention.predictedMiss, desc: 'Likely to breach at the current pace', icon: Clock, tone: 'text-muted-foreground' },
   ] : [];
   return (

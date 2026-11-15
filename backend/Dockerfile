@@ -3,7 +3,8 @@ WORKDIR /app
 COPY . .
 RUN gradle bootJar --no-daemon
 
-FROM eclipse-temurin:17-jre-alpine
+# multi-arch (amd64 + arm64): the -alpine tag has no arm64 image, which broke builds on Apple Silicon
+FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 COPY --from=builder /app/build/libs/*.jar app.jar
 EXPOSE 8080
