@@ -9,7 +9,7 @@ import {
 } from '../model/recommender';
 import {
   IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
-  type EscalationView, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
+  type EscalationView, type HistoryEntry, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { mockRowSla, mockSla, queueOrder, SLA_QUEUE_SIZE, type SlaQueueItem } from '../model/sla';
 import { canChangePriority, priorityChangeErrors, type PrioritySuggestionView } from '../model/priority';
@@ -127,9 +127,27 @@ export interface IncidentDetail {
   sla: SlaSummary | null;
   /** Escalations, for staff only (always empty for reporters, and in the mock, which has no escalation monitor). */
   escalations: EscalationView[];
+  /** The system's audit trail of this incident, oldest first; null when it is not shown (reporters, or the backend could not supply it). */
+  history: HistoryEntry[] | null;
 }
 
 const PRIORITY_ORDER = { P1: 1, P2: 2, P3: 3, P4: 4 } as const;
+
+/**
+ * The mock has no audit table, so its history is derived from what it does have: the incident's creation and the investigation entries.
+ * It exists so the offline demo and the e2e suite show the same card; the live service shows what the backend really recorded.
+ */
+function mockHistory(i: Incident, timeline: TimelineEntry[]): HistoryEntry[] {
+  const row = (n: number, at: string, action: string, actorType: 'USER' | 'SYSTEM', actorRole: string | null, prev: string | null, next: string | null): HistoryEntry =>
+    ({ id: `h-${i.id}-${n}`, occurredAt: at, action, actorType, actorRole, previousState: prev, newState: next, description: null });
+  const entries = [
+    row(0, i.createdAt, 'INCIDENT_CREATED', 'USER', 'EMPLOYEE', null, 'CLASSIFIED'),
+    row(1, i.createdAt, 'INCIDENT_CLASSIFIED', 'SYSTEM', null, null, 'CLASSIFIED'),
+  ];
+  timeline.forEach((e, n) =>
+    entries.push(row(n + 2, e.createdAt, e.type === 'RESOLUTION' ? 'INCIDENT_RESOLVED' : 'INCIDENT_INVESTIGATION_ENTRY_ADDED', 'USER', 'TECHNICIAN', null, e.incidentState)));
+  return entries.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+}
 
 function similarResolutions(w: World, i: Incident): SimilarResolution[] {
   return w.incidents
@@ -279,6 +297,7 @@ export const mockIncidentService = {
         similar: staff && active.includes(incident.state) ? similarResolutions(w, incident) : [],
         sla: incident.state === 'NEW' ? null : mockSla(incident, Date.now()),
         escalations: [],
+        history: staff ? mockHistory(incident, timeline) : null,
       };
     });
   },

@@ -231,7 +231,7 @@ function StatRow({ stats, loading }: { stats: Stat[]; loading: boolean }) {
           <Card className={cn('h-full transition-colors', s.href && 'hover:border-primary/50', s.tone === 'bad' && 'border-destructive/50', s.tone === 'warn' && 'border-warning/60')}>
             <CardContent className="space-y-1 p-4">
               <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
-              <p className={cn('text-2xl font-semibold tabular-nums', s.tone === 'bad' && 'text-destructive')}>{s.value}</p>
+              <p data-testid={`dash-stat-${s.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, '')}`} className={cn('text-2xl font-semibold tabular-nums', s.tone === 'bad' && 'text-destructive')}>{s.value}</p>
               <p className="text-xs text-muted-foreground">{s.hint}</p>
             </CardContent>
           </Card>
@@ -283,7 +283,7 @@ function IncidentListCard({ title, description, rows, audience, loading, empty, 
         {loading ? <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div> : rows.length === 0 ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><EmptyIcon className="h-4 w-4" aria-hidden="true" />{empty}</div>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y" aria-label={title}>
             {rows.map((i) => {
               const due = showDeadline ? listDeadline(i.sla, now) : null;
               return (

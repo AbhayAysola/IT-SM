@@ -402,6 +402,28 @@ test.describe('incidents: states, errors and quality', () => {
     await expect(page.getByRole('combobox', { name: 'Technician' })).toHaveCount(0);
   });
 
+  test('staff see the incident history, admins get a link to the full audit entries, reporters see neither', async ({ page, api }) => {
+    await open(page, api, 'ADMIN', '/incidents/INC1002');
+    const history = page.getByRole('list', { name: 'Incident history' });
+    await expect(history).toBeVisible();
+    await expect(history.getByRole('listitem').first()).toContainText('Reported');
+    await expect(history).toContainText('Classified and prioritised');
+    await expect(history).toContainText('Investigation entry added');
+    await expect(page.getByRole('link', { name: 'Open the full audit entries' })).toHaveAttribute('href', '/admin/audit-logs?incidentId=INC1002');
+  });
+
+  test('a technician sees the history but not the admin audit link', async ({ page, api }) => {
+    await open(page, api, 'TECHNICIAN', '/incidents/INC1002');
+    await expect(page.getByRole('list', { name: 'Incident history' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open the full audit entries' })).toHaveCount(0);
+  });
+
+  test('a reporter does not get the system history', async ({ page, api }) => {
+    await open(page, api, 'EMPLOYEE', '/incidents/INC1003');
+    await expect(page.getByRole('heading', { name: 'Investigation' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Incident history' })).toHaveCount(0);
+  });
+
   test('a reported-date range keeps only incidents created inside it', async ({ page, api }) => {
     await open(page, api, 'ADMIN');
     await tab(page, /^In progress/).click();
