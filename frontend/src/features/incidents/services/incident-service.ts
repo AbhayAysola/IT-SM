@@ -217,6 +217,14 @@ function saveMockDismissed(email: string, ids: string[]) {
 }
 
 export const mockIncidentService = {
+  /** The signed-in technician's open incidents (those that count toward workload) and their configured ceiling. */
+  async myWorkload(actor: Actor): Promise<{ active: number; maxWorkload: number }> {
+    return simulate(() => {
+      const active = world(actor).incidents.filter((i) => same(i.assigneeEmail, actor.email) && WORKLOAD_STATES.includes(i.state)).length;
+      return { active, maxWorkload: 6 };
+    });
+  },
+
   async list(actor: Actor, tab: TabId, search = '', page = 1, filters: IncidentFilters = {}, sort: IncidentSort = 'URGENCY'): Promise<IncidentListResult> {
     return simulate(() => {
       const w = world(actor);

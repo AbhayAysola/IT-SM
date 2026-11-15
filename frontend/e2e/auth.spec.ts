@@ -72,7 +72,7 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.getByLabel('Password').fill(user.password);
     await submit(page).click();
     await page.waitForURL('**/dashboard');
-    await expect(page.locator('dd', { hasText: user.email })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: `Welcome back, ${user.name.split(' ')[0]}` })).toBeVisible();
   });
 
   test('registering an address that already has an account shows the SAME notice and does not touch that account', async ({ page, api }) => {
@@ -167,7 +167,7 @@ test.describe('registration, sign-in and sign-out', () => {
     await page.reload();
     expect((await me).status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('dd', { hasText: user.email })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: `Welcome back, ${user.name.split(' ')[0]}` })).toBeVisible();
   });
 
   test('signing out ends the session on the server: the dashboard is guarded and the old session no longer works', async ({ page, api }) => {

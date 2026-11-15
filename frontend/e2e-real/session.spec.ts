@@ -53,7 +53,7 @@ test.describe('browser session', () => {
     await page.reload();
     await me;
     await expect(page).toHaveURL(/\/dashboard$/);
-    await page.locator('dd').first().waitFor();
+    await page.getByRole('heading', { level: 1, name: /^Welcome back/ }).waitFor();
     await expect(page.getByText(employee().email).first()).toBeVisible();
   });
 

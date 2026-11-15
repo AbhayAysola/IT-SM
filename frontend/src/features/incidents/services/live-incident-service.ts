@@ -75,6 +75,10 @@ export const liveIncidentService = {
     return { items, counts, total: page_.totalItems, page: Math.max(1, page), pageSize: INCIDENT_PAGE_SIZE, attention };
   },
 
+  async myWorkload(_actor: Actor): Promise<{ active: number; maxWorkload: number }> {
+    return call<{ active: number; maxWorkload: number }>('GET', '/workload/me');
+  },
+
   async get(actor: Actor, id: string): Promise<IncidentDetail> {
     const who = me(actor);
     // The page recognises "not found" by the mock's wording, so say it the same way whatever the backend's text is.

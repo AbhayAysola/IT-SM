@@ -9,6 +9,7 @@ import com.itsm.common.model.Priority
 import com.itsm.common.security.CurrentUserProvider
 import com.itsm.common.spi.CategoryCatalog
 import com.itsm.common.spi.ServiceCatalog
+import com.itsm.common.spi.TechnicianWorkloadProvider
 import com.itsm.common.spi.UserDirectory
 import com.itsm.feedback.Feedback
 import com.itsm.investigation.InvestigationEntry
@@ -89,6 +90,8 @@ data class AssignRequest(/** Omit to let the configured strategy choose. */ val 
 data class NoteRequest(@field:NotNull val type: InvestigationEntryType?, val body: String = "", val visibility: Visibility? = null)
 data class FeedbackRequest(@field:NotNull val rating: Int?, val comment: String? = null)
 
+data class WorkloadDto(val active: Int, val maxWorkload: Int)
+
 /** P3's endpoints on an existing incident. Creating incidents is P2's. All rules live in the services. */
 @RestController
 @RequestMapping(ApiPaths.INCIDENTS)
@@ -98,7 +101,8 @@ class IncidentController(
     private val currentUser: CurrentUserProvider,
     private val users: ObjectProvider<UserDirectory>,
     private val services: ObjectProvider<ServiceCatalog>,
-    private val categories: ObjectProvider<CategoryCatalog>
+    private val categories: ObjectProvider<CategoryCatalog>,
+    private val workload: TechnicianWorkloadProvider
 ) {
     /**
      * The caller's incidents (an admin's: all). `states` is a comma-separated list of states; `q` matches id or title.
@@ -147,6 +151,17 @@ class IncidentController(
             result.stateCounts.mapKeys { it.key.name },
             result.slaAttention.let { SlaAttentionDto(it.breached, it.atRisk, it.predictedMiss) }
         )
+    }
+
+    /**
+     * The caller's own workload: incidents counting toward it (assigned up to pending info) and the configured ceiling, for the
+     * technician dashboard. 404 when the caller has no technician profile.
+     */
+    @GetMapping("/workload/me")
+    fun myWorkload(): WorkloadDto {
+        val user = currentUser.current()
+        val profile = users.getIfAvailable()?.findTechnician(user.id) ?: throw ResourceNotFound("Technician profile", user.id)
+        return WorkloadDto(workload.activeIncidentCount(user.id), profile.maxWorkload)
     }
 
     @GetMapping("/{id}")
