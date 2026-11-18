@@ -69,7 +69,10 @@ docker run -d --name e2e-pg --network e2e-net -e POSTGRES_PASSWORD=pw -e POSTGRE
    gradle bootJar -x test --no-daemon)
 docker run -d --name e2e-api --network e2e-net -p 8080:8080 -v "$PWD/../backend/build/libs":/jar:ro \
   -e SPRING_DATASOURCE_URL=jdbc:postgresql://e2e-pg:5432/itsm -e SPRING_DATASOURCE_USERNAME=postgres \
-  -e SPRING_DATASOURCE_PASSWORD=pw eclipse-temurin:17-jre java -jar /jar/it-sm-0.0.1-SNAPSHOT.jar
+  -e SPRING_DATASOURCE_PASSWORD=pw -e JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')" \
+  eclipse-temurin:17-jre java -jar /jar/it-sm-0.0.1-SNAPSHOT.jar
+# JWT_SECRET (>= 32 bytes) is required: the backend refuses to start without it. Registration is off by default; `incidents-live.spec.ts` registers accounts, so for that spec only add `-e APP_REGISTRATION_ENABLED=true`.
+# If :8080 is taken, publish another port (-p 8090:8080) and build the frontend with NEXT_PUBLIC_API_URL and run with E2E_API_URL set to it.
 # wait until: curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{}'   (prints 400/401, not 000)
 
 # 3. run
@@ -86,8 +89,9 @@ If you must reuse a long-lived local database instead, remove the test accounts 
 ## Live incidents (`incidents-live.spec.ts`)
 
 Drives the P3 workspace in a real browser against the real backend: a technician works an incident, the reporter answers and rates it,
-an admin closes it, a stranger gets "not found", and the list is paged by the server. **Opt-in**: it is skipped unless
-`E2E_INCIDENTS_LIVE=1`. The backend cannot yet create incidents or promote accounts, so the spec does both with SQL in the
+an admin closes it, a stranger gets "not found", an admin assigns and then reassigns from the ranked suggestions, and the list is paged by
+the server. **Opt-in**: it is skipped unless `E2E_INCIDENTS_LIVE=1`. Accounts are registered through the API (start the backend with
+`APP_REGISTRATION_ENABLED=true`); roles, technician profiles, one category and service, and the incident rows are SQL in the
 throwaway database container (`E2E_PG_CONTAINER`, default `e2e-pg`): use the stack above, and note:
 
 * build the frontend with `NEXT_PUBLIC_INCIDENTS_API=live npm run build` (the default build uses the mock service);
@@ -95,7 +99,6 @@ throwaway database container (`E2E_PG_CONTAINER`, default `e2e-pg`): use the sta
 * run `E2E_INCIDENTS_LIVE=1 E2E_LIVE_API=1 npx playwright test e2e/incidents-live.spec.ts --workers=1`;
 * a normal `npm run test:e2e` rebuilds in mock mode afterwards.
 
-Assigning needs P1's providers, which are not on `main`, so the spec asserts the graceful "not available yet" instead.
 
 ## CI recipe (Node 20, reproducible)
 

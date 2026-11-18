@@ -5,7 +5,7 @@ import { needsAttention } from '../src/features/incidents/services/attention';
 import { TABS } from '../src/features/incidents/services/tabs';
 import type { Actor } from '../src/features/incidents/model/types';
 import {
-  liveEmail, liveId, toHistoryEntry, toIncident, toIncidentFromSummary, toIncidentError, toRecommendation, toSimilar, toTimelineEntry, who, type ApiIncident, type Me,
+  toHistoryEntry, toIncident, toIncidentFromSummary, toIncidentError, toRecommendation, toSimilar, toTimelineEntry, who, type ApiIncident, type Me,
 } from '../src/features/incidents/services/incident-mappers';
 
 const me: Me = { id: 12, email: 'rita@campus.example', name: 'Rita' };
@@ -16,19 +16,16 @@ const dto: ApiIncident = {
 };
 
 test.describe('live API mappers', () => {
-  test('the signed-in user is recognised by id, everyone else is a stand-in that cannot be a real address', () => {
-    expect(who(me, 12)).toEqual({ email: 'rita@campus.example', name: 'Rita' });
-    expect(who(me, 13)).toEqual({ email: 'user-13@live.invalid', name: 'User #13' });
+  test('the signed-in user is recognised by id; everyone else has an id and a name but no email', () => {
+    expect(who(me, 12)).toEqual({ id: 12, email: 'rita@campus.example', name: 'Rita' });
+    expect(who(me, 13)).toEqual({ id: 13, email: '', name: 'User #13' });
     expect(who(me, null)).toBeNull();
-    expect(liveId(liveEmail(13))).toBe(13);
-    expect(liveId('rita@campus.example')).toBeNull();
-    expect(liveId('user-13@live.invalid.evil.com')).toBeNull();
   });
 
   test('an incident maps ownership by id, so the UI can tell whose it is', () => {
     const i = toIncident(dto, me);
     expect(i.reporterEmail).toBe(me.email);
-    expect(i.assigneeEmail).toBe('user-13@live.invalid');
+    expect(i).toMatchObject({ reporterId: 12, assigneeId: 13, assigneeEmail: '' });
     expect(i).toMatchObject({ title: 'VPN down', priority: 'P2', category: 'Category #7', service: 'Service #3' });
     expect(toIncident({ ...dto, assigneeId: null, categoryId: null, serviceId: null, priority: null }, me))
       .toMatchObject({ assigneeEmail: null, assigneeName: null, category: 'Not categorised', service: 'Not set', priority: 'P3' });
@@ -37,9 +34,9 @@ test.describe('live API mappers', () => {
   test('display names from the API replace the id stand-ins, and the ids only stand in when a name is missing', () => {
     const named = toIncident({ ...dto, reporterName: 'Rita', assigneeName: 'Priya', categoryName: 'VPN & Remote', serviceName: 'VPN Gateway' }, me);
     expect(named).toMatchObject({ assigneeName: 'Priya', category: 'VPN & Remote', service: 'VPN Gateway' });
-    expect(named.assigneeEmail).toBe('user-13@live.invalid'); // identity is still the id; only the label changes
+    expect(named.assigneeId).toBe(13); // identity is still the id; only the label changes
     expect(toIncident({ ...dto, assigneeName: null, categoryName: null }, me)).toMatchObject({ assigneeName: 'User #13', category: 'Category #7' });
-    expect(who(me, 13, 'Priya')).toEqual({ email: 'user-13@live.invalid', name: 'Priya' });
+    expect(who(me, 13, 'Priya')).toEqual({ id: 13, email: '', name: 'Priya' });
     expect(who(me, 12, 'Someone else')).toEqual({ email: 'rita@campus.example', name: 'Rita' }); // your own name comes from /users/me
   });
 
@@ -51,7 +48,7 @@ test.describe('live API mappers', () => {
   test('what the API does not say stays unknown instead of being invented', () => {
     expect(toSimilar({ incidentId: 'INC9', title: 't', resolution: 'r', resolvedAt: 't', sameService: true }))
       .toMatchObject({ priority: null, resolvedBy: null, daysToResolve: null, sameService: true });
-    expect(toRecommendation({ technicianId: 13, name: 'Tech', score: 80, reasons: ['a'] })).toMatchObject({ technicianEmail: 'user-13@live.invalid', team: '' });
+    expect(toRecommendation({ technicianId: 13, name: 'Tech', score: 80, reasons: ['a'] })).toMatchObject({ technicianId: 13, technicianEmail: '', team: '' });
   });
 
   test('problem+json codes map to the errors the pages already handle', () => {
@@ -75,7 +72,7 @@ test.describe('live API mappers', () => {
   test('a list row maps like the detail, with no description', () => {
     const { description: _d, availableTransitions: _a, assignedAt: _as, firstResponseAt: _f, closedAt: _c, createdAt, updatedAt, ...rest } = dto;
     const row = toIncidentFromSummary({ ...rest, createdAt, updatedAt, hasFeedback: false }, me);
-    expect(row).toMatchObject({ id: 'INC1001', description: '', reporterEmail: me.email, assigneeEmail: 'user-13@live.invalid', state: 'ASSIGNED' });
+    expect(row).toMatchObject({ id: 'INC1001', description: '', reporterEmail: me.email, assigneeId: 13, state: 'ASSIGNED' });
   });
 
   test('the tabs partition every state exactly once, per role (the list counts rely on it)', () => {
@@ -88,14 +85,17 @@ test.describe('live API mappers', () => {
 
   test('who has to act next', () => {
     const emp: Actor = { id: 12, email: me.email, name: 'Rita', role: 'EMPLOYEE' };
-    const tech: Actor = { id: 13, email: 'user-13@live.invalid', name: 'T', role: 'TECHNICIAN' };
-    const row = (state: string) => ({ state, reporterEmail: me.email, assigneeEmail: tech.email }) as Parameters<typeof needsAttention>[1];
+    const tech: Actor = { id: 13, email: '', name: 'T', role: 'TECHNICIAN' };
+    const row = (state: string) => ({ state, reporterEmail: '', reporterId: 12, assigneeEmail: '', assigneeId: 13 }) as Parameters<typeof needsAttention>[1];
     expect(needsAttention(tech, row('ASSIGNED'), false)).toBe(true);
     expect(needsAttention(tech, row('IN_PROGRESS'), false)).toBe(false);
     expect(needsAttention(emp, row('PENDING_INFO'), false)).toBe(true);
     expect(needsAttention(emp, row('VERIFIED'), false)).toBe(true);
     expect(needsAttention(emp, row('VERIFIED'), true)).toBe(false);
     expect(needsAttention({ ...emp, role: 'ADMIN' }, row('CLASSIFIED'), false)).toBe(true);
+    // Two strangers with no email are not the same person, and a stranger's id is not yours.
+    expect(needsAttention({ ...tech, id: 99 }, row('ASSIGNED'), false)).toBe(false);
+    expect(needsAttention({ ...emp, id: 99 }, row('PENDING_INFO'), false)).toBe(false);
   });
 });
 

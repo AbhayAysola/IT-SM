@@ -4,8 +4,10 @@
  *   E2E_INCIDENTS_LIVE=1 E2E_LIVE_API=1 npm run test:e2e:run   (see e2e/README.md, "Live incidents")
  *
  * It needs a frontend built with NEXT_PUBLIC_INCIDENTS_API=live, a backend on E2E_API_URL, and a disposable PostgreSQL 16
- * in a Docker container (E2E_PG_CONTAINER, default e2e-pg), because the backend cannot yet create incidents or promote
- * accounts: the test inserts incidents and sets roles with SQL, exactly the two things P2 and P1 will provide.
+ * in a Docker container (E2E_PG_CONTAINER, default e2e-pg). The backend must run with registration enabled
+ * (APP_REGISTRATION_ENABLED=true). Accounts are registered through the API; the test then uses SQL for what has no public
+ * endpoint a test could call: roles, technician profiles, one category and service, and the incident rows (intake is
+ * covered by P2's own specs, so these tests start at CLASSIFIED or ASSIGNED).
  */
 import { execFileSync } from 'node:child_process';
 import type { Browser, Page } from '@playwright/test';
@@ -39,11 +41,27 @@ async function personPage(browser: Browser, baseURL: string, user: TestUser): Pr
   return page;
 }
 
+let catalog: { category: number; service: number } | undefined;
+/** One category and one service for this run (the incidents table has foreign keys to both). */
+function seedCatalog() {
+  if (catalog) return catalog;
+  const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`.toUpperCase();
+  const category = Number(sql(`INSERT INTO incident_categories (code, name) VALUES ('LIVE_${tag}', 'Live test category ${tag}') RETURNING id`).split('\n')[0]);
+  const service = Number(sql(`INSERT INTO it_services (name, business_criticality) VALUES ('Live test service ${tag}', 3) RETURNING id`).split('\n')[0]);
+  return (catalog = { category, service });
+}
+
+/** Gives a TECHNICIAN account a profile (what P1's admin page does) and a skill in the test category. */
+function makeTechnician(userId: number, proficiency: number) {
+  sql(`INSERT INTO technician_profiles (user_id, max_workload, experience_years, available) VALUES (${userId}, 5, 3, true)`);
+  sql(`INSERT INTO technician_skills (user_id, category_id, proficiency) VALUES (${userId}, ${seedCatalog().category}, ${proficiency})`);
+}
+
 const incidentId = () => `INC7${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
 function insertIncident(id: string, title: string, reporter: number, state: 'CLASSIFIED' | 'ASSIGNED', assignee?: number) {
   sql(
     `INSERT INTO incidents (id, title, description, state, reporter_id, assignee_id, category_id, service_id, priority, assigned_at) VALUES ` +
-      `('${id}', '${title}', 'Reported through the live test', '${state}', ${reporter}, ${assignee ?? 'NULL'}, 7, 3, 'P2', ${assignee ? 'now()' : 'NULL'})`,
+      `('${id}', '${title}', 'Reported through the live test', '${state}', ${reporter}, ${assignee ?? 'NULL'}, ${seedCatalog().category}, ${seedCatalog().service}, 'P2', ${assignee ? 'now()' : 'NULL'})`,
   );
 }
 
@@ -128,11 +146,17 @@ test.describe('incidents against the real backend', () => {
     await expect(stranger.getByText('You have no open incidents.')).toBeVisible();
   });
 
-  test('without P1’s providers the admin can see unassigned work but assigning fails gracefully', async ({ browser, request }, testInfo) => {
+  test('an admin assigns from the ranked suggestions, then reassigns with a reason', async ({ browser, request }, testInfo) => {
     const baseURL = String(testInfo.project.use.baseURL);
     const [reporterU, adminU] = ['rep2', 'admin2'].map((l) => newUser(`live-${l}`));
+    const expert = { ...newUser('live-expert'), name: 'Elsa Expert' };
+    const novice = { ...newUser('live-novice'), name: 'Nico Novice' };
     const reporterId = await register(request, reporterU, 'EMPLOYEE');
     await register(request, adminU, 'ADMIN');
+    const expertId = await register(request, expert, 'TECHNICIAN');
+    const noviceId = await register(request, novice, 'TECHNICIAN');
+    makeTechnician(expertId, 5);
+    makeTechnician(noviceId, 1);
     const id = incidentId();
     insertIncident(id, 'Printer on floor 2 is offline', reporterId, 'CLASSIFIED');
 
@@ -140,8 +164,36 @@ test.describe('incidents against the real backend', () => {
     await admin.goto('/incidents');
     await expect(admin.getByRole('row').filter({ hasText: id })).toContainText('Awaiting assignment');
     await admin.getByRole('button', { name: `Assign ${id}` }).click();
-    await expect(admin.getByRole('dialog')).toContainText(/not available yet/i);
-    expect(sql(`SELECT state FROM incidents WHERE id = '${id}'`)).toBe('CLASSIFIED');
+    const dialog = admin.getByRole('dialog');
+    await expect(dialog.getByText('Best match')).toBeVisible();
+    // Real names from the directory, best skill first.
+    await expect(dialog.getByRole('radio').first()).toBeChecked();
+    await expect(dialog.locator('label').first()).toContainText('Elsa Expert');
+    await expect(dialog.locator('label').nth(1)).toContainText('Nico Novice');
+    await dialog.getByRole('button', { name: 'Assign', exact: true }).click();
+    await expect(toast(admin, /assigned/i)).toBeVisible();
+    expect(sql(`SELECT state || ',' || assignee_id FROM incidents WHERE id = '${id}'`)).toBe(`ASSIGNED,${expertId}`);
+
+    // Reassign: a reason is required, and the incident moves to the other technician.
+    await admin.goto(`/incidents/${id}`);
+    await expect(admin.getByRole('main')).toContainText('Elsa Expert');
+    await admin.getByRole('button', { name: /^Reassign/ }).click();
+    const move = admin.getByRole('dialog');
+    await move.locator('label').filter({ hasText: 'Nico Novice' }).click();
+    await move.getByRole('button', { name: 'Reassign', exact: true }).click();
+    await expect(move.getByText('Please say why the incident is moving.')).toBeVisible();
+    await move.getByLabel('Why is it moving?').fill('Expert is needed on the VPN outage.');
+    await move.getByRole('button', { name: 'Reassign', exact: true }).click();
+    await expect(toast(admin, /assigned|reassigned/i)).toBeVisible();
+    expect(sql(`SELECT state || ',' || assignee_id FROM incidents WHERE id = '${id}'`)).toBe(`ASSIGNED,${noviceId}`);
+
+    // The new assignee sees it; the old one no longer does.
+    const nico = await personPage(browser, baseURL, novice);
+    await nico.goto('/incidents');
+    await expect(nico.getByRole('row').filter({ hasText: id })).toBeVisible();
+    const elsa = await personPage(browser, baseURL, expert);
+    await elsa.goto('/incidents');
+    await expect(elsa.getByRole('row').filter({ hasText: id })).toHaveCount(0);
   });
 
   test('a long list is paged by the backend, and search is literal', async ({ browser, request }, testInfo) => {
@@ -150,9 +202,9 @@ test.describe('incidents against the real backend', () => {
     const reporterId = await register(request, reporterU, 'EMPLOYEE');
     sql(
       `INSERT INTO incidents (title, description, state, reporter_id, category_id, service_id, priority) ` +
-        `SELECT 'Bulk ' || n, 'bulk', 'CLASSIFIED', ${reporterId}, 7, 3, 'P3' FROM generate_series(1, 25) AS n`,
+        `SELECT 'Bulk ' || n, 'bulk', 'CLASSIFIED', ${reporterId}, ${seedCatalog().category}, ${seedCatalog().service}, 'P3' FROM generate_series(1, 25) AS n`,
     );
-    sql(`INSERT INTO incidents (title, description, state, reporter_id, category_id, service_id, priority) VALUES ('Disk 100% full', 'x', 'CLASSIFIED', ${reporterId}, 7, 3, 'P1')`);
+    sql(`INSERT INTO incidents (title, description, state, reporter_id, category_id, service_id, priority) VALUES ('Disk 100% full', 'x', 'CLASSIFIED', ${reporterId}, ${seedCatalog().category}, ${seedCatalog().service}, 'P1')`);
 
     const page = await personPage(browser, baseURL, reporterU);
     await page.goto('/incidents');

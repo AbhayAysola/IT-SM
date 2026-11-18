@@ -8,7 +8,7 @@ import {
   eligible, LEVEL_PROFICIENCY, LEVEL_YEARS, recommend, requireCanTake, type Candidate,
 } from '../model/recommender';
 import {
-  IncidentError, type Actor, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
+  IncidentError, type Actor, type AssignTarget, type ActorRole, type Audience, type Feedback, type Incident, type IncidentState, type Priority, type Recommendation,
   type EscalationView, type HistoryEntry, type RowSla, type SimilarResolution, type SlaSummary, type TimelineEntry, type TransitionName,
 } from '../model/types';
 import { mockRowSla, mockSla, queueOrder, SLA_QUEUE_SIZE, type SlaQueueItem } from '../model/sla';
@@ -394,15 +394,15 @@ export const mockIncidentService = {
     });
   },
 
-  async assign(actor: Actor, id: string, technicianEmail: string, reason?: string): Promise<void> {
+  async assign(actor: Actor, id: string, target: AssignTarget, reason?: string): Promise<void> {
     return simulate(() => {
       const w = world(actor);
       const i = find(w, actor, id);
       const name: TransitionName = i.state === 'CLASSIFIED' ? 'ASSIGN' : 'REASSIGN';
       const { to, reason: cleaned } = applyTransition(i.state, name, actor, i, reason);
-      const cand = candidates(w).find((c) => same(c.email, technicianEmail));
+      const cand = candidates(w).find((c) => same(c.email, target.email));
       if (!cand) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
-      if (same(i.assigneeEmail, technicianEmail)) throw new IncidentError('CONFLICT', `${cand.name} already has this incident.`);
+      if (same(i.assigneeEmail, target.email)) throw new IncidentError('CONFLICT', `${cand.name} already has this incident.`);
       requireCanTake(cand);
       const now = new Date().toISOString();
       if (name === 'REASSIGN' && cleaned) {

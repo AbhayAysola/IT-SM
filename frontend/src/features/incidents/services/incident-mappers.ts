@@ -48,17 +48,12 @@ export interface ApiResolved { incidentId: string; title: string; resolution: st
 /** The signed-in user, from GET /api/users/me. */
 export interface Me { id: number; email: string; name: string }
 
-const LIVE_DOMAIN = '@live.invalid';
-/** A stand-in address for a user we only know by id. `.invalid` can never be a real mailbox. */
-export const liveEmail = (id: number) => `user-${id}${LIVE_DOMAIN}`;
-export const liveId = (email: string): number | null => {
-  const m = /^user-(\d+)@live\.invalid$/.exec(email);
-  return m ? Number(m[1]) : null;
-};
-
-/** Who a user id is, as far as we know. The signed-in user is the only one with a real name and email. */
-export const who = (me: Me, id: number | null, name?: string | null): { email: string; name: string } | null =>
-  id === null ? null : id === me.id ? { email: me.email, name: me.name } : { email: liveEmail(id), name: name || `User #${id}` };
+/**
+ * Who a user id is, as far as we know. The API never gives another person's email, so it is empty for everyone but the
+ * signed-in user; the UI tells people apart by `id` (see `isReporter`, `isAssignee`).
+ */
+export const who = (me: Me, id: number | null, name?: string | null): { id: number; email: string; name: string } | null =>
+  id === null ? null : id === me.id ? { id, email: me.email, name: me.name } : { id, email: '', name: name || `User #${id}` };
 
 export function toIncident(d: ApiIncident, me: Me): Incident {
   const reporter = who(me, d.reporterId, d.reporterName)!;
@@ -69,8 +64,8 @@ export function toIncident(d: ApiIncident, me: Me): Incident {
     category: d.categoryId === null ? 'Not categorised' : d.categoryName || `Category #${d.categoryId}`,
     service: d.serviceId === null ? 'Not set' : d.serviceName || `Service #${d.serviceId}`,
     priority: d.priority ?? 'P3', state: d.state,
-    reporterEmail: reporter.email, reporterName: reporter.name,
-    assigneeEmail: assignee?.email ?? null, assigneeName: assignee?.name ?? null,
+    reporterEmail: reporter.email, reporterId: reporter.id, reporterName: reporter.name,
+    assigneeEmail: assignee?.email ?? null, assigneeId: assignee?.id ?? null, assigneeName: assignee?.name ?? null,
     createdAt: d.createdAt, updatedAt: d.updatedAt, resolvedAt: d.resolvedAt,
   };
 }
@@ -100,7 +95,7 @@ export const toFeedback = (d: ApiFeedback, me: Me, incidentId: string): Feedback
   ({ incidentId, reporterEmail: me.email, rating: d.rating, comment: d.comment, submittedAt: d.submittedAt });
 
 export const toRecommendation = (d: ApiRecommendation): Recommendation =>
-  ({ technicianEmail: liveEmail(d.technicianId), name: d.name, team: '', score: d.score, reasons: d.reasons });
+  ({ technicianId: d.technicianId, technicianEmail: '', name: d.name, team: '', score: d.score, reasons: d.reasons });
 
 /** The API does not say who fixed it, its priority or how long it took (yet), so the UI shows only what it knows. */
 export const toSimilar = (d: ApiResolved): SimilarResolution =>
