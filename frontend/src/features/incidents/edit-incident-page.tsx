@@ -17,6 +17,7 @@ import { CardHeading } from './components/card-heading';
 import { useActor } from './components/workspace-shell';
 import { incidentService } from './services/incident-service';
 import { IncidentError } from './model/types';
+import { isReporter } from './services/attention';
 
 export default function EditIncidentPage() {
   const actor = useActor();
@@ -45,7 +46,7 @@ export default function EditIncidentPage() {
           });
           return;
         }
-        if (actor.role !== 'ADMIN' && i.reporterEmail !== actor.email) {
+        if (actor.role !== 'ADMIN' && !isReporter(actor, i)) {
           setLocked({ title: 'You can’t edit this incident', description: 'Only the person who reported it, or an administrator, can edit it.' });
           return;
         }

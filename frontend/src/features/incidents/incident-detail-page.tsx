@@ -25,6 +25,7 @@ import { Timeline } from './components/timeline';
 import { useActor } from './components/workspace-shell';
 import { TRANSITION_LABEL, WORKLOAD_STATES as WORK_IN_PROGRESS } from './model/lifecycle';
 import { IncidentError, type TransitionName } from './model/types';
+import { isReporter } from './services/attention';
 import { incidentService } from './services/incident-service';
 import { canChangePriority, direction, suggestionReason, type PrioritySuggestionView } from './model/priority';
 
@@ -122,7 +123,7 @@ export default function IncidentDetailPage() {
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">{i.title}</h1>
-          {(i.state === 'NEW' || i.state === 'CLASSIFIED') && (actor.role === 'ADMIN' || i.reporterEmail === actor.email) && (
+          {(i.state === 'NEW' || i.state === 'CLASSIFIED') && (actor.role === 'ADMIN' || isReporter(actor, i)) && (
             <Link href={`/incidents/${i.id}/edit`} className="shrink-0">
               <Button variant="outline" size="sm">Edit</Button>
             </Link>

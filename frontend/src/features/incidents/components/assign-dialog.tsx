@@ -9,7 +9,7 @@ import { ErrorState } from '@/features/admin/components/states';
 import { FormField } from '@/features/admin/components/form-field';
 import { useResource } from '@/features/admin/hooks/use-resource';
 import { MAX_REASON_LENGTH } from '../model/lifecycle';
-import { IncidentError, type Actor, type Incident } from '../model/types';
+import { IncidentError, type Actor, type AssignTarget, type Incident, type Recommendation } from '../model/types';
 import { returnFocus } from './reason-dialog';
 import { incidentService } from '../services/incident-service';
 
@@ -23,6 +23,13 @@ interface Props {
 }
 
 /** Scored, explained suggestions (backend `TechnicianRecommender`); the admin makes the final choice. */
+/** The radio value: the id when the API gave one, the email in the mock. */
+const keyOf = (r: Recommendation) => String(r.technicianId ?? r.technicianEmail);
+const target = (data: Recommendation[] | null | undefined, key: string): AssignTarget => {
+  const r = data?.find((x) => keyOf(x) === key);
+  return { id: r?.technicianId ?? null, email: r?.technicianEmail ?? key };
+};
+
 export function AssignDialog(props: Props) {
   // Mount the body only while open so it loads fresh recommendations every time.
   return (
@@ -43,7 +50,7 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
 
   useEffect(() => {
     // Pre-select the best match, but never override a choice the person already made.
-    if (data && data.length > 0) setChoice((c) => c ?? data[0].technicianEmail);
+    if (data && data.length > 0) setChoice((c) => c ?? keyOf(data[0]));
   }, [data]);
 
   const submit = async (e: React.FormEvent) => {
@@ -52,8 +59,8 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
     if (reassign && !reason.trim()) { setReasonError('Please say why the incident is moving.'); return; }
     setBusy(true); setFormError(null); setReasonError(undefined);
     try {
-      await incidentService.assign(actor, incident.id, choice, reason);
-      onAssigned(data?.find((r) => r.technicianEmail === choice)?.name ?? 'the technician');
+      await incidentService.assign(actor, incident.id, target(data, choice), reason);
+      onAssigned(data?.find((r) => keyOf(r) === choice)?.name ?? 'the technician');
       onOpenChange(false);
     } catch (err) {
       if (err instanceof IncidentError && err.fields?.reason) setReasonError(err.fields.reason);
@@ -84,9 +91,9 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
         <fieldset className="space-y-2">
           <legend className="mb-1.5 text-sm font-medium">Recommended technicians</legend>
           {data?.map((r, idx) => (
-            <label key={r.technicianEmail} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-              <input type="radio" name="technician" value={r.technicianEmail} checked={choice === r.technicianEmail}
-                onChange={() => setChoice(r.technicianEmail)} className="mt-1 h-4 w-4 accent-primary" />
+            <label key={keyOf(r)} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+              <input type="radio" name="technician" value={keyOf(r)} checked={choice === keyOf(r)}
+                onChange={() => setChoice(keyOf(r))} className="mt-1 h-4 w-4 accent-primary" />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-medium">{r.name}</span>

@@ -1,6 +1,6 @@
 import { ApiErrorResponse, request } from '@/lib/api';
 import { FEEDBACK_STATES, hasPermission, NOTE_STATES, TRANSITIONS } from '../model/lifecycle';
-import { IncidentError, type Actor, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
+import { IncidentError, type Actor, type AssignTarget, type Audience, type IncidentState, type Priority, type Recommendation, type TransitionName } from '../model/types';
 import type { AnalysisResult, FilterOptions, ChatMessage, ChatTurn, Impact, IncidentDetail, IncidentListResult, Urgency } from './incident-service';
 import { needsAttention } from './attention';
 import type { PrioritySuggestionView } from '../model/priority';
@@ -8,7 +8,7 @@ import { SLA_QUEUE_SIZE, type SlaQueueItem } from '../model/sla';
 import { technicianApi } from '@/features/admin/services/technician-api';
 import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toQueueItem, toRecommendation, toEscalation, toHistoryEntry, toRowSla, toSimilar, toSla, toTimelineEntry,
+  toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toQueueItem, toRecommendation, toEscalation, toHistoryEntry, toRowSla, toSimilar, toSla, toTimelineEntry,
   type ApiEscalation, type ApiFeedback, type ApiHistoryEntry, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
@@ -139,8 +139,8 @@ export const liveIncidentService = {
     return (await call<ApiRecommendation[]>('GET', `/${enc(id)}/recommendations`)).map(toRecommendation);
   },
 
-  async assign(_actor: Actor, id: string, technicianEmail: string, reason?: string): Promise<void> {
-    const technicianId = liveId(technicianEmail);
+  async assign(_actor: Actor, id: string, target: AssignTarget, reason?: string): Promise<void> {
+    const technicianId = target.id ?? null;
     if (technicianId === null) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
     await call('POST', `/${enc(id)}/assignment`, { technicianId, reason: reason ?? null });
   },

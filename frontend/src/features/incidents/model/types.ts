@@ -41,6 +41,9 @@ export interface Incident {
   priority: Priority;
   state: IncidentState;
   reporterEmail: string;
+  /** User ids, set by the live API; the mock layer has only emails. Compare people with `isReporter`/`isAssignee`. */
+  reporterId?: number | null;
+  assigneeId?: number | null;
   reporterName: string;
   assigneeEmail: string | null;
   assigneeName: string | null;
@@ -107,7 +110,12 @@ export class IncidentError extends Error {
   }
 }
 
+/** Who an assignment names: the live API needs the id, the mock layer the email. */
+export interface AssignTarget { id?: number | null; email: string }
+
 export interface Recommendation {
+  /** Set by the live API (which has no emails for other people, so `technicianEmail` is empty there). */
+  technicianId?: number | null;
   technicianEmail: string;
   name: string;
   team: string;
