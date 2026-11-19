@@ -84,10 +84,12 @@ class IncidentStateMachineTest {
         assertThrows<UnauthorizedOperation> { IncidentStateMachine.apply(IN_PROGRESS, RESOLVE, employee, reason) }
     }
 
-    @Test fun `a technician cannot assign, verify or close`() {
+    @Test fun `a technician cannot assign or close, but may verify an incident they reported`() {
         assertThrows<UnauthorizedOperation> { IncidentStateMachine.apply(CLASSIFIED, ASSIGN, tech) }
-        assertThrows<UnauthorizedOperation> { IncidentStateMachine.apply(RESOLVED, VERIFY, tech) }
         assertThrows<UnauthorizedOperation> { IncidentStateMachine.apply(VERIFIED, CLOSE, tech) }
+        // INCIDENT_VERIFY_OWN is a reporter-side permission and technicians hold it since #44; that it is the
+        // reporter who acts is checked where the incident is known (the lifecycle service and FeedbackPolicy).
+        assertEquals(VERIFIED, IncidentStateMachine.apply(RESOLVED, VERIFY, tech).newState)
     }
 
     @Test fun `only reporter-side permission can verify or reopen`() {
