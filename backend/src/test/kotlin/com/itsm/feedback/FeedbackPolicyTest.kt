@@ -43,13 +43,8 @@ class FeedbackPolicyTest {
         for (who in listOf(stranger, tech, admin)) assertThrows<UnauthorizedOperation>("${who.role}") { submit(who = who) }
     }
 
-    /**
-     * KNOWN GAP in common/RolePermissions (P1): TECHNICIAN can create incidents but lacks INCIDENT_VERIFY_OWN,
-     * so a technician who reports their own incident can neither verify nor rate it. This test pins today's
-     * behaviour; when P1 grants the permission, flip it to expect success (see docs/architecture/p3.md).
-     */
-    @Test fun `known gap - a technician who reported the incident cannot rate it yet`() {
-        assertThrows<UnauthorizedOperation> { submit(who = tech, reporterId = tech.id) }
+    @Test fun `a technician who reported the incident can rate it`() {
+        assertEquals(5, submit(who = tech, reporterId = tech.id, rating = 5).rating)
     }
 
     @Test fun `authorisation is checked before state so a stranger learns nothing about the incident`() {

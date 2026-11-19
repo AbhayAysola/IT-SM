@@ -34,7 +34,7 @@ object RolePermissions {
         ).readOnly())
         put(Role.TECHNICIAN, setOf(
             Permission.INCIDENT_CREATE, Permission.INCIDENT_VIEW_OWN, Permission.INCIDENT_VIEW_ASSIGNED,
-            Permission.INCIDENT_WORK
+            Permission.INCIDENT_WORK, Permission.INCIDENT_VERIFY_OWN
         ).readOnly())
         put(Role.ADMIN, Permission.entries.toSet().readOnly())
     }.let { Collections.unmodifiableMap(it) }
