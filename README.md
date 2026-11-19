@@ -373,11 +373,11 @@ helm upgrade --install it-sm ./infra/helm \
 ## 🏗️ Key Design Decisions
 
 - **Modular monolith with one rule:** a module imports only `com.itsm.common.*`. Cross-module calls use SPIs, cross-module notifications use events. See [foundation.md](docs/architecture/foundation.md).
-- **Append-only audit trail:** state changes publish an `AuditableEvent` inside the business transaction (storage pending).
+- **Append-only audit trail:** state changes publish an `AuditableEvent` inside the business transaction (stored append-only in `audit_events`; see [audit-retrieval.md](docs/architecture/audit-retrieval.md)).
 - **Flyway version blocks per owner** so parallel work never collides: [docs/migrations.md](docs/migrations.md).
 
 ### JWT Auth
-- Token stored in `localStorage` (key: `it_sm_token`) plus a readable `SameSite=Lax` cookie; planned replacement is described in foundation.md section 7.
+- Browser sessions use an `HttpOnly`, `SameSite=Strict` cookie (`itsm_session`); the frontend holds no token. Scripts can send `Authorization: Bearer <token>`. See [security.md](docs/architecture/security.md).
 - `JwtAuthFilter` validates the token and sets the `SecurityContext` to an `ItsmUserDetails(id, email, role)`.
 - Public routes: `/api/auth/login`, `/api/auth/register`, health probes (see [security.md](docs/architecture/security.md))
 
