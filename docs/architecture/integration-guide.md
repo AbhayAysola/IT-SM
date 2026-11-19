@@ -355,8 +355,8 @@ The admin pages now call this API directly: see [admin-frontend-contract.md](adm
 | 2 | **`ServiceCatalog.dependentsOf(serviceId)` returns direct dependents only, including inactive services** (reverse edges; empty set for an unknown id). It is not transitive and does not filter on `active`. This is how the implementation behaves today and is the contract to code against until it is confirmed. The SPI and implementation will not change without agreement. | **Pending confirmation** | P2 and P4 (the consumers): confirm direct-only and active+inactive suit correlation and impact analysis, or ask P1 for a different behaviour (transitive, or active-only) as an explicit SPI change. |
 | 3 | **Categories have no `defaultPriority`.** It exists only in the frontend mock. Priority ownership belongs to P4, `CategoryView` has no such field, and P1 will not add one. | Decided | Frontend: drop it. P4: only if a category-to-priority link is ever wanted, propose the contract change. |
 | 4 | **Category `code` is required on create and immutable afterwards.** It is the stable machine identifier behind `CategoryCatalog.findByCode`, UPPER_SNAKE_CASE (`^[A-Z][A-Z0-9_]{0,39}$`), unique, and cannot be edited (the update request has no `code`). Use the numeric `id` for foreign keys and the `code` for stable references in configuration. | Decided | Frontend: add a code input to the category create form and make it read-only on edit. P2: store `categoryId`; use `code` only for lookups. |
-| 5 | **Service criticality is numeric 1-5** (`ServiceView.businessCriticality`, a database CHECK, API validation). The frontend's four labels (`CRITICAL/HIGH/MEDIUM/LOW`) have no agreed mapping onto five levels, and none has been invented. | **Pending agreement** | P4 (owner of how criticality feeds priority) with the frontend: define the label-to-number mapping (or move the UI to five levels) before the admin pages are connected. |
-| 6 | **Read-only catalog access for EMPLOYEE and TECHNICIAN is missing.** Every `/api/admin/**` endpoint requires an admin permission, but employees and technicians need the active categories and services to report incidents. A separate authenticated, read-only endpoint pair exposing only active categories and services (id, name, and the fields a reporting form needs, no admin fields such as `version`) is required. Not implemented yet. | **Proposed, not built** | Proposed owner: **P1** (it owns the catalogs). Coordinate with **P2**, whose intake form is the consumer, on the paths, fields, and whether categories should expose keywords. Likely authorisation: any authenticated user with `INCIDENT_CREATE`. |
+| 5 | **Service criticality is numeric 1-5** (`ServiceView.businessCriticality`, a database CHECK, API validation). The admin UI now uses the same five levels; no label mapping was needed. | **Done** | The admin UI uses criticality 1 to 5; P4's priority rule reads the number. |
+| 6 | **Read-only catalog access for EMPLOYEE and TECHNICIAN is missing.** Every `/api/admin/**` endpoint requires an admin permission, but employees and technicians need the active categories and services to report incidents. A separate authenticated, read-only endpoint pair exposing only active categories and services (id, name, and the fields a reporting form needs, no admin fields such as `version`) is required. Built by P2: `GET /api/incidents/catalog/categories` and `/catalog/services`, active entries only, for any user with `INCIDENT_CREATE`. | **Done** | Nothing left. |
 
 ## SLA policies and assignment settings (P1, `V13`/`V14`)
 
@@ -488,11 +488,11 @@ The admin pages now call this API directly: see [admin-frontend-contract.md](adm
 
 ### Open decisions for P3 / P4 / the frontend
 
-1. **P3:** register `LOAD_BASED` (the seeded default), or agree a different default key; provide the `AssignmentStrategyCatalog`
+1. **P3 (resolved):** register `LOAD_BASED` (the seeded default), or agree a different default key; provide the `AssignmentStrategyCatalog`
    bean. Until then assignment writes return 503.
-2. **P3:** the frontend's strategy options (fallback, round-robin pool, skill thresholds, recommendations) are not in the SPI.
+2. **P3 (resolved: not stored):** the frontend's strategy options (fallback, round-robin pool, skill thresholds, recommendations) are not in the SPI.
    If P3 wants them stored by P1, that is a coordinated SPI change, not something P1 adds on its own.
-3. **P4:** `unassignedEscalationMinutes` (frontend) has no home in the SLA contract; decide whether it belongs to P4's configuration.
+3. **P4 (resolved):** `unassignedEscalationMinutes` lives in P4's `escalation_settings` (`V41`).
 4. **P4:** should the backend enforce the cross-priority rule (more urgent targets never looser) per scope? It is a UI-only rule today.
 5. **P4:** confirm that resolving an inactive service against its active policies, and 422 when nothing applies, suit SLA tracking.
 6. **P1 limit to confirm:** `defaultMaxWorkload` is capped at 100 (the SPI only says positive); say if another limit is wanted.
