@@ -106,6 +106,13 @@ test.describe('incidents: employee (reporter)', () => {
     expect(await axeViolations(page)).toEqual([]);
 
     await page.getByRole('button', { name: 'Submit incident' }).click();
+    // A similar open incident is suggested, never assumed: unticked by default, and an employee gets no link to someone else's incident.
+    const similar = page.getByRole('checkbox', { name: /INC1001/ });
+    await expect(similar).not.toBeChecked();
+    await expect(page.getByRole('link', { name: 'INC1001' })).toHaveCount(0);
+    await similar.check();
+    await expect(similar).toBeChecked();
+    expect(await axeViolations(page)).toEqual([]);
     await page.getByRole('button', { name: 'Create incident' }).click();
     await expect(page).toHaveURL(/\/incidents\/INC\d+$/);
     // MEDIUM impact and HIGH urgency: P2 (the mock applies P4's matrix; the live backend asks P4's PriorityPolicy).

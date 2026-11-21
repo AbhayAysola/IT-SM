@@ -68,6 +68,36 @@ class IncidentAnalysisServiceTest {
         assertTrue(result.possibleDuplicates.isEmpty()) // db stubs return empty lists
     }
 
+    @Test fun `significant words drop stop words and short words and fold plurals`() {
+        assertEquals(setOf("vpn", "drop", "every", "minute"), IncidentAnalysisService.significantWords("The VPN drops every minutes, it is on"))
+    }
+
+    @Test fun `a duplicate must share two significant words, so a one-word coincidence is not offered`() {
+        val query = IncidentAnalysisService.significantWords("VPN keeps dropping for the whole finance team")
+        // unrelated incidents that only share nothing, or one common word
+        assertEquals(false, IncidentAnalysisService.sharedEnough(query, "Printer on floor 3 jams constantly"))
+        assertEquals(false, IncidentAnalysisService.sharedEnough(query, "Mailbox is full but I deleted everything team"))
+        // the real duplicate shares VPN and a second word
+        assertEquals(true, IncidentAnalysisService.sharedEnough(query, "VPN connection keeps failing for the finance team"))
+    }
+
+    @Test fun `a one-word report matches on that one word`() {
+        assertEquals(true, IncidentAnalysisService.sharedEnough(IncidentAnalysisService.significantWords("Outlook"), "Outlook will not open"))
+        assertEquals(false, IncidentAnalysisService.sharedEnough(emptySet(), "anything at all"))
+    }
+
+    @Test fun `blank API key with nothing searchable returns no duplicates and does not query`() {
+        val (svc, _) = service(apiKey = "")
+        stubCatalogAndDb()
+        val result = svc.analyze("It is", "on")
+        assertTrue(result.possibleDuplicates.isEmpty())
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).query(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any<org.springframework.jdbc.core.RowMapper<Triple<String, String, String>>>(),
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()
+        )
+    }
+
     // ---- parseResponse: envelope parsing ----------------------------------------------------
 
     @Test fun `parseResponse handles a well-formed Claude reply`() {

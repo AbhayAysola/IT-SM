@@ -58,6 +58,8 @@ export default function ReportIncidentPage() {
   const [formState, setFormState] = useState<FormState>('filling');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  // Only the suggestions the reporter says are the same problem are recorded as duplicates; none is assumed.
+  const [sameAs, setSameAs] = useState<Set<string>>(new Set());
 
   const [categories, setCategories] = useState<CatalogItem[]>([]);
   const [services, setServices] = useState<CatalogItem[]>([]);
@@ -108,7 +110,7 @@ export default function ReportIncidentPage() {
         impact: impact as Impact,
         urgency: urgency as Urgency,
         aiSuggestedCategoryId: analysis?.suggestedCategoryId ?? null,
-        aiDuplicateIds: analysis?.possibleDuplicates.map((d) => d.id) ?? [],
+        aiDuplicateIds: analysis?.possibleDuplicates.map((d) => d.id).filter((id) => sameAs.has(id)) ?? [],
       });
       toast.success('Incident reported.');
       router.push(`/incidents/${id}`);
@@ -137,6 +139,7 @@ export default function ReportIncidentPage() {
 
     if (result) {
       setAnalysis(result);
+      setSameAs(new Set());
       setFormState('reviewing');
     } else {
       await doCreate();
@@ -338,12 +341,25 @@ export default function ReportIncidentPage() {
                     <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
                     Similar open incidents found
                   </p>
+                  <p className="text-xs text-muted-foreground">If one of these is the same problem as yours, tick it. Nothing is recorded unless you do.</p>
                   <ul className="space-y-1">
                     {analysis.possibleDuplicates.map((d) => (
                       <li key={d.id} className="text-sm">
-                        <Link href={`/incidents/${d.id}`} className="font-medium text-primary underline-offset-4 hover:underline">{d.id}</Link>
-                        {' — '}{d.title}
-                        {d.reason && <span className="ml-1 text-xs text-muted-foreground">({d.reason})</span>}
+                        <label className="flex cursor-pointer items-start gap-2">
+                          <input
+                            type="checkbox" className="mt-1 h-4 w-4 accent-primary" checked={sameAs.has(d.id)}
+                            onChange={(e) => setSameAs((prev) => { const next = new Set(prev); if (e.target.checked) next.add(d.id); else next.delete(d.id); return next; })}
+                          />
+                          <span>
+                            {/* Employees may not open other people's incidents, so only staff get a link. */}
+                            {actor.role === 'EMPLOYEE'
+                              ? <span className="font-medium">{d.id}</span>
+                              : <Link href={`/incidents/${d.id}`} className="font-medium text-primary underline-offset-4 hover:underline">{d.id}</Link>}
+                            {' — '}{d.title}
+                            <span className="sr-only"> (tick if this is the same problem as yours)</span>
+                            {d.reason && <span className="ml-1 text-xs text-muted-foreground">({d.reason})</span>}
+                          </span>
+                        </label>
                       </li>
                     ))}
                   </ul>

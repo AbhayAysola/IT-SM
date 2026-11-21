@@ -535,7 +535,9 @@ export const mockIncidentService = {
         suggestedCategoryName,
         confidence: 'MEDIUM' as const,
         reasoning: `The description contains terms related to ${suggestedCategoryName}.`,
-        possibleDuplicates: [],
+        possibleDuplicates: /vpn/.test(text)
+          ? [{ id: 'INC1001', title: 'VPN drops every few minutes', reason: 'Shares key words with your report' }]
+          : [],
       };
     });
   },
