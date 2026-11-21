@@ -100,7 +100,7 @@ export const toFeedback = (d: ApiFeedback, me: Me, incidentId: string): Feedback
   ({ incidentId, reporterEmail: me.email, rating: d.rating, comment: d.comment, submittedAt: d.submittedAt });
 
 export const toRecommendation = (d: ApiRecommendation): Recommendation =>
-  ({ technicianEmail: liveEmail(d.technicianId), name: d.name, team: '', score: d.score, reasons: d.reasons });
+  ({ technicianId: d.technicianId, name: d.name, team: '', score: d.score, reasons: d.reasons });
 
 /** The API does not say who fixed it, its priority or how long it took (yet), so the UI shows only what it knows. */
 export const toSimilar = (d: ApiResolved): SimilarResolution =>

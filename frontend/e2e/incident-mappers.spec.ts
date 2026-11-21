@@ -51,7 +51,7 @@ test.describe('live API mappers', () => {
   test('what the API does not say stays unknown instead of being invented', () => {
     expect(toSimilar({ incidentId: 'INC9', title: 't', resolution: 'r', resolvedAt: 't', sameService: true }))
       .toMatchObject({ priority: null, resolvedBy: null, daysToResolve: null, sameService: true });
-    expect(toRecommendation({ technicianId: 13, name: 'Tech', score: 80, reasons: ['a'] })).toMatchObject({ technicianEmail: 'user-13@live.invalid', team: '' });
+    expect(toRecommendation({ technicianId: 13, name: 'Tech', score: 80, reasons: ['a'] })).toMatchObject({ technicianId: 13, team: '' });
   });
 
   test('problem+json codes map to the errors the pages already handle', () => {

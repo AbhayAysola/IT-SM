@@ -7,6 +7,7 @@ import { IncidentError, type Priority, type Recommendation } from './types';
  */
 
 export interface Candidate {
+  id: number;
   email: string;
   name: string;
   team: string;
@@ -64,7 +65,7 @@ export function recommend(candidates: Candidate[], category: string | null, prio
       if (proficiency !== null) reasons.push(proficiency > 0 ? `Skill ${proficiency} of 5 in ${category}` : `No recorded skill in ${category}`);
       reasons.push(`${c.activeCount} of ${max} active incidents`);
       reasons.push(years === 1 ? '1 year of experience' : `${years} years of experience`);
-      return { rec: { technicianEmail: c.email, name: c.name, team: c.team, score, reasons } as Recommendation, proficiency: proficiency ?? 0 };
+      return { rec: { technicianId: c.id, name: c.name, team: c.team, score, reasons } as Recommendation, proficiency: proficiency ?? 0 };
     })
     .sort((a, b) => b.rec.score - a.rec.score || b.proficiency - a.proficiency || a.rec.name.localeCompare(b.rec.name))
     .slice(0, limit)

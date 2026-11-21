@@ -81,11 +81,11 @@ const nextEntryId = (w: World) => `e-${w.timeline.length + 1}-${Date.now().toStr
 // ---- Technician pool (this feature's own mock data, see data/people.ts) --------------------------------------------
 
 function candidates(w: World): Candidate[] {
-  return DEMO_TECHNICIANS.map((t) => {
+  return DEMO_TECHNICIANS.map((t, idx) => {
     const skills = Object.fromEntries(t.skills.map((s) => [s, LEVEL_PROFICIENCY[t.skillLevel]]));
     const activeCount = w.incidents.filter((i) => same(i.assigneeEmail, t.email) && WORKLOAD_STATES.includes(i.state)).length;
     return {
-      email: t.email, name: t.name, team: t.team, available: t.available,
+      id: idx + 1, email: t.email, name: t.name, team: t.team, available: t.available,
       maxWorkload: t.maxWorkload, activeCount, experienceYears: LEVEL_YEARS[t.skillLevel], skills,
     };
   });
@@ -394,15 +394,15 @@ export const mockIncidentService = {
     });
   },
 
-  async assign(actor: Actor, id: string, technicianEmail: string, reason?: string): Promise<void> {
+  async assign(actor: Actor, id: string, technicianId: number, reason?: string): Promise<void> {
     return simulate(() => {
       const w = world(actor);
       const i = find(w, actor, id);
       const name: TransitionName = i.state === 'CLASSIFIED' ? 'ASSIGN' : 'REASSIGN';
       const { to, reason: cleaned } = applyTransition(i.state, name, actor, i, reason);
-      const cand = candidates(w).find((c) => same(c.email, technicianEmail));
+      const cand = candidates(w).find((c) => c.id === technicianId);
       if (!cand) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
-      if (same(i.assigneeEmail, technicianEmail)) throw new IncidentError('CONFLICT', `${cand.name} already has this incident.`);
+      if (same(i.assigneeEmail, cand.email)) throw new IncidentError('CONFLICT', `${cand.name} already has this incident.`);
       requireCanTake(cand);
       const now = new Date().toISOString();
       if (name === 'REASSIGN' && cleaned) {

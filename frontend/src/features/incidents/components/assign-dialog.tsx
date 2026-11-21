@@ -35,7 +35,7 @@ export function AssignDialog(props: Props) {
 function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
   const reassign = incident.state !== 'CLASSIFIED';
   const { data, loading, error, reload } = useResource(() => incidentService.recommendations(actor, incident.id), [incident.id]);
-  const [choice, setChoice] = useState<string | null>(null);
+  const [choice, setChoice] = useState<number | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
 
   useEffect(() => {
     // Pre-select the best match, but never override a choice the person already made.
-    if (data && data.length > 0) setChoice((c) => c ?? data[0].technicianEmail);
+    if (data && data.length > 0) setChoice((c) => c ?? data[0].technicianId);
   }, [data]);
 
   const submit = async (e: React.FormEvent) => {
@@ -53,7 +53,7 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
     setBusy(true); setFormError(null); setReasonError(undefined);
     try {
       await incidentService.assign(actor, incident.id, choice, reason);
-      onAssigned(data?.find((r) => r.technicianEmail === choice)?.name ?? 'the technician');
+      onAssigned(data?.find((r) => r.technicianId === choice)?.name ?? 'the technician');
       onOpenChange(false);
     } catch (err) {
       if (err instanceof IncidentError && err.fields?.reason) setReasonError(err.fields.reason);
@@ -84,9 +84,9 @@ function Body({ onOpenChange, actor, incident, onAssigned }: Props) {
         <fieldset className="space-y-2">
           <legend className="mb-1.5 text-sm font-medium">Recommended technicians</legend>
           {data?.map((r, idx) => (
-            <label key={r.technicianEmail} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-              <input type="radio" name="technician" value={r.technicianEmail} checked={choice === r.technicianEmail}
-                onChange={() => setChoice(r.technicianEmail)} className="mt-1 h-4 w-4 accent-primary" />
+            <label key={r.technicianId} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+              <input type="radio" name="technician" value={r.technicianId} checked={choice === r.technicianId}
+                onChange={() => setChoice(r.technicianId)} className="mt-1 h-4 w-4 accent-primary" />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-medium">{r.name}</span>

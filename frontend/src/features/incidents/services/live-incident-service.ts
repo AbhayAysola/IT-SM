@@ -8,7 +8,7 @@ import { SLA_QUEUE_SIZE, type SlaQueueItem } from '../model/sla';
 import { technicianApi } from '@/features/admin/services/technician-api';
 import { INCIDENT_PAGE_SIZE, TABS, type IncidentFilters, type IncidentSort, type TabId } from './tabs';
 import {
-  liveId, toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toQueueItem, toRecommendation, toEscalation, toHistoryEntry, toRowSla, toSimilar, toSla, toTimelineEntry,
+  toFeedback, toIncident, toIncidentError, toIncidentFromSummary, toQueueItem, toRecommendation, toEscalation, toHistoryEntry, toRowSla, toSimilar, toSla, toTimelineEntry,
   type ApiEscalation, type ApiFeedback, type ApiHistoryEntry, type ApiSla, type ApiIncident, type ApiIncidentList, type ApiRecommendation, type ApiResolved, type ApiTimelineEntry, type Me,
 } from './incident-mappers';
 
@@ -139,9 +139,7 @@ export const liveIncidentService = {
     return (await call<ApiRecommendation[]>('GET', `/${enc(id)}/recommendations`)).map(toRecommendation);
   },
 
-  async assign(_actor: Actor, id: string, technicianEmail: string, reason?: string): Promise<void> {
-    const technicianId = liveId(technicianEmail);
-    if (technicianId === null) throw new IncidentError('NOT_FOUND', 'That technician was not found.');
+  async assign(_actor: Actor, id: string, technicianId: number, reason?: string): Promise<void> {
     await call('POST', `/${enc(id)}/assignment`, { technicianId, reason: reason ?? null });
   },
 
