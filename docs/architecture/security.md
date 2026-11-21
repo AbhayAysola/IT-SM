@@ -253,8 +253,8 @@ migration (`V17` or later) and is a separate batch. Proposed contract:
 
 ## Third-party data: Google Gemini
 
-The team has accepted this data flow. It exists only when `gemini.api-key` (env `GEMINI_API_KEY`) is set; with no key the endpoints answer 400, nothing leaves the
-system and the report form is manual. Both calls go to `generativelanguage.googleapis.com` (model `gemini-1.5-flash`), from the backend only.
+The team has accepted this data flow. It exists only when `gemini.api-key` (env `GEMINI_API_KEY`) is set; with no key nothing leaves the
+system: categorisation is off, the chat answers 400, and the duplicate hint falls back to a text search of open incidents. Both calls go to `generativelanguage.googleapis.com` (model `gemini-1.5-flash`), from the backend only.
 
 | Feature | Sent to Google | Not sent |
 |---|---|---|

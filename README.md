@@ -20,6 +20,7 @@
 | [docs/architecture/p3.md](docs/architecture/p3.md) | P3: lifecycle, assignment, investigation, feedback |
 | [docs/architecture/p4.md](docs/architecture/p4.md) | P4: priority, SLA, escalation, notifications, analytics (design) |
 | [docs/migrations.md](docs/migrations.md) | Flyway version blocks |
+| [docs/report/](docs/report/) | The course project report (PDF), its UML, architecture and ER diagrams (Graphviz sources and SVG) and the scripts that build them |
 | [frontend/e2e/README.md](frontend/e2e/README.md) | Fake-API Playwright suite (hermetic and live modes) |
 | [frontend/e2e-real/README.md](frontend/e2e-real/README.md) | Real frontend + backend + PostgreSQL 16 Playwright suite |
 | [frontend/src/features/admin/README.md](frontend/src/features/admin/README.md) | Admin workspace and its backend integration |
@@ -35,7 +36,7 @@
 | Audit trail (`audit_events`, append-only trigger) and admin retrieval API | **Done** (P1) |
 | Incident intake (`/api/incidents`, catalog, AI analysis, chatbot intake) | **Done** (P2) |
 | Incident list filters | Priority, category, service, technician, reported-date range and SLA status, on top of state and text search: [p3.md](docs/architecture/p3.md). The incident UI uses the real backend in every Docker, Compose and Kind build; only `npm run dev` and the hermetic e2e suite use browser-only demo data |
-| Incident lifecycle, assignment, investigation timeline, feedback | On `main` (P3), including the strategy catalog and workload provider P1 consumes |
+| Incident lifecycle, assignment, investigation timeline, feedback | On `main` (P3), including the strategy catalog and workload provider P1 consumes. **Assignment is triggered by an administrator** (one click on Assign: the configured strategy picks the technician, or the admin names one); intake does not assign by itself, and P4's escalation alerts the admins when an incident waits unassigned |
 | Priority calculation | **Done** (P4 with P2): the report form asks impact and urgency, and P4's `PriorityPolicy` derives the priority (service criticality and dependent services included). See [p4.md](docs/architecture/p4.md) section 1 |
 | SLA timers and breach detection | **Done** (P4): `V40`, a scheduled monitor, `GET /api/incidents/{id}/sla`, `GET /api/sla/incidents`, and the incident page's "Service level" card. See the integration guide's P4 section |
 | Escalation | **Done** (P4): `V41`, an escalation monitor (breach to the team lead, 150 %/200 % of the target further up, unassigned to the admins), the admin "Escalation" page and the incident's escalation history. See [p4.md](docs/architecture/p4.md) section 3 |
@@ -44,7 +45,7 @@
 | Kubernetes / Helm | HTTPS only, build-time API origin, separate liveness/readiness probes. Production hardening is assigned to the deployment owners: [handoff section 5](docs/p1-handoff.md) |
 | CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |
 
-**Data sent to Google.** The incident AI features (categorisation, duplicate hints, chatbot intake) send text to the Google Gemini API when `gemini.api-key` (env `GEMINI_API_KEY`) is set: the new incident's title and description, the chat messages, the category and service lists, and the titles and opening lines of up to 10 *other* open incidents for the duplicate check. The reporter's name and email are not sent. Without a key nothing is sent and the report form is manual. The report page tells users this next to the submit button and in the chat. Details and caveats: [security.md](docs/architecture/security.md#third-party-data-google-gemini).
+**Data sent to Google.** The incident AI features (categorisation, duplicate hints, chatbot intake) send text to the Google Gemini API when `gemini.api-key` (env `GEMINI_API_KEY`) is set: the new incident's title and description, the chat messages, the category and service lists, and the titles and opening lines of up to 10 *other* open incidents for the duplicate check. The reporter's name and email are not sent. Without a key nothing is sent: the report form is manual, the duplicate hint falls back to a text search of open incidents, and the chat is unavailable. The report page tells users this next to the submit button and in the chat. Details and caveats: [security.md](docs/architecture/security.md#third-party-data-google-gemini).
 
 ---
 
@@ -123,7 +124,7 @@ IT-SM/
 │   ├── src/main/resources/
 │   │   ├── application.yml
 │   │   ├── application-docker.yml
-│   │   └── db/migration/        # Flyway SQL migrations (V1 to V42, in per-owner blocks)
+│   │   └── db/migration/        # Flyway SQL migrations (V1 to V46, in per-owner blocks)
 │   └── Dockerfile
 │
 ├── infra/
@@ -154,7 +155,10 @@ cp frontend/.env.local.example frontend/.env.local
 
 ### 2. Start the full stack
 
+The backend refuses to start without a signing secret (at least 32 random bytes), so set one first. Keep the value if you want sessions to survive a restart.
+
 ```bash
+export JWT_SECRET="$(openssl rand -base64 48)"
 cd infra
 docker compose up --build
 ```
@@ -343,7 +347,7 @@ Self-registration is off unless `REGISTRATION_ENABLED=true` (then `POST /api/aut
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5432/itsm` | PostgreSQL URL |
 | `management.server.port` (env `MANAGEMENT_SERVER_PORT`) | unset (actuator on 8080) | Set to `8081` (compose, Kubernetes and Helm do) to serve actuator on an unpublished port Prometheus can scrape without credentials |
 | `spring.flyway.baseline-on-migrate` (env `FLYWAY_BASELINE_ON_MIGRATE`) | `false` | `true` only to adopt an existing database that has no Flyway history |
-| `gemini.api-key` (env `GEMINI_API_KEY`) | empty | Enables AI categorisation, duplicate hints and the chatbot (Google Gemini). Without it those endpoints answer 400 and the report form falls back to manual entry. Compose passes it through; in Kubernetes set `backend.gemini.apiKey` (Helm) or `GEMINI_API_KEY` in `backend-secret.yaml` |
+| `gemini.api-key` (env `GEMINI_API_KEY`) | empty | Enables AI categorisation, duplicate hints and the chatbot (Google Gemini). Without it nothing is sent to Google: categorisation and the chat are unavailable (the chat answers 400), and the duplicate hint falls back to a text search of open incidents. Compose passes it through; in Kubernetes set `backend.gemini.apiKey` (Helm) or `GEMINI_API_KEY` in `backend-secret.yaml` |
 
 ### Frontend (`.env.local`)
 
@@ -366,7 +370,7 @@ helm upgrade --install it-sm ./infra/helm \
 
 ## 🏗️ Key Design Decisions
 
-- **Modular monolith with one rule:** a module imports only `com.itsm.common.*`. Cross-module calls use SPIs, cross-module notifications use events. See [foundation.md](docs/architecture/foundation.md).
+- **Modular monolith with one rule:** a module imports only `com.itsm.common.*`, and modules owned by the same person (for example `sla`, `escalation` and `notification`) may use each other. Calls between owners go through SPIs and notifications through events. This is a convention, not enforced by tooling. See [foundation.md](docs/architecture/foundation.md).
 - **Append-only audit trail:** state changes publish an `AuditableEvent` inside the business transaction (stored append-only in `audit_events`; see [audit-retrieval.md](docs/architecture/audit-retrieval.md)).
 - **Flyway version blocks per owner** so parallel work never collides: [docs/migrations.md](docs/migrations.md).
 
@@ -389,7 +393,7 @@ Available metric groups:
 - JVM memory, GC, threads; HikariCP connection pool; CPU
 
 The dashboard panels: open incidents, open P1, awaiting assignment, breached SLAs, breaches ever, escalations, open incidents by priority and state, SLA
-status, request rate, latency percentiles, 5xx rate, heap, connection pool and CPU. Not deployed in Kubernetes by this repo: point your Prometheus at the
+status, request rate, latency percentiles, 5xx rate, heap, connection pool and CPU. In Kubernetes, setting `GRAFANA_ADMIN_PASSWORD` for `./scripts/deploy.sh` deploys Prometheus and Grafana with it (see the Helm section); otherwise point your own Prometheus at the
 backend pods' port 8081 and set `networkPolicy.prometheus` to where it runs.
 
 ---

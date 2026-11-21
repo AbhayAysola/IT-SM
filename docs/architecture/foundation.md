@@ -4,7 +4,7 @@ Everything every module depends on lives in `com.itsm.common`. This document is 
 
 ## 1. The one rule
 
-> A module may import `com.itsm.common.*` and **nothing from another module's package**.
+> A module may import `com.itsm.common.*` and **nothing from another owner's module package** (modules of one owner, such as P4's `sla`, `escalation` and `notification`, may use each other). Nothing in the build enforces this; it is reviewed by convention.
 > Cross-module calls go through an interface in `common/spi`; cross-module notifications go
 > through events. Never expose a JPA entity outside its module.
 
