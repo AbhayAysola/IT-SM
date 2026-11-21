@@ -59,9 +59,13 @@ class IncidentAnalysisServiceTest {
 
     // ---- no API key -------------------------------------------------------------------------
 
-    @Test fun `blank API key throws InvalidInput without hitting the network`() {
+    @Test fun `blank API key returns FTS candidates without hitting the network`() {
         val (svc, _) = service(apiKey = "")
-        assertThrows<InvalidInput> { svc.analyze("title", "desc") }
+        stubCatalogAndDb()
+        val result = svc.analyze("WiFi down", "No connection in office")
+        assertNull(result.suggestedCategoryId)
+        assertEquals("LOW", result.confidence)
+        assertTrue(result.possibleDuplicates.isEmpty()) // db stubs return empty lists
     }
 
     // ---- parseResponse: envelope parsing ----------------------------------------------------
