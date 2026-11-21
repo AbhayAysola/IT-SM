@@ -108,7 +108,7 @@ export class IncidentError extends Error {
 }
 
 export interface Recommendation {
-  technicianEmail: string;
+  technicianId: number;
   name: string;
   team: string;
   score: number;

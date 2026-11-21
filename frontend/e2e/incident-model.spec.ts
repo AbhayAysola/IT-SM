@@ -89,7 +89,7 @@ test.describe('lifecycle model', () => {
 });
 
 const cand = (email: string, over: Partial<Candidate> = {}): Candidate => ({
-  email, name: email, team: 'T', available: true, maxWorkload: 5, activeCount: 0, experienceYears: 3, skills: {}, ...over,
+  id: 0, email, name: email, team: 'T', available: true, maxWorkload: 5, activeCount: 0, experienceYears: 3, skills: {}, ...over,
 });
 
 test.describe('recommender model', () => {
@@ -104,15 +104,15 @@ test.describe('recommender model', () => {
 
   test('a perfect technician scores 100 and the worst 0', () => {
     const r = recommend([cand('best', { skills: { Wi: 5 }, experienceYears: 10 }), cand('worst', { activeCount: 5, experienceYears: 0 })], 'Wi', 'P3');
-    expect(r.find((x) => x.technicianEmail === 'best')!.score).toBe(100);
-    expect(r.find((x) => x.technicianEmail === 'worst')!.score).toBe(0);
+    expect(r.find((x) => x.name === 'best')!.score).toBe(100);
+    expect(r.find((x) => x.name === 'worst')!.score).toBe(0);
   });
 
   test('urgency moves the ranking from free capacity to experience', () => {
     const veteranBusy = cand('vet', { activeCount: 4, experienceYears: 10, skills: { X: 3 } });
     const juniorFree = cand('jun', { activeCount: 0, experienceYears: 1, skills: { X: 3 } });
-    expect(recommend([veteranBusy, juniorFree], 'X', 'P1')[0].technicianEmail).toBe('vet');
-    expect(recommend([veteranBusy, juniorFree], 'X', 'P4')[0].technicianEmail).toBe('jun');
+    expect(recommend([veteranBusy, juniorFree], 'X', 'P1')[0].name).toBe('vet');
+    expect(recommend([veteranBusy, juniorFree], 'X', 'P4')[0].name).toBe('jun');
   });
 
   test('reasons are plain language and the list is capped at five', () => {
