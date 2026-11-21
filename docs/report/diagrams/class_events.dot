@@ -1,0 +1,24 @@
+digraph G {
+  graph [rankdir=BT, fontname="Helvetica", nodesep=0.2, ranksep=0.65, splines=true, pad=0.2];
+  node [shape=plain, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+  IncidentEvent [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#e6f0ff" ALIGN="CENTER"><I>&laquo;sealed interface&raquo;</I><BR/><B>IncidentEvent</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">+incidentId: String<BR ALIGN="LEFT"/>+occurredAt: Instant<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  IncidentClassified [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>IncidentClassified</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">reporterId, serviceId, categoryId, priority<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  IncidentClassified -> IncidentEvent [arrowhead=empty, color="#333333"];
+  IncidentStateChanged [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>IncidentStateChanged</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">fromState, toState, transition, actorId<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  IncidentStateChanged -> IncidentEvent [arrowhead=empty, color="#333333"];
+  IncidentAssigned [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>IncidentAssigned</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">assigneeId, previousAssigneeId, actorId<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  IncidentAssigned -> IncidentEvent [arrowhead=empty, color="#333333"];
+  IncidentAssignmentFailed [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>IncidentAssignmentFailed</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">reason<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  IncidentAssignmentFailed -> IncidentEvent [arrowhead=empty, color="#333333"];
+  IncidentPriorityChanged [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>IncidentPriorityChanged</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">fromPriority, toPriority, actorId<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  IncidentPriorityChanged -> IncidentEvent [arrowhead=empty, color="#333333"];
+  ApplicationEventPublisher [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#eeeeee" ALIGN="CENTER"><I>&laquo;Spring&raquo;</I><BR/><B>ApplicationEventPublisher</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">+publishEvent(event)<BR ALIGN="LEFT"/></TD></TR></TABLE>>];
+  SlaEventListener [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>SlaEventListener</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">AFTER_COMMIT: starts and updates<BR ALIGN="LEFT"/>the SLA clocks<BR ALIGN="LEFT"/></TD></TR></TABLE>>];
+  EscalationEventListener [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>EscalationEventListener</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">AFTER_COMMIT: escalates a<BR ALIGN="LEFT"/>failed assignment<BR ALIGN="LEFT"/></TD></TR></TABLE>>];
+  NotificationMonitor [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>NotificationMonitor</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">AFTER_COMMIT: notifies;<BR ALIGN="LEFT"/>@Scheduled sweep as safety net<BR ALIGN="LEFT"/></TD></TR></TABLE>>];
+  ApplicationEventPublisher -> IncidentEvent [arrowhead=vee, style=dashed, color="#666666", label="publishes"];
+  SlaEventListener -> IncidentEvent [arrowhead=vee, style=dashed, color="#666666", label="observes"];
+  EscalationEventListener -> IncidentEvent [arrowhead=vee, style=dashed, color="#666666", label="observes"];
+  NotificationMonitor -> IncidentEvent [arrowhead=vee, style=dashed, color="#666666", label="observes"];
+}

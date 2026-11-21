@@ -1,0 +1,22 @@
+digraph G {
+  graph [rankdir=LR, fontname="Helvetica", nodesep=0.5, ranksep=0.7, pad=0.2];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9, color="#333333"];
+  start [shape=circle, label="", width=0.18, style=filled, fillcolor="#000000"];
+  end [shape=doublecircle, label="", width=0.18, style=filled, fillcolor="#000000"];
+  NEW; CLASSIFIED; ASSIGNED; ACKNOWLEDGED; IN_PROGRESS; PENDING_INFO; RESOLVED; VERIFIED;
+  CLOSED [fillcolor="#e8e8e8"];
+  start -> NEW [label="report"];
+  NEW -> CLASSIFIED [label="CLASSIFY\n(intake, automatic)"];
+  CLASSIFIED -> ASSIGNED [label="ASSIGN (admin)"];
+  ASSIGNED -> ACKNOWLEDGED [label="ACKNOWLEDGE\n(technician)"];
+  ACKNOWLEDGED -> IN_PROGRESS [label="START_WORK"];
+  IN_PROGRESS -> PENDING_INFO [label="REQUEST_INFO\n(reason)"];
+  PENDING_INFO -> IN_PROGRESS [label="PROVIDE_INFO\n(reporter)"];
+  IN_PROGRESS -> RESOLVED [label="RESOLVE\n(how it was fixed)"];
+  RESOLVED -> VERIFIED [label="VERIFY (reporter)"];
+  RESOLVED -> IN_PROGRESS [label="REOPEN (reporter,\nreason)", constraint=false];
+  VERIFIED -> CLOSED [label="CLOSE (admin)"];
+  CLOSED -> end;
+  ASSIGNED -> ASSIGNED [label="REASSIGN (admin, reason):\nfrom ASSIGNED, ACKNOWLEDGED,\nIN_PROGRESS or PENDING_INFO"];
+}

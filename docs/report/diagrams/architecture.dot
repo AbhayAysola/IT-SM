@@ -1,0 +1,43 @@
+digraph G {
+  graph [rankdir=TB, fontname="Helvetica", nodesep=0.4, ranksep=0.6, compound=true, pad=0.2, splines=true, newrank=true];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", fontname="Helvetica", fontsize=10, margin="0.14,0.08"];
+  edge [fontname="Helvetica", fontsize=9, color="#444444"];
+
+  subgraph cluster_clients { label="Clients"; style="rounded,filled"; fillcolor="#eef3fb"; color="#9db4d8";
+    browser [label="Browser\nNext.js 14, React 18, TypeScript\nTailwind, shadcn/ui, PWA, SSE"];
+    scripts [label="Scripts / API clients\n(Bearer token)"];
+  }
+
+  subgraph cluster_backend { label="Backend: Kotlin + Spring Boot 3 (modular monolith, one deployable)"; style="rounded,filled"; fillcolor="#f4f8ee"; color="#a8c28a";
+    sec [label="Security filter chain: JWT or HttpOnly session cookie, CSRF, login throttle,\nRBAC (@PreAuthorize), RFC 7807 error handler", fillcolor="#fff4d6"];
+    p1 [label="P1: access and\nadministration\nauth, users, technicians,\ncategories, IT services,\nSLA policies, assignment\nsettings, audit trail"];
+    p2 [label="P2: incident intake\ncreate / edit incident,\ncatalog, Gemini analysis,\nchatbot, duplicate hint,\nIncidentAccessPolicy"];
+    p3 [label="P3: lifecycle and\nassignment\nstate machine, 4 strategies\n+ recommender,\ninvestigation timeline,\nfeedback"];
+    p4 [label="P4: priority, SLA,\nescalation, notifications,\nanalytics\nschedulers, predictive risk,\nSSE, simulated email / SMS"];
+    common [label="common: SPI interfaces, domain events, error model, security model, API conventions", fillcolor="#e9e9e9"];
+    { rank=same; p1; p2; p3; p4; }
+    p1 -> p2 -> p3 -> p4 [style=invis];
+  }
+
+  subgraph cluster_data { label="Data"; style="rounded,filled"; fillcolor="#fbeeee"; color="#d8a0a0";
+    pg [label="PostgreSQL 16\nFlyway V1..V46, CHECK constraints, append-only triggers,\nadvisory locks, full-text index", shape=cylinder, fillcolor="#ffffff"];
+  }
+
+  subgraph cluster_ext { label="External and operations"; style="rounded,filled"; fillcolor="#f1eefb"; color="#b6a4dc";
+    gemini [label="Google Gemini API\n(optional, only with a key)"];
+    mon [label="Prometheus + Grafana\n(management port 8081)"];
+    deploy [label="Docker Compose, Kubernetes (Kind, Helm)\nGitHub Actions CI, Trivy image scan"];
+  }
+
+  browser -> sec [label=" REST / JSON, SSE"];
+  scripts -> sec;
+  sec -> p1; sec -> p2; sec -> p3; sec -> p4;
+  p2 -> p3 [label="domain events", style=dashed, constraint=false, color="#b0402a", fontcolor="#b0402a"];
+  p3 -> p4 [label="domain events", style=dashed, constraint=false, color="#b0402a", fontcolor="#b0402a"];
+  p1 -> common [style=dotted, arrowhead=none]; p2 -> common [style=dotted, arrowhead=none];
+  p3 -> common [style=dotted, arrowhead=none]; p4 -> common [style=dotted, arrowhead=none];
+  common -> pg [label=" JPA, JDBC"];
+  p2 -> gemini [label="HTTPS", constraint=false];
+  mon -> sec [label="scrape", style=dashed, constraint=false];
+  gemini -> mon -> deploy [style=invis];
+}
