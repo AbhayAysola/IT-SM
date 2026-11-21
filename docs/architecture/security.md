@@ -238,10 +238,9 @@ migration (`V17` or later) and is a separate batch. Proposed contract:
 ## Other hardening and known limitations
 
 * **Rate limiting:** see "Authentication rate limiting" below. There is no account lockout and no email-only limit.
-* **Kubernetes probes**: `/actuator/health/liveness` (process only; no dependency) and `/actuator/health/readiness` (accepting traffic and PostgreSQL;
-  not Redis or RabbitMQ, which P1 does not use) are enabled explicitly in `application.yml`; the aggregate `/actuator/health` still reports every
-  indicator and may be DOWN while Redis/RabbitMQ are absent. A module that starts to depend on Redis or RabbitMQ must add that indicator to the
-  readiness group. Actuator is not routed through the ingress.
+* **Kubernetes probes**: `/actuator/health/liveness` (process only; no dependency) and `/actuator/health/readiness` (accepting traffic and PostgreSQL)
+  are enabled explicitly in `application.yml`; the aggregate `/actuator/health` reports every indicator. A module that starts to depend on another
+  external service must add its indicator to the readiness group. Actuator is not routed through the ingress.
 * **Actuator**: with no separate management port (local `bootRun`, the test suite) `/actuator/health/**` and `/actuator/info` are public, health
   details are `when-authorized` (ADMIN only), and every other actuator endpoint needs ADMIN. The compose stack, the raw manifests and the Helm chart
   set `MANAGEMENT_SERVER_PORT=8081`; see "Management port" below, which is what lets Prometheus scrape without credentials.
@@ -251,6 +250,23 @@ migration (`V17` or later) and is a separate batch. Proposed contract:
 * No self-service password change or "forgot password" yet; the admin reset is the only path.
 * Email addresses are not verified on registration.
 * `/api/auth/**` was previously `permitAll`; now only `login` and `register` are.
+
+## Third-party data: Google Gemini
+
+The team has accepted this data flow. It exists only when `gemini.api-key` (env `GEMINI_API_KEY`) is set; with no key the endpoints answer 400, nothing leaves the
+system and the report form is manual. Both calls go to `generativelanguage.googleapis.com` (model `gemini-1.5-flash`), from the backend only.
+
+| Feature | Sent to Google | Not sent |
+|---|---|---|
+| **Category and duplicate check** (`POST /api/incidents/analyze`, on submit in the report form) | the new incident's title and description; every active category's name and keywords; the **id, title and first 200 characters of the description of up to 10 other open incidents** (full-text matches first, then the newest) | the reporter's name, email or id; anything about the other incidents' reporters |
+| **Chat intake** (`POST /api/incidents/chat`) | the conversation so far (the last 20 messages the user and the assistant exchanged); the names and ids of the active categories and services | the reporter's name, email or id |
+
+Consequences to keep in mind:
+* Other people's open incidents are part of the duplicate check, so their titles and opening lines leave the system too, not just the caller's text.
+* Google's terms for the key's tier decide whether prompts may be retained or used for training (free-tier and paid terms differ). Use a paid key for anything beyond a demo.
+* The call is synchronous and authenticated only by the key, which travels in the request URL: keep it out of logs and proxies that record URLs, and never commit it.
+* Reporters are told on the report page, next to the submit button and in the chat (`components/ai-data-notice.tsx`, covered by `e2e/incidents.spec.ts`). **Keep that text in step with this table.**
+* Users are asked not to include passwords or other secrets; nothing filters the text before it is sent.
 
 ## Management port
 
@@ -297,7 +313,7 @@ provision the role: create it in your PostgreSQL and set the variables through y
 ## Other accepted limitations
 
 * **Login throttle is per instance.** With N replicas an attacker gets up to N times the limit, and a restart resets the counters. Accepted for
-  this project; the clean fix is a shared counter (Redis would do) or a limit at the ingress. The IPv6 keying is by full address, so a /64 can
+  this project; the clean fix is a shared counter or a limit at the ingress. The IPv6 keying is by full address, so a /64 can
   rotate addresses; if IPv6 clients reach the ingress, rate-limit there as well.
 * **Local and production settings** are separated by Spring profiles and Helm values, not by a separate overlay. The compose stack is the `dev`
   profile (non-Secure cookie, registration on) and must never be pointed at real users.
@@ -314,7 +330,7 @@ provision the role: create it in your PostgreSQL and set the variables through y
 
 ## Authentication rate limiting (B14a)
 
-In-process, bounded, injectable-clock counters (`com.itsm.auth.ratelimit`). No Redis, no new dependency.
+In-process, bounded, injectable-clock counters (`com.itsm.auth.ratelimit`). No new dependency.
 
 | Scope (key) | Counted | Limit | On exceeding |
 |---|---|---|---|

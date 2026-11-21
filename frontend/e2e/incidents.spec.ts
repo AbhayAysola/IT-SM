@@ -85,6 +85,12 @@ test.describe('incidents: employee (reporter)', () => {
     await page.getByRole('combobox', { name: 'Service' }).click();
     await page.getByRole('option', { name: 'VPN' }).click();
     await expect(page.getByRole('combobox', { name: /priority/i })).toHaveCount(0);
+    // What leaves the system is said next to the submit button, and again in the chat.
+    await expect(page.getByTestId('ai-data-notice')).toContainText(/sent to Google’s Gemini service when you submit/);
+    await expect(page.getByTestId('ai-data-notice')).toContainText(/titles and opening lines of other open incidents/);
+    await page.getByRole('button', { name: 'Chat with AI' }).click();
+    await expect(page.getByTestId('ai-data-notice')).toContainText(/what you type in this chat is sent to Google’s Gemini service/);
+    await page.getByRole('button', { name: 'Fill form' }).click();
 
     await page.getByRole('button', { name: 'Submit incident' }).click();
     await expect(page.getByText('Please tell us how many people are affected.')).toBeVisible();

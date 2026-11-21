@@ -55,20 +55,6 @@ postgres:
   username: itsm
   password: ""   # REQUIRED: choose a strong password (--set postgres.password=...); the chart fails without it
 
-redis:
-  image:
-    repository: redis
-    tag: "7-alpine"
-  password: ""   # REQUIRED
-
-rabbitmq:
-  image:
-    repository: rabbitmq
-    tag: "3-management-alpine"
-  username: itsm
-  password: ""   # REQUIRED
-  vhost: /
-
 ingress:
   enabled: true
   className: nginx

@@ -1,6 +1,6 @@
 # IT-SM — Intelligent IT Service Management
 
-> An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
+> An IT incident management system (report → classify → prioritise → assign → investigate → resolve → verify → close) built with Next.js 14, Spring Boot 3 (Kotlin), PostgreSQL, Docker, Kubernetes (Kind), Helm, and Prometheus. University OOP course project.
 
 > **Status:** P1 to P4 are all merged: access and administration, incident intake (with AI-assisted categorisation, duplicate hints and a chatbot), lifecycle and assignment, priority, SLA tracking, escalation, notifications and analytics. The incident UI talks to the real backend in every Docker, Compose and Kind build. See [Current status](#-current-status) and the [P1 handoff](docs/p1-handoff.md).
 
@@ -42,10 +42,9 @@
 | Notifications | **Done** (P4): `V42`, an in-app inbox (bell and `/notifications`) with simulated email/SMS by priority, for assignments, questions, fixes, reopens, SLA warnings and breaches, and escalations. See [p4.md](docs/architecture/p4.md) section 4 |
 | Analytics | **Done** (P4): the admin "Analytics" page and `GET /api/admin/analytics/summary` (SLA compliance by priority, service and category, response and resolution times, escalations, daily volumes, technician workload and ratings). See [p4.md](docs/architecture/p4.md) section 5 |
 | Kubernetes / Helm | HTTPS only, build-time API origin, separate liveness/readiness probes. Production hardening is assigned to the deployment owners: [handoff section 5](docs/p1-handoff.md) |
-| Redis / RabbitMQ | In the compose stack, Helm chart and health checks, but **no feature uses them yet**: events travel through Spring's in-process publisher. Using them (or dropping them) is an open decision |
 | CI | `backend.yml`, `frontend.yml` and `real-stack.yml` on PRs to `main`; backend and real-stack also on pushes to `main` |
 
-The incident AI features (categorisation, duplicate hints, chatbot intake) call the Google Gemini API with the incident text when `gemini.api-key` (env `GEMINI_API_KEY`) is set; without a key they are off and the report form is manual.
+**Data sent to Google.** The incident AI features (categorisation, duplicate hints, chatbot intake) send text to the Google Gemini API when `gemini.api-key` (env `GEMINI_API_KEY`) is set: the new incident's title and description, the chat messages, the category and service lists, and the titles and opening lines of up to 10 *other* open incidents for the duplicate check. The reporter's name and email are not sent. Without a key nothing is sent and the report form is manual. The report page tells users this next to the submit button and in the chat. Details and caveats: [security.md](docs/architecture/security.md#third-party-data-google-gemini).
 
 ---
 
@@ -60,13 +59,14 @@ The incident AI features (categorisation, duplicate hints, chatbot intake) call 
 ┌────────────────▼─────────────────┐
 │   Backend: Spring Boot 3 (Kotlin)│  :8080
 │   Spring MVC · Security · JPA    │
-└──────┬───────────┬───────────────┘
-       │           │           │
-┌──────▼──┐  ┌────▼────┐  ┌──▼──────────┐
-│PostgreSQL│  │  Redis  │  │  RabbitMQ   │
-│  :5432   │  │  :6379  │  │  :5672      │
-│  (JPA)   │  │(unused) │  │ (unused)    │
-└──────────┘  └─────────┘  └─────────────┘
+└────────────────┬─────────────────┘
+                 │
+        ┌────────▼────────┐
+        │   PostgreSQL    │
+        │  :5432  (JPA)   │
+        └─────────────────┘
+
+Domain events travel through Spring's in-process publisher; PostgreSQL is the only data store.
 
 Optional outbound call: Google Gemini API (incident categorisation, duplicate hints, chatbot), only when `gemini.api-key` is set.
 ```
@@ -83,8 +83,6 @@ Optional outbound call: Google Gemini API (incident categorisation, duplicate hi
 | Build Tool | Gradle KTS | 8.8 |
 | Database | PostgreSQL | 16 |
 | Migrations | Flyway | — |
-| Cache | Redis | 7 |
-| Messaging | RabbitMQ | 3 |
 | Auth | JWT (jjwt) | 0.12.5 |
 | Metrics | Micrometer + Prometheus | — |
 | Container | Docker + Compose | — |
@@ -121,7 +119,7 @@ IT-SM/
 │   │   ├── intake/              # Incident creation, AI analysis, chatbot
 │   │   ├── lifecycle/ assignment/ investigation/ feedback/   # State machine, strategies, timeline, ratings
 │   │   ├── priority/ sla/ escalation/ notification/ analytics/   # P4
-│   │   └── config/              # SecurityConfig, RedisConfig, RabbitMQConfig
+│   │   └── config/              # SecurityConfig and other wiring
 │   ├── src/main/resources/
 │   │   ├── application.yml
 │   │   ├── application-docker.yml
@@ -161,14 +159,13 @@ cd infra
 docker compose up --build
 ```
 
-This starts: PostgreSQL · Redis · RabbitMQ · Backend · Frontend
+This starts: PostgreSQL · Backend · Frontend
 
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:8080 |
 | Health check | not published: actuator is on port 8081 inside the compose network (see [Monitoring](#-monitoring)) |
-| RabbitMQ UI | http://localhost:15672 (itsm / rabbitmq_password) |
 
 The backend image is multi-architecture, so this builds natively on Apple Silicon as well as on x86 (no `DOCKER_DEFAULT_PLATFORM` needed).
 
@@ -212,7 +209,7 @@ docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml
 cd backend
 
 # Start dependencies only
-cd ../infra && docker compose up postgres redis rabbitmq -d && cd ../backend
+cd ../infra && docker compose up postgres -d && cd ../backend
 
 # Run
 ./gradlew bootRun
@@ -262,15 +259,14 @@ The Kubernetes deployment is **HTTPS only**: the session cookie is `Secure`, and
 
 ```bash
 export PUBLIC_HOST=<host> TLS_SECRET_NAME=<tls-secret> JWT_SECRET="$(openssl rand -base64 48)"
-export POSTGRES_PASSWORD=<choose> REDIS_PASSWORD=<choose> RABBITMQ_PASSWORD=<choose>   # no defaults; keep them for later deploys
+export POSTGRES_PASSWORD=<choose>   # no default; keep it for later deploys
 export TRUSTED_PROXY_CIDRS=10.244.0.0/16   # the ingress controller's pod CIDR (this is Kind's default pod network)
 ./scripts/setup-kind.sh   # Kind only: cluster, ingress controller and images (frontend built for https://$PUBLIC_HOST)
 ./scripts/deploy.sh
 ```
 
-The chart fails with a clear message if `ingress.host`, `ingress.tls.secretName`, any of the three passwords or `backend.trustedProxy.cidrs` is empty.
-It also installs NetworkPolicies (the ingress controller reaches the frontend and the backend API; only the backend reaches PostgreSQL, Redis and
-RabbitMQ; the backend's management port is open to Prometheus pods only), which need a CNI that enforces them (Kind's default does).
+The chart fails with a clear message if `ingress.host`, `ingress.tls.secretName`, the password or `backend.trustedProxy.cidrs` is empty.
+It also installs NetworkPolicies (the ingress controller reaches the frontend and the backend API; only the backend reaches PostgreSQL; the backend's management port is open to Prometheus pods only), which need a CNI that enforces them (Kind's default does).
 Optional in-cluster observability: set `GRAFANA_ADMIN_PASSWORD` before `./scripts/deploy.sh` to also deploy Prometheus (it discovers the backend pods and scrapes their management port) and Grafana with the **IT-SM operations** dashboard provisioned; reach it with `kubectl -n it-sm port-forward svc/it-sm-grafana 3001:3000`. Neither is on the ingress, and storage is an emptyDir (demo grade). Helm: `monitoring.prometheus.enabled`, `monitoring.grafana.enabled`, `monitoring.grafana.adminPassword`.
 The first administrator and demo data: `kubectl -n it-sm exec deploy/it-sm-backend -- sh -c 'ITSM_BOOTSTRAP_ADMIN_EMAIL=... ITSM_BOOTSTRAP_ADMIN_PASSWORD=... java -jar app.jar --itsm.bootstrap-admin=true --server.port=0 --management.server.port=0'`, then `kubectl -n it-sm port-forward svc/it-sm-backend 8080:8080` and `scripts/seed_demo.py` as above.
 CI builds both images on every pull request, scans them with Trivy (fixable HIGH/CRITICAL fails the job) and publishes them to GHCR from `main` ([images.yml](.github/workflows/images.yml)); the published frontend image targets `http://localhost:8080`, so a deployment still builds its own for its host.
@@ -289,7 +285,7 @@ echo "127.0.0.1 <host>" | sudo tee -a /etc/hosts
 
 ### Raw K8s manifests (alternative)
 
-Edit the marked PLACEHOLDERS first (`infra/k8s/ingress.yaml` host and TLS secret name, `infra/k8s/backend-configmap.yaml` `CORS_ALLOWED_ORIGINS` and `TRUSTED_PROXIES`, the passwords in `backend-secret.yaml`, `postgres-secret.yaml`, `redis-secret.yaml` and `rabbitmq-secret.yaml` (each pair must match), and the namespaces in `networkpolicy.yaml`), then:
+Edit the marked PLACEHOLDERS first (`infra/k8s/ingress.yaml` host and TLS secret name, `infra/k8s/backend-configmap.yaml` `CORS_ALLOWED_ORIGINS` and `TRUSTED_PROXIES`, the passwords in `backend-secret.yaml` and `postgres-secret.yaml` (the pair must match), and the namespaces in `networkpolicy.yaml`), then:
 
 ```bash
 kubectl apply -f infra/k8s/namespace.yaml
@@ -345,8 +341,6 @@ Self-registration is off unless `REGISTRATION_ENABLED=true` (then `POST /api/aut
 | `app.jwt.secret` (env `JWT_SECRET`) | none | **Required**: >= 32 bytes of random secret; startup fails if missing, short or a placeholder. See `docs/architecture/security.md` |
 | `app.jwt.expiration` (env `JWT_EXPIRATION`) | `86400000` | Token TTL (ms), default 24h |
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5432/itsm` | PostgreSQL URL |
-| `spring.data.redis.host` | `localhost` | Redis host |
-| `spring.rabbitmq.host` | `localhost` | RabbitMQ host |
 | `management.server.port` (env `MANAGEMENT_SERVER_PORT`) | unset (actuator on 8080) | Set to `8081` (compose, Kubernetes and Helm do) to serve actuator on an unpublished port Prometheus can scrape without credentials |
 | `spring.flyway.baseline-on-migrate` (env `FLYWAY_BASELINE_ON_MIGRATE`) | `false` | `true` only to adopt an existing database that has no Flyway history |
 | `gemini.api-key` (env `GEMINI_API_KEY`) | empty | Enables AI categorisation, duplicate hints and the chatbot (Google Gemini). Without it those endpoints answer 400 and the report form falls back to manual entry. Compose passes it through; in Kubernetes set `backend.gemini.apiKey` (Helm) or `GEMINI_API_KEY` in `backend-secret.yaml` |

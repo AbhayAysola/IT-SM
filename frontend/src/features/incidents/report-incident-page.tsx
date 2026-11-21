@@ -15,6 +15,7 @@ import { useToast } from '@/features/admin/components/toast';
 import { cn } from '@/lib/utils';
 import { CardHeading } from './components/card-heading';
 import { ChatIntake } from './components/chat-intake';
+import { AiDataNotice } from './components/ai-data-notice';
 import { useActor } from './components/workspace-shell';
 import { type AnalysisResult, type ExtractedIncidentFields, type Impact, type Urgency, incidentService } from './services/incident-service';
 import { IncidentError } from './model/types';
@@ -192,7 +193,8 @@ export default function ReportIncidentPage() {
                 </span>
               </CardHeading>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              <AiDataNotice mode="chat" />
               <ChatIntake onReady={handleChatReady} />
             </CardContent>
           </Card>
@@ -271,6 +273,8 @@ export default function ReportIncidentPage() {
                   id="urgency" question="Can you still work?" options={URGENCY_OPTIONS}
                   value={urgency} onChange={setUrgency} error={fieldErrors.urgency}
                 />
+
+                {!reviewing && <AiDataNotice mode="form" />}
 
                 {!reviewing && (
                   <div className="flex gap-3 pt-2">

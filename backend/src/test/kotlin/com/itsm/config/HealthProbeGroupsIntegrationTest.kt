@@ -22,8 +22,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
 /**
- * The Kubernetes probe groups. This test environment has PostgreSQL but NO Redis and NO RabbitMQ, which is exactly the situation the
- * probes must survive: liveness and readiness are UP, while the aggregate `/actuator/health` honestly reports the missing optional services.
+ * The Kubernetes probe groups: liveness is the process alone, readiness adds PostgreSQL, and neither leaks details to the public.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -46,32 +45,31 @@ class HealthProbeGroupsIntegrationTest {
 
     @BeforeEach fun setUp() { t = AdminApiTestSupport(users, jwt, jdbc) }
 
-    @Test fun `liveness and readiness are UP and public without details while Redis and RabbitMQ are unavailable`() {
+    @Test fun `liveness and readiness are UP and public without details`() {
         for (group in listOf("liveness", "readiness")) {
             val body = mvc.perform(get("/actuator/health/$group")).andExpect(status().isOk).andExpect(jsonPath("$.status").value("UP"))
                 .andReturn().response.contentAsString
-            assertFalse(body.contains("components") || body.contains("db") || body.contains("redis"), "$group must not leak details: $body")
+            assertFalse(body.contains("components") || body.contains("db"), "$group must not leak details: $body")
         }
     }
 
-    @Test fun `the aggregate health still reports the unavailable optional services`() {
+    @Test fun `the aggregate health is UP and shows the database to an admin`() {
         val admin = t.caller(Role.ADMIN).bearer
-        val body = mvc.perform(get("/actuator/health").header("Authorization", admin)).andExpect(status().isServiceUnavailable)
+        val body = mvc.perform(get("/actuator/health").header("Authorization", admin)).andExpect(status().isOk)
             .andReturn().response.contentAsString
-        assertTrue(body.contains("\"redis\"") && body.contains("\"rabbit\""), "aggregate health must still show redis and rabbit: $body")
+        assertTrue(body.contains("\"db\"") && body.contains("\"status\":\"UP\""), "aggregate health: $body")
     }
 
-    @Test fun `readiness requires the database but not Redis or RabbitMQ, liveness requires neither`() {
+    @Test fun `readiness requires the database, liveness requires no dependency`() {
         val admin = t.caller(Role.ADMIN).bearer
         val readiness = mvc.perform(get("/actuator/health/readiness").header("Authorization", admin)).andExpect(status().isOk)
             .andReturn().response.contentAsString
         assertTrue(readiness.contains("\"db\"") && readiness.contains("\"readinessState\""), "readiness members: $readiness")
-        assertFalse(readiness.contains("redis") || readiness.contains("rabbit"), "readiness must not include optional services: $readiness")
 
         val liveness = mvc.perform(get("/actuator/health/liveness").header("Authorization", admin)).andExpect(status().isOk)
             .andReturn().response.contentAsString
         assertTrue(liveness.contains("\"livenessState\""), "liveness members: $liveness")
-        assertFalse(liveness.contains("\"db\"") || liveness.contains("redis") || liveness.contains("rabbit"), "liveness must not include dependencies: $liveness")
+        assertFalse(liveness.contains("\"db\""), "liveness must not include dependencies: $liveness")
     }
 
     @Test fun `the probe groups do not open any other actuator endpoint`() {

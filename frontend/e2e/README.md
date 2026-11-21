@@ -54,7 +54,6 @@ as skipped, not passed.
 **Test database: use a disposable PostgreSQL 16, never a shared, staging or production one.**
 - The tests create real accounts and never delete them. Each run adds about 16, named `e2e-<label>-<timestamp>-<random>@example.test` with the password `Passw0rd!`. Those are weak, publicly documented credentials: they must not exist anywhere that matters.
 - An empty database is enough; Flyway migrates it on backend start-up.
-- Redis and RabbitMQ are not needed to start the backend (its health endpoint will report DOWN for them; ignore it).
 
 **Throwaway stack (what this was validated with)**
 

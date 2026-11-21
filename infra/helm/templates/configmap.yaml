@@ -9,11 +9,6 @@ metadata:
 data:
   SPRING_PROFILES_ACTIVE: "docker"
   SPRING_DATASOURCE_URL: "jdbc:postgresql://{{ include "it-sm.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
-  SPRING_DATA_REDIS_HOST: "{{ include "it-sm.fullname" . }}-redis"
-  SPRING_DATA_REDIS_PORT: "6379"
-  SPRING_RABBITMQ_HOST: "{{ include "it-sm.fullname" . }}-rabbitmq"
-  SPRING_RABBITMQ_PORT: "5672"
-  SPRING_RABBITMQ_VHOST: {{ .Values.rabbitmq.vhost | quote }}
   SERVER_PORT: {{ .Values.backend.service.port | quote }}
   # Actuator on its own port, never published (see networkpolicy.yaml and docs/architecture/security.md, "Management port").
   MANAGEMENT_SERVER_PORT: {{ .Values.backend.managementPort | quote }}

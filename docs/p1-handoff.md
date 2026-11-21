@@ -43,8 +43,7 @@ real stack see [frontend/e2e-real/README.md](../frontend/e2e-real/README.md).
 
 * TLS and redirect on both ingresses; host and secret are values; no issuer or certificate is assumed; extra annotations allowed.
 * The frontend image takes the public origin at build time. A runtime variable cannot change it. Verified in a real image build.
-* Probes: liveness = process only; readiness = accepting traffic and PostgreSQL; startup budget 180 s. Redis and RabbitMQ do not affect either
-  because no feature uses them. `/actuator/health` still reports them. A module that starts using one must add its indicator to the readiness group
+* Probes: liveness = process only; readiness = accepting traffic and PostgreSQL; startup budget 180 s. A module that starts depending on another external service must add its indicator to the readiness group
   in `application.yml`. Probes and Prometheus use the separate management port 8081 (`security.md`, "Management port").
 
 ## 5. Hardening from the B16 assessment: status
@@ -53,9 +52,9 @@ Closed on 2026-11-14 unless marked open. Details and the reasoning are in [secur
 
 | ID | Severity | What | Status |
 |---|---|---|---|
-| B16-05 | High | `TRUSTED_PROXIES` was the whole private address space and there was no NetworkPolicy | **Done.** No default any more: the Helm chart and `deploy.sh` require the ingress controller's pod CIDR, the raw manifest carries an invalid placeholder. NetworkPolicies limit the backend's API port to the ingress controller and PostgreSQL, Redis and RabbitMQ to the backend. **Operator still has to supply the real CIDR and use a CNI that enforces NetworkPolicy** (Kind's default does) |
+| B16-05 | High | `TRUSTED_PROXIES` was the whole private address space and there was no NetworkPolicy | **Done.** No default any more: the Helm chart and `deploy.sh` require the ingress controller's pod CIDR, the raw manifest carries an invalid placeholder. NetworkPolicies limit the backend's API port to the ingress controller and PostgreSQL to the backend. **Operator still has to supply the real CIDR and use a CNI that enforces NetworkPolicy** (Kind's default does) |
 | B16-06 | Medium | `security.md` claimed ingress-nginx appends `X-Forwarded-For`; by default it overwrites it | **Done** (doc corrected, with the `externalTrafficPolicy: Local` / proxy-protocol requirement and a way to verify). The cluster's actual topology still has to be checked by whoever deploys |
-| B16-08 | Medium | Default passwords committed in the k8s secrets and Helm values | **Done** for Helm (`required`, no defaults; `deploy.sh` requires them) and the raw manifests (placeholders; Redis and RabbitMQ now read secrets). The `docker-compose.yml` development stack keeps its throwaway passwords on purpose |
+| B16-08 | Medium | Default passwords committed in the k8s secrets and Helm values | **Done** for Helm (`required`, no defaults; `deploy.sh` requires them) and the raw manifests (placeholders). The `docker-compose.yml` development stack keeps its throwaway passwords on purpose |
 | B16-03 | High | The application and Flyway shared one superuser that owns the audit table, so the append-only trigger could be disabled | **Done, opt-in.** A Flyway `afterMigrate` callback grants a runtime role DML only (audit: `SELECT, INSERT`); `RuntimeRoleGrantsIntegrationTest` proves it on PostgreSQL 16; `infra/docker-compose.roles.yml` wires it for compose. Off by default; **production must enable it and create the role** (the Helm chart does not provision database roles) |
 | B16-07 | Medium | Prometheus could not scrape `/actuator/prometheus` (401) | **Done.** Actuator on port 8081, unpublished, open to Prometheus only by NetworkPolicy; `ManagementPortIntegrationTest` covers both ports. Added business metrics and a provisioned Grafana dashboard |
 | B16-09 | Medium | Login throttle is per instance and keyed by full IPv6 address | **Accepted and documented** (`security.md`, "Other accepted limitations"): use an ingress-level limit or a shared counter if it matters |
@@ -85,7 +84,7 @@ against this table).
 | P3 | Confirm the technician contract (`available` is an admin flag, not workload; `maxWorkload` is a ceiling; `escalationChain` nearest-first) and the `defaultMaxWorkload` cap of 100 | pending (a confirmation, not code) |
 | P4 | SLA timers, breach detection, escalation, notifications, analytics | **built** (`sla/`, `escalation/`, `notification/`, `analytics/`); `unassignedEscalationMinutes` is owned by P4 (`escalation_settings`, `V41`) |
 | All | Audit: publish through `AuditPublisher` inside the caller's transaction (`Propagation.MANDATORY`) | P1 provides it; P2 to P4 publish through it |
-| P2 | Incident AI features (analysis, chatbot) send the incident text to the Google Gemini API when `gemini.api-key` is set | **open decision:** confirm this is acceptable for the deployment's data policy, and check Google's terms for the key's tier (free-tier terms differ from paid ones on how prompts may be used). Off when no key is set |
+| P2 | Incident AI features (analysis, chatbot) send the incident text to the Google Gemini API when `gemini.api-key` is set | **accepted by the team.** What is sent, the caveats (other incidents' opening lines are included; check Google's terms for the key's tier) and the notice on the report page are in [security.md](architecture/security.md#third-party-data-google-gemini). Off when no key is set |
 
 ## 8. Integration: `feat/p1-b18-final-integration` (P1 + `main` + P3's PR #10), merged to `main` as PR #11
 
