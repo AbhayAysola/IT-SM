@@ -31,7 +31,6 @@ import org.testcontainers.junit.jupiter.Testcontainers
 /**
  * Full Spring Boot startup against a real PostgreSQL 16: Flyway runs, Hibernate validates the schema,
  * the security wiring loads, and the existing auth flow works over MockMvc.
- * Redis/RabbitMQ are not needed for startup (their connections are lazy).
  * Skipped (not failed) when Docker is unavailable, EXCEPT where ITSM_REQUIRE_DOCKER=true (CI): there
  * [DockerAvailabilityGuardTest] fails the build and the workflow rejects any skipped test.
  */

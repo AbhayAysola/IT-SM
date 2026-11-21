@@ -72,4 +72,4 @@ kind load docker-image it-sm/frontend:latest --name $CLUSTER_NAME
 echo "Kind cluster '$CLUSTER_NAME' is ready!"
 echo "Next: add '127.0.0.1 ${PUBLIC_HOST}' to /etc/hosts, then deploy with the same host:"
 echo "  PUBLIC_HOST=${PUBLIC_HOST} TLS_SECRET_NAME=${TLS_SECRET_NAME} TRUSTED_PROXY_CIDRS=10.244.0.0/16 \\"
-echo "  JWT_SECRET=\$(openssl rand -base64 48) POSTGRES_PASSWORD=... REDIS_PASSWORD=... RABBITMQ_PASSWORD=... ./deploy.sh"
+echo "  JWT_SECRET=\$(openssl rand -base64 48) POSTGRES_PASSWORD=... ./deploy.sh"

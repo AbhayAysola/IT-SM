@@ -85,6 +85,12 @@ test.describe('incidents: employee (reporter)', () => {
     await page.getByRole('combobox', { name: 'Service' }).click();
     await page.getByRole('option', { name: 'VPN' }).click();
     await expect(page.getByRole('combobox', { name: /priority/i })).toHaveCount(0);
+    // What leaves the system is said next to the submit button, and again in the chat.
+    await expect(page.getByTestId('ai-data-notice')).toContainText(/sent to Google’s Gemini service when you submit/);
+    await expect(page.getByTestId('ai-data-notice')).toContainText(/titles and opening lines of other open incidents/);
+    await page.getByRole('button', { name: 'Chat with AI' }).click();
+    await expect(page.getByTestId('ai-data-notice')).toContainText(/what you type in this chat is sent to Google’s Gemini service/);
+    await page.getByRole('button', { name: 'Fill form' }).click();
 
     await page.getByRole('button', { name: 'Submit incident' }).click();
     await expect(page.getByText('Please tell us how many people are affected.')).toBeVisible();
@@ -100,6 +106,13 @@ test.describe('incidents: employee (reporter)', () => {
     expect(await axeViolations(page)).toEqual([]);
 
     await page.getByRole('button', { name: 'Submit incident' }).click();
+    // A similar open incident is suggested, never assumed: unticked by default, and an employee gets no link to someone else's incident.
+    const similar = page.getByRole('checkbox', { name: /INC1001/ });
+    await expect(similar).not.toBeChecked();
+    await expect(page.getByRole('link', { name: 'INC1001' })).toHaveCount(0);
+    await similar.check();
+    await expect(similar).toBeChecked();
+    expect(await axeViolations(page)).toEqual([]);
     await page.getByRole('button', { name: 'Create incident' }).click();
     await expect(page).toHaveURL(/\/incidents\/INC\d+$/);
     // MEDIUM impact and HIGH urgency: P2 (the mock applies P4's matrix; the live backend asks P4's PriorityPolicy).

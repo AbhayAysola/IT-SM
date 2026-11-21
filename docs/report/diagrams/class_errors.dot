@@ -1,0 +1,36 @@
+digraph G {
+  graph [rankdir=RL, fontname="Helvetica", nodesep=0.12, ranksep=0.9, splines=true, pad=0.2];
+  node [shape=plain, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+  RuntimeException [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#eeeeee" ALIGN="CENTER"><B>RuntimeException</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  ItsmException [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#fff4d6" ALIGN="CENTER"><B>ItsmException</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">+code: ErrorCode<BR ALIGN="LEFT"/>+message: String<BR ALIGN="LEFT"/>+fieldErrors: List&lt;FieldError&gt;<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  ItsmException -> RuntimeException [arrowhead=empty, color="#333333"];
+  AuthenticationFailed [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>AuthenticationFailed</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 401<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  AuthenticationFailed -> ItsmException [arrowhead=empty, color="#333333"];
+  RateLimited [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>RateLimited</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 429<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  RateLimited -> ItsmException [arrowhead=empty, color="#333333"];
+  UnauthorizedOperation [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>UnauthorizedOperation</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 403<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  UnauthorizedOperation -> ItsmException [arrowhead=empty, color="#333333"];
+  ResourceNotFound [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>ResourceNotFound</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 404<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  ResourceNotFound -> ItsmException [arrowhead=empty, color="#333333"];
+  DuplicateResource [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>DuplicateResource</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 409<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  DuplicateResource -> ItsmException [arrowhead=empty, color="#333333"];
+  InvalidInput [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>InvalidInput</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 400<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  InvalidInput -> ItsmException [arrowhead=empty, color="#333333"];
+  InvalidStateTransition [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>InvalidStateTransition</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 409<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  InvalidStateTransition -> ItsmException [arrowhead=empty, color="#333333"];
+  MissingSlaConfiguration [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>MissingSlaConfiguration</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">SLA has no policy<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  MissingSlaConfiguration -> ItsmException [arrowhead=empty, color="#333333"];
+  TechnicianUnavailable [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>TechnicianUnavailable</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 409<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  TechnicianUnavailable -> ItsmException [arrowhead=empty, color="#333333"];
+  WorkloadExceeded [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>WorkloadExceeded</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 409<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  WorkloadExceeded -> ItsmException [arrowhead=empty, color="#333333"];
+  ExternalServiceFailure [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>ExternalServiceFailure</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 502<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  ExternalServiceFailure -> ItsmException [arrowhead=empty, color="#333333"];
+  ServiceNotFound [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><B>ServiceNotFound</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">HTTP 404<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  ServiceNotFound -> ResourceNotFound [arrowhead=empty, color="#333333"];
+  ErrorCode [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#fff4d6" ALIGN="CENTER"><I>&laquo;enumeration&raquo;</I><BR/><B>ErrorCode</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">UNAUTHENTICATED, INVALID_CREDENTIALS, FORBIDDEN, RATE_LIMITED,<BR ALIGN="LEFT"/>RESOURCE_NOT_FOUND, DUPLICATE_RESOURCE, INVALID_INPUT, ...<BR ALIGN="LEFT"/>-status: Int<BR ALIGN="LEFT"/>-title: String<BR ALIGN="LEFT"/></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR></TABLE>>];
+  GlobalExceptionHandler [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4"><TR><TD BGCOLOR="#ffffff" ALIGN="CENTER"><I>&laquo;@RestControllerAdvice&raquo;</I><BR/><B>GlobalExceptionHandler</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT"> </TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">+handle(ItsmException): ProblemDetail (RFC 7807)<BR ALIGN="LEFT"/>+handle(validation / database / unexpected errors)<BR ALIGN="LEFT"/></TD></TR></TABLE>>];
+  ItsmException -> ErrorCode [arrowhead=vee, color="#333333"];
+  GlobalExceptionHandler -> ItsmException [arrowhead=vee, style=dashed, color="#666666", label="translates"];
+}

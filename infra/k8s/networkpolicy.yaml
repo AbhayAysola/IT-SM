@@ -1,5 +1,5 @@
 # Ingress-only policies (egress is not restricted): the ingress controller reaches the frontend and the backend API; only the backend
-# reaches PostgreSQL, Redis and RabbitMQ; and the backend's management port (actuator, Prometheus) is open to Prometheus pods only.
+# reaches PostgreSQL; and the backend's management port (actuator, Prometheus) is open to Prometheus pods only.
 # Needs a CNI that enforces NetworkPolicy (Kind's kindnet does from v0.20; Calico and Cilium do). The kubelet's probe traffic is not affected.
 # PLACEHOLDERS: `ingress-nginx` (the ingress controller's namespace) and `monitoring` / `app.kubernetes.io/name: prometheus` (where and how
 # your Prometheus runs). Same policies as infra/helm/templates/networkpolicy.yaml.
@@ -65,39 +65,3 @@ spec:
               app: backend
       ports:
         - port: 5432
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: redis
-  namespace: it-sm
-spec:
-  podSelector:
-    matchLabels:
-      app: redis
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: backend
-      ports:
-        - port: 6379
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: rabbitmq
-  namespace: it-sm
-spec:
-  podSelector:
-    matchLabels:
-      app: rabbitmq
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: backend
-      ports:
-        - port: 5672

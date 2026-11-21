@@ -1,6 +1,6 @@
 {{- if .Values.networkPolicy.enabled }}
 # Ingress-only policies (egress is not restricted): the ingress controller reaches the frontend and the backend API; only the backend reaches
-# PostgreSQL, Redis and RabbitMQ; and the backend's management port (actuator, Prometheus) is open to the Prometheus pods and nobody else.
+# PostgreSQL; and the backend's management port (actuator, Prometheus) is open to the Prometheus pods and nobody else.
 # The kubelet's own probe traffic comes from the node and is not affected by NetworkPolicy on the common CNIs.
 {{- $ns := .Values.global.namespace }}
 {{- $ingressNs := .Values.networkPolicy.ingressControllerNamespace }}
@@ -64,7 +64,7 @@ spec:
               kubernetes.io/metadata.name: {{ $ingressNs }}
       ports:
         - port: {{ .Values.frontend.service.port }}
-{{- range $component, $port := dict "postgres" 5432 "redis" 6379 "rabbitmq" 5672 }}
+{{- range $component, $port := dict "postgres" 5432 }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

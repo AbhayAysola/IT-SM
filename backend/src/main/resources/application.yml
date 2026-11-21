@@ -19,17 +19,6 @@ spring:
     # false: a non-empty database without a Flyway history table is refused instead of having V1 silently skipped. Set
     # FLYWAY_BASELINE_ON_MIGRATE=true only to adopt an existing database on purpose.
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password: redis_password
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: itsm
-    password: rabbitmq_password
-    virtual-host: /
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
@@ -120,7 +109,7 @@ management:
       show-details: when-authorized
       roles: ADMIN
       # Kubernetes probes use /actuator/health/liveness and /actuator/health/readiness (explicit, not left to environment detection).
-      # `/actuator/health` itself still aggregates EVERY indicator, including Redis and RabbitMQ.
+      # `/actuator/health` itself still aggregates every indicator.
       probes:
         enabled: true
       group:
@@ -129,8 +118,7 @@ management:
         liveness:
           include: livenessState
         # Readiness = "can this instance serve the P1 business APIs": the application is accepting traffic AND PostgreSQL answers.
-        # Redis and RabbitMQ are deliberately NOT here: nothing in P1 uses them (no cache or message call exists). A module that
-        # starts to depend on one of them must add its indicator (`redis`, `rabbit`) to this list in the same change.
+        # A module that starts to depend on another external service must add its health indicator to this list in the same change.
         readiness:
           include: readinessState,db
   metrics:

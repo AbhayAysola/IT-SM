@@ -200,7 +200,7 @@ class AuthSecurityIntegrationTest {
     // --- actuator and CORS -----------------------------------------------------------------------------------------
 
     @Test fun `actuator health is public without details, everything else needs ADMIN`() {
-        val body = mvc.perform(get("/actuator/health")).andReturn().response.contentAsString   // 200 or 503 depending on Redis/RabbitMQ
+        val body = mvc.perform(get("/actuator/health")).andReturn().response.contentAsString
         assertFalse(body.contains("components") || body.contains("jdbc") || body.contains("postgres"), "health must not leak details: $body")
 
         mvc.perform(get("/actuator/metrics")).andExpect(status().isUnauthorized)

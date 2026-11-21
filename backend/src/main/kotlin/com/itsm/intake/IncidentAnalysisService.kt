@@ -21,6 +21,23 @@ class IncidentAnalysisService(
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(IncidentAnalysisService::class.java)
+        private const val MAX_QUERY_WORDS = 12
+        private const val MAX_DUPLICATES = 5
+        private val STOP_WORDS = setOf(
+            "the", "and", "for", "with", "that", "this", "from", "have", "has", "had", "are", "was", "were", "not", "but", "you",
+            "our", "all", "can", "any", "when", "what", "why", "how", "been", "into", "out", "get", "got", "its", "still", "cannot",
+            "does", "did", "nor", "than", "then", "there", "they", "them", "very", "just", "also", "need", "needs", "please"
+        )
+
+        /** Lower-case words of 3+ letters or digits, without stop words, lightly de-pluralised, in order of first appearance. */
+        internal fun significantWords(text: String): Set<String> =
+            Regex("[a-z0-9]{3,}").findAll(text.lowercase()).map { it.value }.filterNot { it in STOP_WORDS }
+                .map { if (it.length > 3 && it.endsWith("s")) it.dropLast(1) else it }.toCollection(LinkedHashSet())
+
+        /** A candidate is a plausible duplicate when it shares at least two of the report's significant words (one if it only has one). */
+        internal fun sharedEnough(queryWords: Set<String>, candidateText: String): Boolean =
+            queryWords.isNotEmpty() && significantWords(candidateText).count { it in queryWords } >= minOf(2, queryWords.size)
+
         private const val GEMINI_BASE_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
     }
@@ -28,21 +45,22 @@ class IncidentAnalysisService(
     private val client = restClientBuilder.build()
 
     fun analyze(title: String, description: String): IncidentAnalysisDto {
-        val candidates = ftsSearch(title, description)
-
-        // No Gemini key: return FTS matches as duplicate candidates without AI categorisation.
+        // No Gemini key: only incidents that really share wording with the report are offered as possible duplicates,
+        // and nothing is padded in. There is no AI categorisation.
         if (apiKey.isBlank()) {
+            val candidates = textMatches(title, description)
             return IncidentAnalysisDto(
                 suggestedCategoryId = null,
                 suggestedCategoryName = null,
                 confidence = "LOW",
                 reasoning = "",
                 possibleDuplicates = candidates.map { (id, t, _) ->
-                    DuplicateCandidate(id, t, "Similar incident found by text search")
+                    DuplicateCandidate(id, t, "Shares key words with your report")
                 }
             )
         }
 
+        val candidates = ftsSearch(title, description)
         val activeCategories = categories.listActive()
 
         val systemPrompt = """
@@ -100,6 +118,28 @@ class IncidentAnalysisService(
         }
 
         return parseResponse(responseText)
+    }
+
+    /**
+     * Open incidents that share wording with the report, for the keyless fallback. The full-text query matches ANY of the report's
+     * significant words (an AND over a whole description almost never matches), and a hit is kept only when it shares enough of
+     * them ([sharedEnough]), so a one-word coincidence is not offered as a duplicate. Never padded with unrelated incidents.
+     */
+    private fun textMatches(title: String, description: String): List<Triple<String, String, String>> {
+        val words = significantWords("$title $description").take(MAX_QUERY_WORDS).toSet()
+        if (words.isEmpty()) return emptyList()
+        val orQuery = words.joinToString(" | ") // words are [a-z0-9] only, so this is always a valid tsquery
+        val hits = jdbc.query(
+            """SELECT id, title, left(description, 200) AS snippet
+               FROM incidents
+               WHERE state IN ('NEW','CLASSIFIED','ASSIGNED','ACKNOWLEDGED','IN_PROGRESS','PENDING_INFO')
+                 AND to_tsvector('english', title || ' ' || description) @@ to_tsquery('english', ?)
+               ORDER BY ts_rank_cd(to_tsvector('english', title || ' ' || description), to_tsquery('english', ?)) DESC
+               LIMIT 10""",
+            { rs, _ -> Triple(rs.getString("id"), rs.getString("title"), rs.getString("snippet")) },
+            orQuery, orQuery
+        )
+        return hits.filter { (_, t, snippet) -> sharedEnough(words, "$t $snippet") }.take(MAX_DUPLICATES)
     }
 
     private fun ftsSearch(title: String, description: String): List<Triple<String, String, String>> {
