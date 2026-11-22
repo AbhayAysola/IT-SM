@@ -65,7 +65,7 @@ class IncidentChatServiceTest {
     @Test fun `blank API key returns mock response without hitting the network`() {
         val (svc, server) = service(apiKey = "")
         val result = svc.chat(listOf(ChatMessageRequest("user", "hello")))
-        assertEquals(0, server.requestCount)
+        server.verify() // no expectations set — passes only if no HTTP calls were made
         assertTrue(result.reply.isNotBlank())
     }
 
@@ -150,7 +150,7 @@ class IncidentChatServiceTest {
             ChatMessageRequest("user", "my laptop won't turn on"),
         )
         val replyText = "Sorry to hear that!\n${extracted()}"
-        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
             .andRespond(withSuccess(geminiEnvelope(replyText), MediaType.APPLICATION_JSON))
 
@@ -169,7 +169,7 @@ class IncidentChatServiceTest {
         val (svc, server) = service()
         stubCatalog()
         val replyText = "What service are you having trouble with?\n${extracted()}"
-        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
             .andRespond(withSuccess(geminiEnvelope(replyText), MediaType.APPLICATION_JSON))
 
@@ -181,7 +181,7 @@ class IncidentChatServiceTest {
     @Test fun `chat throws InvalidInput when API returns a server error`() {
         val (svc, server) = service()
         stubCatalog()
-        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key"))
             .andRespond(withServerError())
 
         assertThrows<InvalidInput> { svc.chat(listOf(ChatMessageRequest("user", "help"))) }
@@ -195,7 +195,7 @@ class IncidentChatServiceTest {
         val msgs = (1..25).map { ChatMessageRequest(if (it % 2 == 1) "user" else "assistant", "msg $it") }
         val replyText = "Got it\n${extracted()}"
 
-        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
             .andRespond(withSuccess(geminiEnvelope(replyText), MediaType.APPLICATION_JSON))
 
