@@ -124,7 +124,7 @@ export default function AssignmentSettingsPage() {
   return (
     <>
       <PageHeader title="Assignment settings"
-        description="Which strategy routes new incidents to technicians, the default workload ceiling, and per-category strategy overrides. New incidents are routed with these settings as soon as they are saved." />
+        description="Which strategy routes new incidents to technicians, the default workload ceiling, and per-category strategy overrides. Incidents are not assigned automatically: these settings apply when an administrator assigns an incident and lets the strategy choose." />
       <div className="space-y-6">
         {notice && (
           <div role="status" data-testid="catalog-unavailable" data-catalog-status={status} data-catalog-notice={notice}
