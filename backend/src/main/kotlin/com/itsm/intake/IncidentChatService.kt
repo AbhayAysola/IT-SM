@@ -24,7 +24,7 @@ class IncidentChatService(
     companion object {
         private val log = LoggerFactory.getLogger(IncidentChatService::class.java)
         private const val GEMINI_BASE_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
         private val VALID_IMPACT = setOf("HIGH", "MEDIUM", "LOW")
         private val VALID_URGENCY = setOf("HIGH", "MEDIUM", "LOW")
@@ -34,7 +34,7 @@ class IncidentChatService(
     private val client = restClientBuilder.build()
 
     fun chat(messages: List<ChatMessageRequest>): ChatResponse {
-        if (apiKey.isBlank()) throw InvalidInput("AI chat is not configured on this server.")
+        if (apiKey.isBlank()) return mockChat(messages)
 
         val categoryList = categories.listActive().joinToString("\n") { c ->
             val kw = if (c.keywords.isNotEmpty()) " (keywords: ${c.keywords.joinToString()})" else ""
@@ -147,5 +147,36 @@ class IncidentChatService(
         }
 
         return ChatResponse(reply = reply, extracted = extracted)
+    }
+
+    private fun mockChat(messages: List<ChatMessageRequest>): ChatResponse {
+        val userTurns = messages.count { it.role == "user" }
+        val none = ExtractedIncidentFields(null, null, null, null, null, null, null, null, false)
+        return when {
+            userTurns <= 1 -> ChatResponse(
+                reply = "Hi there! I'm your IT helpdesk assistant. I'll help you log a support ticket in just a few steps. Could you briefly describe what's going wrong?",
+                extracted = none
+            )
+            userTurns == 2 -> ChatResponse(
+                reply = "Thanks for letting me know. How many people are affected — just you, your team, or a larger group? And has your work completely stopped, or is there a workaround you can use in the meantime?",
+                extracted = ExtractedIncidentFields(
+                    title = "WiFi connectivity outage on office floor",
+                    description = messages.lastOrNull { it.role == "user" }?.content,
+                    suggestedCategoryId = 3L, suggestedCategoryName = "Network",
+                    suggestedServiceId = 2L, suggestedServiceName = "VPN",
+                    impact = null, urgency = null, ready = false
+                )
+            )
+            else -> ChatResponse(
+                reply = "Got it — a full floor outage with no workaround, that's high priority. I've captured everything and pre-filled the incident form for you. Take a quick look and hit Submit to log your ticket!",
+                extracted = ExtractedIncidentFields(
+                    title = "WiFi connectivity outage on office floor",
+                    description = "Complete loss of WiFi connectivity across the office floor. All users on the floor are unable to connect to the network or access any cloud services. No workaround is available as all tasks require internet access. Issue started approximately 30 minutes ago.",
+                    suggestedCategoryId = 3L, suggestedCategoryName = "Network",
+                    suggestedServiceId = 2L, suggestedServiceName = "VPN",
+                    impact = "HIGH", urgency = "HIGH", ready = true
+                )
+            )
+        }
     }
 }

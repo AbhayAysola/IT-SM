@@ -13,9 +13,7 @@ interface Props {
 }
 
 export function ChatIntake({ onReady }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: "Hi! I'm your IT helpdesk assistant. Describe what's going wrong and I'll help you file a ticket." },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedIncidentFields | null>(null);
