@@ -62,9 +62,11 @@ class IncidentChatServiceTest {
 
     // ---- blank API key -----------------------------------------------------------------------
 
-    @Test fun `blank API key throws without hitting the network`() {
-        val (svc, _) = service(apiKey = "")
-        assertThrows<InvalidInput> { svc.chat(listOf(ChatMessageRequest("user", "hello"))) }
+    @Test fun `blank API key returns mock response without hitting the network`() {
+        val (svc, server) = service(apiKey = "")
+        val result = svc.chat(listOf(ChatMessageRequest("user", "hello")))
+        assertEquals(0, server.requestCount)
+        assertTrue(result.reply.isNotBlank())
     }
 
     // ---- parseResponse: envelope errors -----------------------------------------------------
