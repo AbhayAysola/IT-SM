@@ -118,7 +118,7 @@ class IncidentAnalysisServiceTest {
         val (svc, server) = service()
         stubCatalogAndDb()
         val payload = """{"suggestedCategoryId":1,"suggestedCategoryName":"Network","confidence":"HIGH","reasoning":"wifi","possibleDuplicates":[]}"""
-        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key"))
             .andExpect(method(HttpMethod.POST))
             .andRespond(withSuccess(geminiResponse(payload), MediaType.APPLICATION_JSON))
 
@@ -131,7 +131,7 @@ class IncidentAnalysisServiceTest {
     @Test fun `analyze throws InvalidInput when the API returns a server error`() {
         val (svc, server) = service()
         stubCatalogAndDb()
-        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=test-key"))
+        server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key"))
             .andRespond(withServerError())
 
         assertThrows<InvalidInput> { svc.analyze("title", "desc") }
