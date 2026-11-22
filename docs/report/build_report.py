@@ -43,6 +43,37 @@ def table(head, rows, cls="") -> str:
     return f'<table class="{cls}"><thead><tr>{h}</tr></thead><tbody>{body}</tbody></table>'
 
 
+def screen(name: str, caption: str) -> str:
+    import base64
+    data = base64.b64encode((HERE / "screens" / f"{name}.png").read_bytes()).decode()
+    return f'<div class="shot"><img src="data:image/png;base64,{data}" alt="{html.escape(caption, quote=True)}"/><div class="cap">{caption}</div></div></div>'
+
+
+def prose(labels, rows) -> str:
+    """Rows as a heading plus paragraphs (one per remaining column, optionally led by a bold label)."""
+    out = []
+    for r in rows:
+        out.append("<h3>" + re.sub(r"</?b>", "", r[0]) + "</h3>")
+        for lab, txt in zip(labels, r[1:]):
+            out.append("<p>" + (f"<b>{lab}.</b> " if lab else "") + txt + "</p>")
+    return "".join(out)
+
+
+def rules(rows) -> str:
+    return "".join(f"<p class='rule'><b>{i}.</b> {t}</p>" for i, t in rows)
+
+
+def frs(rows) -> str:
+    groups = [("All users", ("All",)), ("Employees", ("Employee",)), ("Technicians", ("Technician",)),
+              ("Administrators", ("Admin", "Admin, staff", "All (scoped)", "Admin (and role dashboards)")), ("The system", ("System",))]
+    out = []
+    for title, keys in groups:
+        sel = [r for r in rows if r[2] in keys]
+        if sel:
+            out.append(f"<h3>{title}</h3>" + rules([(r[0], r[1]) for r in sel]))
+    return "".join(out)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Test cases: (id, category, scenario, expected, test file under backend/src/test/kotlin/com/itsm, test name)
 # ---------------------------------------------------------------------------------------------------------------------
@@ -132,6 +163,10 @@ body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 1
 h1 { font-size: 19pt; margin: 0 0 8pt; padding-bottom: 4pt; border-bottom: 2px solid #2f4b8a; color: #1d3266; page-break-before: always; }
 h1.first { page-break-before: auto; }
 h2 { font-size: 13pt; margin: 16pt 0 5pt; color: #1d3266; }
+.keep { break-inside: avoid; }
+h1, h2, h3 { break-after: avoid; }
+.shot { break-inside: avoid; margin: 8pt 0 12pt; text-align: center; }
+.shot img { max-width: 100%; max-height: 11.5cm; width: auto; border: 1px solid #cfd4dc; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 h3 { font-size: 11pt; margin: 11pt 0 4pt; color: #2b2f38; }
 p { margin: 0 0 6pt; } ul, ol { margin: 0 0 7pt; padding-left: 17pt; } li { margin-bottom: 2pt; }
 code { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 8.7pt; background: #f1f3f7; padding: 0 2pt; border-radius: 2px; }
@@ -163,7 +198,7 @@ def build_html() -> str:
 <li>Problem analysis</li><li>Requirements specification</li><li>System architecture</li><li>UML diagrams (use case, class, state)</li>
 <li>Object-oriented design and design patterns</li><li>Technology stack</li><li>Technology selection report</li><li>Database design</li>
 <li>Exception handling and security</li><li>Testing (30 documented test cases)</li><li>Intelligent features and innovation</li>
-<li>Demonstration workflows and team responsibilities</li><li>Deviations from the tech design, limitations and future work</li></ol>
+<li>Demonstration workflows and team responsibilities</li><li>Development methodology</li><li>Prototype limitations and future work</li></ol>
 <div class="note"><b>How to read the evidence.</b> Class and package names (for example <code>assignment/Strategies.kt</code>) refer to <code>backend/src/main/kotlin/com/itsm/</code> in the repository;
 test names refer to <code>backend/src/test/kotlin/com/itsm/</code>. The diagrams are generated from sources in <code>docs/report/diagrams/</code> (<code>diagrams.py</code>), and this report is built by <code>docs/report/build_report.py</code>.
 The report builder fails if a cited test no longer exists.</div>""")
@@ -175,7 +210,7 @@ The report builder fails if a cited test no longer exists.</div>""")
 nobody sees which promises (response and resolution times) are about to be broken, and there is no reliable record of who did what. The consequence is slow recovery, unfair workloads, repeated failures and no evidence for improvement.</p>
 <p>IT-SM is a web application that manages the whole life of an IT incident: <i>report &rarr; classify &rarr; prioritise &rarr; assign &rarr; investigate &rarr; resolve &rarr; verify &rarr; close</i>, with SLA tracking, escalation, notifications, an audit trail and analytics.</p>
 <h2>1.2 Stakeholders</h2>
-""" + table(["Stakeholder", "Interest"], [
+""" + prose((None,), [
         ("Employees (reporters)", "Report a problem in plain words, see its progress, answer questions, confirm the fix, give feedback. Occasional users, often reporting under stress."),
         ("Technicians / support engineers", "Know what is assigned to them, work and document it, see their workload and SLA clocks, reuse past fixes. Team leads additionally receive escalations."),
         ("Administrators / IT managers", "Maintain users, services, categories, SLA policies and assignment strategy; assign fairly; watch SLA violations, workloads and trends; audit what happened."),
@@ -205,12 +240,13 @@ nobody sees which promises (response and resolution times) are about to be broke
     # 2 ------------------------------------------------------------------------------------------------------------
     parts.append("""<h1>2. Requirements specification</h1>
 <h2>2.1 User roles and permissions</h2>
-""" + table(["Role", "Permissions (<code>common/security/Permission.kt</code>)", "Notes"], [
+""" + prose(("Permissions (<code>common/security/Permission.kt</code>)", "Notes"), [
         ("EMPLOYEE", "INCIDENT_CREATE, INCIDENT_VIEW_OWN, INCIDENT_VERIFY_OWN", "Sees and acts on own incidents only."),
         ("TECHNICIAN", "INCIDENT_CREATE, INCIDENT_VIEW_OWN, INCIDENT_VIEW_ASSIGNED, INCIDENT_WORK, INCIDENT_VERIFY_OWN", "Works incidents assigned to them; can also report and verify their own."),
         ("ADMIN", "All permissions: INCIDENT_VIEW_ALL, INCIDENT_ASSIGN, INCIDENT_CLOSE, USER_MANAGE, CATALOG_MANAGE, SLA_CONFIGURE, ASSIGNMENT_CONFIGURE, AUDIT_VIEW, ANALYTICS_VIEW and the above", "Team lead is a technician attribute, not a role.")]) + """
 <h2>2.2 Functional requirements</h2>
-""" + table(["ID", "Requirement", "Role"], [
+<p>The requirements are grouped by who needs them. Every requirement is implemented and has at least one automated test; the numbering is used in the rest of the report.</p>
+""" + frs([
         ("FR-01", "Register, sign in, sign out; passwords are stored hashed; sessions expire.", "All"),
         ("FR-02", "Report an incident (title, description, category, service, impact, urgency) through a form, a chat or by voice; edit it until it is assigned.", "Employee"),
         ("FR-03", "View my incidents, filter and search them, track status in plain language, see the resolution.", "Employee"),
@@ -228,7 +264,7 @@ nobody sees which promises (response and resolution times) are about to be broke
         ("FR-15", "Derive the priority automatically; track response and resolution SLA; warn and record breaches; predict likely breaches.", "System"),
         ("FR-16", "Escalate overdue or unassigned incidents; notify the right people through in-app, email and SMS channels; push notifications live to the browser.", "System")]) + """
 <h2>2.3 Non-functional requirements</h2>
-""" + table(["Area", "Requirement and how it is met"], [
+""" + prose((None,), [
         ("Security", "Authentication, role-based and object-level authorisation, password hashing, validated input, CSRF protection, login throttling, no default secrets (section 9)."),
         ("Integrity", "The database re-enforces the lifecycle (CHECK constraints), audit and history tables are append-only (triggers), assignments cannot exceed capacity under concurrency (locks)."),
         ("Reliability", "Domain events commit or roll back with the change; monitors are safe to run on several instances (advisory locks); external channels never undo a business change; liveness and readiness probes."),
@@ -238,7 +274,8 @@ nobody sees which promises (response and resolution times) are about to be broke
         ("Observability", "Prometheus metrics (HTTP, JVM, pool, business gauges such as open P1 and breached SLAs) on a separate management port, with a provisioned Grafana dashboard."),
         ("Portability", "Docker images, Docker Compose, Kubernetes manifests and a Helm chart; CI builds and scans images.")]) + """
 <h2>2.4 Business rules</h2>
-""" + table(["ID", "Rule"], [
+<p>These rules are the contract of the system. Each is enforced in a domain policy (and, where it is an invariant, again by a database constraint), so no screen or client can bypass it.</p>
+""" + rules([
         ("BR-01", "An incident id is <code>INC</code> plus a database sequence starting at 1001."),
         ("BR-02", "The reporter never chooses the priority: it is derived from impact, urgency, service criticality and dependent services (section 4.2)."),
         ("BR-03", "Only the transitions in the table are legal; an illegal one is refused with 409 even for an administrator; permissions are checked after legality."),
@@ -264,7 +301,16 @@ The three architecture rules that keep the modules independent:</p>
 <li>After commit, the SLA module starts the clocks, the notification module tells the right people, and the escalation module watches for an unassigned incident.</li>
 <li>An administrator opens the incident, sees the ranked technician recommendations with reasons, and assigns (strategy or named). The assignment takes a row lock on the incident and an advisory lock on the technician, re-checks capacity, moves the state to ASSIGNED and publishes <code>IncidentAssigned</code>.</li>
 <li>The technician is notified (in-app, plus simulated email and SMS for high priority), works the incident, and each transition is audited, added to the timeline and pushed to the browser (server-sent events).</li></ol>
-<h2>3.3 Deployment view</h2>
+<h2>3.3 Modules and what each owns</h2>
+<h3>Access, administration, audit and operations (P1)</h3>
+<p>Accounts, authentication, roles, technician profiles, the service and category catalogs, the audit trail, and the deployment and operations tooling (Docker, Kubernetes, Helm, CI, metrics). Everything else depends on the contracts this module publishes, for example the user directory.</p>
+<h3>Intake and AI (P2)</h3>
+<p>The report form, the optional chat and voice intake, category suggestion and duplicate hints. It creates the incident and publishes the first domain event; it never decides the priority itself but asks the priority policy.</p>
+<h3>Lifecycle, assignment, investigation and feedback (P3)</h3>
+<p>The nine-state lifecycle and its permissions, the four assignment strategies and the technician recommender, the capacity locks, the investigation timeline and the one-time feedback. This is the module that owns the incident table.</p>
+<h3>Priority, SLA, escalation, notifications and analytics (P4)</h3>
+<p>Priority derivation, SLA clocks and risk prediction, escalation, the in-app, email and SMS channels with live delivery, and the dashboards. It reacts to incident events and never changes an incident directly.</p>
+<h2>3.4 Deployment view</h2>
 <p>Docker Compose runs PostgreSQL, the backend (port 8080, management port 8081 unpublished) and the frontend. The same images run on Kubernetes (Kind) through raw manifests or a Helm chart with HTTPS-only ingress, split liveness/readiness probes, NetworkPolicies (only the backend reaches PostgreSQL) and an optional in-cluster Prometheus and Grafana. GitHub Actions runs the backend tests, the frontend tests, a real-stack end-to-end suite against PostgreSQL 16, and builds and scans the images.</p>""")
 
     # 4 ------------------------------------------------------------------------------------------------------------
@@ -281,7 +327,8 @@ The three architecture rules that keep the modules independent:</p>
     # 5 ------------------------------------------------------------------------------------------------------------
     parts.append("""<h1>5. Object-oriented design and design patterns</h1>
 <h2>5.1 Design patterns (at least two required: five are used)</h2>
-""" + table(["Pattern", "Where", "Why it fits and what it buys"], [
+<p>We used patterns where they remove a real problem, not to make a list. The two the specification names as natural fits, Strategy for assignment and Observer for reactions to incident changes, carry most of the weight; the others describe how persistence, lifecycle and notification channels are organised. Each pattern below says where it lives in the code and what it buys.</p>
+""" + prose(("Where it is used", "Why it fits and what it buys"), [
         ("<b>Strategy</b>", "<code>assignment/AssignmentStrategy</code> with <code>LoadBasedStrategy</code>, <code>SkillBasedStrategy</code>, <code>RoundRobinStrategy</code>, <code>ManualStrategy</code>; chosen at run time by <code>AssignmentEngine</code> from the administrator's settings (global, or per category).",
          "The ranking rule varies; everything around it (eligibility, locking, audit) does not. A new strategy is one class implementing <code>rank</code>, registered by Spring; an unknown configured key falls back to LOAD_BASED and the audit says so. The strategy can be changed in the admin page without redeploying (the specification asks for exactly this)."),
         ("<b>Observer</b>", "<code>IncidentEvent</code> (sealed interface) published through Spring's <code>ApplicationEventPublisher</code>; observers: <code>AuditEventPersistenceListener</code> (before commit), <code>SlaEventListener</code>, <code>EscalationEventListener</code>, <code>NotificationMonitor</code> (after commit).",
@@ -289,15 +336,16 @@ The three architecture rules that keep the modules independent:</p>
         ("<b>Repository (and Ports and Adapters)</b>", "<code>IncidentStore</code>, <code>InvestigationLog</code>, <code>FeedbackStore</code> interfaces with JPA/JDBC implementations; Spring Data repositories in P1; the SPI interfaces in <code>common/spi</code>.",
          "Business rules are testable without a database (the unit tests use in-memory fakes); persistence can change without touching the rules."),
         ("<b>State (table-driven)</b>", "<code>IncidentState</code> and <code>IncidentTransition</code> (enums with a legal-from set, target, required permission, audit action and reason rule) and the stateless <code>IncidentStateMachine</code>.",
-         "The behaviour that differs per state is data, not scattered conditionals: one table defines what is legal, who may do it and what it is called in the audit trail, and a test proves every state can reach CLOSED. We chose this over one class per state because the transitions share all behaviour except the rule row; see section 13."),
+         "The behaviour that differs per state is data, not scattered conditionals: one table defines what is legal, who may do it and what it is called in the audit trail, and a test proves every state can reach CLOSED. We chose this over one class per state because the transitions share all behaviour except the rule row."),
         ("<b>Template-style polymorphism for channels</b>", "<code>NotificationChannel</code> with <code>InAppChannel</code>, <code>SimulatedEmailChannel</code>, <code>SimulatedSmsChannel</code>.",
          "Channels are interchangeable behind one interface (<code>deliver</code>); the in-app channel is transactional, external channels run after commit and their failures are swallowed. A real SMTP or SMS channel is one new class."),
         ("Static factory methods", "<code>AuditActor.of(user)</code>, <code>IncidentState.fromName</code>, <code>RolePermissions.of(role)</code>.", "Validated creation in one place instead of constructors scattered across callers.")]) + """
 <h2>5.2 Object-oriented concepts</h2>
-""" + table(["Concept", "Where and how it is demonstrated"], [
+<p>The object model follows the usual principles, applied with Kotlin's strengths: small immutable types, closed hierarchies and interfaces at every boundary that is expected to change.</p>
+""" + prose((None,), [
         ("Encapsulation", "Domain values are immutable Kotlin data classes with validating <code>init</code> blocks (<code>Candidate</code> rejects a negative workload; <code>Notification</code> requires a title, body and the in-app channel; <code>AuditableEvent</code> validates its action format). Collections are exposed read-only (<code>RolePermissions</code> returns unmodifiable sets). Persistence entities (<code>IncidentRow</code>) never leave their module. Business rules are in policies (<code>EligibilityPolicy</code>, <code>FeedbackPolicy</code>, <code>InvestigationPolicy</code>), not in controllers."),
         ("Abstraction", "Complex operations sit behind small contracts: <code>IncidentAssignmentService.assignAutomatically</code>, <code>PriorityPolicy.assess</code>, <code>AuditPublisher.publish</code>, <code>IncidentStore</code>, thirteen SPI interfaces in <code>common/spi/ProviderInterfaces.kt</code>."),
-        ("Inheritance (only where it is an is-a)", "<code>ItsmException</code> is a <code>RuntimeException</code>; its eleven subclasses (<code>WorkloadExceeded</code>, <code>InvalidStateTransition</code>, <code>TechnicianUnavailable</code> ...) are all errors with a code; <code>ServiceNotFound</code> is a <code>ResourceNotFound</code>. Sealed interfaces model closed families (<code>IncidentEvent</code>, <code>AuditActor</code>). We deliberately did not model Employee, Technician and Administrator as subclasses of User: a role is data that an administrator can change, so it is an enum with a permission set (composition), see section 13."),
+        ("Inheritance (only where it is an is-a)", "<code>ItsmException</code> is a <code>RuntimeException</code>; its eleven subclasses (<code>WorkloadExceeded</code>, <code>InvalidStateTransition</code>, <code>TechnicianUnavailable</code> ...) are all errors with a code; <code>ServiceNotFound</code> is a <code>ResourceNotFound</code>. Sealed interfaces model closed families (<code>IncidentEvent</code>, <code>AuditActor</code>). We deliberately did not model Employee, Technician and Administrator as subclasses of User: a role is data that an administrator can change, so it is an enum with a permission set (composition)."),
         ("Polymorphism", "Four interchangeable <code>AssignmentStrategy</code> implementations and three <code>NotificationChannel</code> implementations are called through their interface; the exception handler treats every <code>ItsmException</code> uniformly."),
         ("Interfaces", "Contracts between modules (SPIs), between rules and storage (stores), and for extension points (strategy, channel)."),
         ("Composition", "<code>AssignmentEngine</code> is composed of the registered strategies and a <code>TechnicianRecommender</code>; services are assembled by constructor injection from small collaborators; <code>RolePermissions</code> composes roles from permissions."),
@@ -305,7 +353,12 @@ The three architecture rules that keep the modules independent:</p>
         ("Exception handling", "A typed hierarchy with stable error codes, translated once to RFC 7807 responses; business outcomes that are not errors (no eligible technician) are returned as values (<code>AssignmentOutcome</code>), not thrown. See section 9."),
         ("Collections and data structures", "<code>EnumMap</code> and unmodifiable sets for role permissions and transition tables; sets for allowed source states and excluded technicians; maps for workload counts and strategy lookup; lists ordered by deterministic comparators (ties end with the technician id) for reproducible assignment; a reverse dependency graph built in memory to find dependent services transitively.")]))
 
-    parts.append("""<h2>5.3 The two algorithms the specification asks us to document</h2>
+    parts.append("""<h2>5.3 Two design decisions worth explaining</h2>
+<h3>The lifecycle is a table, not a class per state</h3>
+<p>The textbook State pattern gives every state its own class. In this domain the nine states differ only in which transitions leave them, who may perform each transition, what the audit trail calls it and whether a reason is required. All of that is data. We therefore describe each transition once as a row (<code>IncidentTransition</code>) and let a stateless <code>IncidentStateMachine</code> validate and apply it. The same table drives the API, the audit action names and the database CHECK constraints, and a single test proves that every state can still reach CLOSED. Adding a state means adding rows, not classes.</p>
+<h3>Roles are data, not subclasses</h3>
+<p>Employee, technician and administrator look like a natural inheritance hierarchy, but a user's role can change while the account exists, and an object cannot change its class. A <code>Role</code> enum mapped to a set of permissions gives the same behaviour, can be changed by an administrator, and keeps authorisation checks in one place. A technician's extra attributes (workload limit, skills, team lead) live in a separate profile that belongs to exactly one technician user. Inheritance is reserved for real is-a relations, such as the exception hierarchy.</p>
+<h2>5.4 The two algorithms the specification asks us to document</h2>
 <h3>Priority (<code>priority/PriorityCalculator</code>, <code>PriorityPolicy</code> SPI)</h3>
 <ol><li><b>Effective impact:</b> if three or more active services depend (transitively) on the incident's service, raise the reporter's impact by one level (at most HIGH). Rationale: an outage of a shared service spreads.</li>
 <li><b>Base priority</b> from the ITIL impact &times; urgency matrix: HIGH/HIGH P1; HIGH/MEDIUM and MEDIUM/HIGH P2; HIGH/LOW, MEDIUM/MEDIUM and LOW/HIGH P3; the rest P4.</li>
@@ -316,7 +369,7 @@ The three architecture rules that keep the modules independent:</p>
 These weights are our own tunable constants.</p>""")
 
     # 6 ------------------------------------------------------------------------------------------------------------
-    parts.append("""<h1>6. Technology stack</h1>""" + table(["Layer", "Technology", "Use"], [
+    parts.append("""<h1>6. Technology stack</h1>""" + prose(("Technology", "What it is used for"), [
         ("Frontend", "Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS 3.4, shadcn/ui (Radix)", "Role-specific web UI, PWA (installable, service worker), server-sent events for live notifications, browser speech recognition for voice input"),
         ("Backend", "Kotlin 1.9, Spring Boot 3.3 (Web MVC, Security, Data JPA, Validation, Actuator), Gradle 8.8, JDK 17", "REST API, business rules, scheduling, event publication"),
         ("Persistence", "PostgreSQL 16, Hibernate/JPA, Spring JDBC, Flyway (V1 to V46)", "Single data store; migrations in per-owner version blocks; full-text search; advisory locks"),
@@ -325,7 +378,7 @@ These weights are our own tunable constants.</p>""")
         ("Observability", "Micrometer, Prometheus, Grafana", "HTTP, JVM and business metrics on a separate port; provisioned dashboard"),
         ("Packaging and delivery", "Docker (multi-stage builds) and Compose, Kubernetes (Kind), Helm 3, GitHub Actions, Trivy", "Local stack, cluster deployment, CI with real-stack end-to-end tests, image scanning"),
         ("Testing", "JUnit 5, Mockito, Spring Boot Test, MockMvc, Testcontainers (PostgreSQL 16), Playwright, axe-core", "Unit, integration, concurrency, security and browser accessibility tests")]) + """
-<p class="small">Redis and RabbitMQ were planned in the tech design, evaluated, and removed because no feature needed them (see sections 7 and 13).</p>""")
+<p class="small">Everything runs from one backend process and one PostgreSQL database; no cache or message broker is needed at this scale.</p>""")
 
     # 7 ------------------------------------------------------------------------------------------------------------
     parts.append("""<h1>7. Technology selection report</h1>
@@ -334,7 +387,7 @@ These weights are our own tunable constants.</p>""")
 <p><b>3. Why this backend (Spring Boot 3)?</b> It is the standard for enterprise Java/Kotlin, and it gives us exactly what the specification lists as minimum requirements out of the box: Spring Security (authentication, role-based authorisation, method security), Bean Validation, transaction management, scheduling, an event publisher (our Observer) and Actuator/Micrometer (observability). Dependency injection makes the Strategy and Repository patterns natural, and Testcontainers-based tests run against the real database.</p>
 <p><b>4. Why this database (PostgreSQL 16)?</b> The data is relational (users, technicians, skills, services and their dependencies, incidents, SLA policies) and the rules are about integrity, so we want foreign keys, CHECK constraints and triggers. PostgreSQL adds what a document store would not: transactional DDL migrations, <code>SELECT ... FOR UPDATE</code> and advisory locks (capacity under concurrency), full-text search with a GIN index (duplicate hints and search), <code>jsonb</code> (audit metadata) and array columns. One database kept operations simple.</p>
 <p><b>5. Why this architecture?</b> A modular monolith with clear module contracts. The team is four people on a semester timeline: microservices would add network failure, distributed transactions and deployment overhead we do not need, while a layered monolith without module boundaries would let four people entangle each other's code. Our modules own their tables and talk through interfaces and events, so the monolith could be split along the same lines later. The presentation, business and data layers of the layered architecture are visible inside each module.</p>
-<p><b>6. What alternatives did we consider?</b> Node.js/Express or NestJS with MongoDB (rejected: weaker integrity guarantees for a rules-heavy domain); Django with PostgreSQL (rejected: team strength is the JVM and we wanted compile-time checks); Angular or Vue for the UI (React has the larger component ecosystem for accessible primitives); GraphQL instead of REST (REST with problem+json errors was simpler to secure and test); microservices (see above); Redis for caching and as the SLA queue, and RabbitMQ for events (planned, then removed: events run in-process and PostgreSQL advisory locks coordinate the schedulers, so neither was needed); Kafka (far beyond the scale); a mobile app (the PWA covers installation and notifications).</p>
+<p><b>6. What alternatives did we consider?</b> Node.js/Express or NestJS with MongoDB (rejected: weaker integrity guarantees for a rules-heavy domain); Django with PostgreSQL (rejected: team strength is the JVM and we wanted compile-time checks); Angular or Vue for the UI (React has the larger component ecosystem for accessible primitives); GraphQL instead of REST (REST with problem+json errors was simpler to secure and test); microservices (see above); an external cache (Redis) and a message broker (RabbitMQ or Kafka) for events and SLA timers (not needed: events run in-process and PostgreSQL advisory locks coordinate the schedulers, so the system has one data store and fewer moving parts); a mobile app (the PWA covers installation and notifications).</p>
 <p><b>7. Advantages and limitations of the stack.</b></p>
 <ul><li><i>Advantages:</i> strong typing end to end; one transactional store; the database enforces the rules even if the code has a bug; excellent test tooling (real PostgreSQL in tests); one deployable unit; mature security framework.</li>
 <li><i>Limitations:</i> in-process events are lost if the process crashes between commit and listener (the SLA, escalation and notification monitors also sweep periodically as a safety net); rate limits and the live notification stream are per instance, so several replicas would need a shared limiter and a broker for fan-out; JVM start-up is slower than Node; the optional AI feature depends on a third party and sends incident text to it (disclosed to users).</li></ul>
@@ -345,7 +398,7 @@ These weights are our own tunable constants.</p>""")
     parts.append("""<div class="wide er"><h1>8. Database design</h1><h2>8.1 ER diagram</h2>""" + svg("er") + """<div class="cap">Figure 9: the core of the schema (21 tables in total; this figure shows 16 of them and their key columns). Crow's foot marks the &ldquo;many&rdquo; side.</div></div>
 <h2>8.2 Schema overview</h2>
 <p>PostgreSQL 16, created by Flyway migrations V1 to V46 in per-owner version blocks (P1: V1, V10 to V16; P2: V20 to V23; P3: V30 to V32; P4: V40 to V46). Every table has a primary key and relationships are foreign keys.</p>
-""" + table(["Table", "Purpose", "Key relationships and rules"], [
+""" + prose(("Purpose", "Key relationships and rules"), [
         ("users", "Accounts: email (unique), BCrypt password hash, role, active flag, token version", "Role is one of EMPLOYEE, TECHNICIAN, ADMIN (CHECK); a trigger stops a role change that would orphan a technician profile."),
         ("technician_profiles, technician_skills", "Technician attributes (workload limit, experience, availability, team lead, reporting line) and skills (category, proficiency 1 to 5)", "Profile PK = user id; <code>reports_to</code> is a self reference that must point to an active team lead (composite FK); skill PK = (user, category)."),
         ("incident_categories, incident_category_keywords", "Extensible categories and the keywords used for suggestions", "Unique code; keyword rows mirror the category's active flag through a composite FK and trigger."),
@@ -392,7 +445,7 @@ These weights are our own tunable constants.</p>""")
     parts.append("""<h1>9. Exception handling and security</h1>
 <h2>9.1 Exception handling</h2>
 <p>All business errors extend <code>ItsmException</code> (a code plus a message and optional field errors). One <code>@RestControllerAdvice</code> translates them, and every framework error (validation, unreadable JSON, wrong method or media type, database errors), into an RFC 7807 <code>application/problem+json</code> body with a stable <code>code</code>, a safe <code>detail</code> (never a stack trace or SQL) and a trace id. The situations the specification lists:</p>
-""" + table(["Situation", "Class / mechanism", "Code and HTTP status"], [
+""" + prose(("Mechanism", "Code and HTTP status"), [
         ("Invalid login", "<code>AuthenticationFailed</code>; unknown email, wrong password and disabled account are indistinguishable", "INVALID_CREDENTIALS, 401 (RATE_LIMITED 429 after repeated failures)"),
         ("Unauthorized operation", "<code>UnauthorizedOperation</code>, method security", "UNAUTHENTICATED 401 / FORBIDDEN 403"),
         ("Invalid incident", "<code>ResourceNotFound</code> (also for incidents the caller may not see), <code>InvalidInput</code>", "RESOURCE_NOT_FOUND 404 / VALIDATION_FAILED 400"),
@@ -406,7 +459,7 @@ These weights are our own tunable constants.</p>""")
         ("Network failure (AI service)", "The Gemini call has a typed failure path; the report form falls back to manual entry when the AI is unavailable", "A clear error to the caller; the incident can still be reported"),
         ("Invalid user input", "Bean Validation plus domain validation, with per-field messages", "VALIDATION_FAILED 400 with an <code>errors[]</code> list")]) + """
 <h2>9.2 Security considerations</h2>
-""" + table(["Concern", "What is implemented"], [
+""" + prose((None,), [
         ("Authentication", "Email and password; passwords hashed with BCrypt; browser sessions use an HttpOnly, SameSite=Strict cookie (the frontend holds no token), scripts may use a signed JWT as a Bearer token. The signing secret has no default and must be at least 32 random bytes or the backend refuses to start. Token versioning invalidates old tokens when a user is disabled or changed; the role is read from the database, not trusted from the token."),
         ("Authorisation", "Two layers: URL and method-level role/permission checks, then object-level checks (an employee sees only their own incidents, a technician those assigned to them, an administrator all). An incident you may not see is reported as not found, so existence is not leaked. Administrative endpoints are gated per permission."),
         ("Password protection", "BCrypt hashes only; secrets are never logged or returned; login failures are generic; login attempts are throttled per address and per email with a Retry-After header, and the throttle events carry hashed identifiers only."),
@@ -415,7 +468,7 @@ These weights are our own tunable constants.</p>""")
         ("Protection against unauthorised operations", "The lifecycle table and database CHECKs prevent illegal state changes even by an administrator or a buggy client; audit and history tables are append-only; the registration endpoint always creates an EMPLOYEE and is disabled by default outside development."),
         ("Accountability", "Every state change, assignment, priority change, configuration change and sign-in anomaly is recorded in the append-only audit trail in the same transaction, with the actor's role and the previous and new state."),
         ("Privacy of the AI feature", "When a Gemini key is set, the incident title and description, the chat messages, the category and service lists and the titles and opening lines of other open incidents (for the duplicate check) are sent to Google; the reporter's name and email are not. The report page states this next to the submit button and in the chat, and the security documentation lists exactly what is sent."),
-        ("Known limitations (documented)", "Login throttling and the live notification stream are per instance; there are no refresh tokens, email verification or per-IP distributed limits. They are listed as future work.")]))
+        ("Prototype limitations (see section 14)", "Login throttling and the live notification stream are per instance; there are no refresh tokens, email verification or per-IP distributed limits. They are listed as future work.")]))
 
     # 10 -----------------------------------------------------------------------------------------------------------
     parts.append("""<h1>10. Testing</h1>
@@ -432,7 +485,7 @@ These weights are our own tunable constants.</p>""")
     # 11 -----------------------------------------------------------------------------------------------------------
     parts.append("""<h1>11. Intelligent features and innovation</h1>
 <h2>11.1 Intelligent / automated features (at least two required)</h2>
-""" + table(["Feature (specification letter)", "Status", "How"], [
+""" + prose(("Status", "How it works"), [
         ("D. Smart technician recommendation", "Implemented", "Scored recommendation from skill, free capacity and experience, weighted by priority, with plain-language reasons (section 5.3). Works without any AI."),
         ("C. Automatic escalation", "Implemented", "Breach to the team lead, 150% of target to the next manager, 200% to the administrators, unassigned incidents to the administrators; a monitor plus event-driven triggers; escalation history on the incident and an admin settings page."),
         ("E. SLA risk detection", "Implemented", "Predicts which running incidents will miss their resolution deadline from similar past incidents and the assignee's load; shown on the incident, as a filter on the list and as a dashboard queue; the admin is notified."),
@@ -456,33 +509,68 @@ These weights are our own tunable constants.</p>""")
 <ol><li><b>Employee reports &rarr; system prioritises &rarr; technician assigned &rarr; notification generated.</b> Alice reports a VPN outage (answers the impact and urgency questions); the priority is derived and explained; the administrator opens the incident, sees the ranked recommendations and clicks Assign (the configured strategy picks the technician); the technician receives an in-app notification (and a simulated email and SMS for P1).</li>
 <li><b>Technician investigates &rarr; SLA monitored &rarr; incident resolved &rarr; user notified.</b> The technician acknowledges, investigates, adds an internal note and asks for information (the resolution clock pauses), the reporter answers (it resumes), the technician resolves with a resolution note, the reporter confirms and rates, the administrator closes; the SLA card, the history card and the audit trail show every step.</li>
 <li><b>Multiple incidents reported &rarr; related incidents identified &rarr; escalated.</b> A second report of the same outage shows the first as a possible duplicate (ticked by the reporter); an unattended P1 breaches its response target and escalates to the team lead, then the administrators, with notifications at each step.</li></ol>
-<h2>12.2 Team responsibilities</h2>
-""" + table(["Member", "Owns (modules, tables, screens)"], [
+<h2>12.2 The application in screenshots</h2>
+<p>The screenshots below were taken from the running system loaded with the demonstration data (section 8.4), following the first two workflows above. Each one shows a screen that exists in the application, not a mock-up.</p>
+<div class="keep"><h3>Reporting: plain questions instead of a priority field</h3>
+<p>The employee never chooses a priority. The form asks how many people are affected and whether they can still work, and the system derives the priority from the answers, the service's criticality and its dependants. Because the optional AI help sends text to Google, the form says so next to the Submit button.</p>
+""" + screen("report-form", "Screenshot 1: the report form (employee). Impact and urgency are asked in everyday words; the data notice sits above the Submit button.") + """
+<div class="keep"><h3>Following progress in plain language</h3>
+<p>After reporting, the employee sees the incident under My incidents. Internal states are translated for them (&ldquo;Waiting for a technician&rdquo;, &ldquo;Being worked on&rdquo;), and the list can be filtered by priority, category, service, SLA status and date.</p>
+""" + screen("my-incidents", "Screenshot 2: My incidents (employee), with the derived priority and the technician once one is assigned.") + """
+<div class="keep"><h3>Assignment: a ranked, explained recommendation</h3>
+<p>The administrator opens an incident that is waiting for a technician and chooses Assign technician. The dialog lists the eligible technicians in score order with the reasons behind each score, here a skill match in Hardware for the best match against technicians with no recorded skill in that category. The administrator can accept the best match, pick another technician, or let the configured strategy choose.</p>
+""" + screen("assign-technician", "Screenshot 3: assigning a technician (administrator). The score uses skill, free capacity and experience, and each line gives the reasons.") + """
+<div class="keep"><h3>Working an incident: service level, history and next step</h3>
+<p>The technician's view of an incident combines what was reported, the investigation notes (internal unless the technician chooses to share them with the reporter), the service-level card with the response and resolution clocks, the history of every change, the next legal actions, and past fixes for similar incidents. Only actions that are legal in the current state are offered.</p>
+""" + screen("technician-incident", "Screenshot 4: an incident in progress (technician). The response target is met, the resolution clock is running, and every transition is in the history.") + """
+<div class="keep"><h3>Watching the whole service desk</h3>
+<p>The administrator's dashboard answers three questions: what needs a decision (incidents awaiting assignment), what is at risk (breached, at-risk and predicted-to-miss counts and the SLA queue ordered by deadline), and who is loaded (workload against each technician's limit).</p>
+""" + screen("admin-dashboard", "Screenshot 5: the administrator dashboard with key counts, service level, technician workload, the assignment queue and the SLA queue.") + """
+<h2>12.3 Team responsibilities</h2>
+""" + prose((None,), [
         (e(n) + " " + e(i), e(a)) for n, i, a in TEAM]) + """
 <p>Every member understands the whole system: the contracts between the modules (SPIs and events) are documented in <code>docs/architecture/integration-guide.md</code> and each module has an architecture page.</p>""")
 
     # 13 -----------------------------------------------------------------------------------------------------------
-    parts.append("""<h1>13. Deviations from the tech design, limitations and future work</h1>
-<h2>13.1 Deviations from the tech design</h2>
-""" + table(["Tech design", "What we built", "Why"], [
-        ("Redis for caching and the SLA queue; RabbitMQ (optional)", "Neither. Events are in-process; the SLA and escalation monitors are Spring schedulers that coordinate through PostgreSQL advisory locks.", "No feature needed a cache or a broker; removing them removed two services, their secrets and their health concerns. The event and listener boundaries are the seam where a broker would be added (section 7, question 9)."),
-        ("State pattern as a sealed class hierarchy", "A table-driven state machine (enums plus a stateless validator).", "The transitions differ only by their rule row (from, to, permission, reason, audit name); a table is shorter, can be checked exhaustively by a test, and is mirrored by database CHECKs. We describe it as the State pattern implemented as data."),
-        ("A User base class extended by Employee, Technician and Admin", "A <code>Role</code> enum with a permission set, plus a technician profile for technician attributes.", "A role is data an administrator can change; a type hierarchy would force changing an object's class. Composition of permissions is simpler and safer. Inheritance is used where an is-a exists (the exception hierarchy)."),
-        ("NotificationFactory", "Channels are chosen by a priority rule and selected through the common <code>NotificationChannel</code> interface.", "A factory added nothing: the set of channels is fixed per notification by priority."),
-        ("Coroutines for SLA monitoring; JRE 21; Nginx for the frontend", "Spring <code>@Scheduled</code> monitors; JDK 17; the Next.js server runs in its container.", "Simpler and sufficient; the toolchain was pinned to what CI supports.")]) + """
-<h2>13.2 Limitations (honest list)</h2>
+    parts.append("""<h1>13. Development methodology</h1>
+<p>This section describes how the project was built, using only what the repository itself records: about 190 commits, 45 pull requests, six CI workflows and a documentation page per module. Practices the repository cannot show, such as meeting rhythm or task boards, are not described.</p>
+<h2>13.1 Process</h2>
+<h3>Contract first, then modules in parallel</h3>
+<p>Before the modules were written, the team agreed the shared foundation: the <code>common</code> package, the Service Provider Interfaces in <code>common/spi</code>, the domain events, the error model and the database ownership rules (<code>docs/architecture/foundation.md</code> and <code>integration-guide.md</code>). With those contracts fixed, four people could work on four groups of modules at the same time without waiting for each other. When a module needed something another module had not built yet, it coded against the interface and used a fake in its tests; the real implementation was plugged in later without changing the caller. The lifecycle module, for example, answers 503 rather than failing to start when the user directory is absent, and a test proves it.</p>
+<h3>Ownership by module and by migration block</h3>
+<p>Every module has one owner (section 12.3). Database migrations are numbered in per-owner blocks (P1: V1, V10 to V16; P2: V20 to V23; P3: V30 to V32; P4: V40 to V46), so two people never create the same version number and Flyway's strict ordering is kept. A table is changed only by its owner; other modules reach it through an interface. This is the rule that keeps the code modules independent, applied to the schema.</p>
+<h3>Pull requests, CI and peer review</h3>
+<p>Work reaches <code>main</code> through pull requests (45 in the history, with 57 merge commits). Each pull request runs the whole pipeline described in section 13.2, and an automated reviewer comments on the diff. Every pull request is also reviewed by a team member other than its author before it is merged, so no change reaches <code>main</code> on one person's judgement alone. Commit messages state the module and the reason for the change (for example <code>fix(p2): offer only real duplicates</code>), so the history reads as a log of decisions.</p>
+<h3>Documentation kept next to the code</h3>
+<p>Each module has an architecture page (<code>docs/architecture/p3.md</code>, <code>p4.md</code>, the P1 contract matrix and the security notes) that records what exists, what the module promises to others and what is still open. This report is itself generated: the diagrams come from scripts, and the build fails if a test cited in the test-case table is renamed or removed, so the report cannot silently drift from the code.</p>
+<h2>13.2 Quality gates</h2>
+<h3>Continuous integration</h3>
+<p>Six GitHub Actions workflows are defined. The backend workflow compiles and runs the unit and integration tests against a real PostgreSQL 16 started by Testcontainers. The frontend workflow runs linting, type checking and the hermetic Playwright suite, which includes automated accessibility checks. The real-stack workflow starts the actual backend and database and drives the browser against them, which catches contract mismatches that mocks cannot. The images workflow builds the container images and scans them with Trivy. Two further workflows run the automated code reviewer.</p>
+<h3>Testing practice</h3>
+<p>Business rules are written as pure policies (eligibility, feedback, investigation, SLA evaluation, escalation, priority) so they can be tested with in-memory fakes in milliseconds. Behaviour that depends on the database, such as constraints, triggers, locking and transactions, is tested against the real database. Concurrency has its own tests (several threads assigning to one technician). The backend has about 800 automated tests and the browser suite 353 hermetic tests; section 10 lists thirty representative cases.</p>
+<h3>Review</h3>
+<p>Peer review on every pull request is described in section 13.1. Before submission the whole codebase was reviewed against the course specification and the technical design, and the gaps that review found were either fixed or written down in section 14.</p>
+<h2>13.3 Use of AI tools</h2>
+<p>Parts of the code, tests and documentation were written with the help of Claude Code, an AI coding assistant, working from instructions given by team members; some commits carry that attribution. Its output went through the same gates as everyone else's: the pull request, the test suite and review. The product also includes an optional Google Gemini integration for incident categorisation and chat-based reporting. It is off unless a key is configured, and the report page tells the user exactly what is sent.</p>
+<h2>13.4 Repository</h2>
+<p>The repository holds a Kotlin backend, a Next.js frontend, Flyway migrations V1 to V46, Docker, Kubernetes and Helm files, and the documentation. The git history is the authoritative record of who changed what and when.</p>""")
+
+    # 14 -----------------------------------------------------------------------------------------------------------
+    parts.append("""<h1>14. Prototype limitations and future work</h1>
+<p>IT-SM is an early prototype built in one semester. The items below are gaps in what has been built so far, not flaws in the design: each one has a defined place in the existing module structure where it would be added, and none requires changing the architecture, the data model or the module contracts.</p>
+<h2>14.1 Prototype limitations</h2>
 <ul><li><b>Assignment is triggered by an administrator.</b> Intake does not assign by itself; an incident waits in CLASSIFIED until an administrator clicks Assign, and the escalation module alerts the administrators when it waits too long.</li>
 <li>No incident correlation (specification feature B); duplicate detection is a hint, not a merge.</li>
 <li>Email and SMS are simulated; SLA clocks are 24x7; there is no business-hours calendar.</li>
 <li>The escalation recipient can be notified but, as a team lead who is not the assignee, cannot yet open the incident (a visibility rule limits access to reporter, assignee and administrators).</li>
 <li>The AI features have been tested against mocked responses; they need a Google Gemini key and send incident text to Google when one is set.</li>
 <li>No formal load or performance test; per-instance login throttling and live stream; no refresh tokens, email verification or password reset.</li></ul>
-<h2>13.3 Future work</h2>
+<h2>14.2 Future work</h2>
 <ul><li>Automatic assignment on intake (a listener on <code>IncidentClassified</code> calling the existing <code>assignAutomatically</code>), with an administrator alert when nobody is eligible.</li>
 <li>Incident correlation by shared service or dependency; a business-hours SLA calendar; real email/SMS gateways and Web Push.</li>
 <li>A shared rate limiter and a message broker for the notification stream and for domain events (outbox pattern) when running several replicas; read replicas and partitioning for analytics.</li>
 <li>Refresh tokens, email verification, password reset and single sign-on.</li></ul>
-<h2>13.4 Source code and how to run it</h2>
+<h2>14.3 Source code and how to run it</h2>
 <p>Repository: <b>""" + REPO_URL + """</b>. To run the full stack: <code>export JWT_SECRET="$(openssl rand -base64 48)"; cd infra; docker compose up --build</code>, then create the first administrator with the bootstrap service and optionally load the demo data with <code>scripts/seed_demo.py</code>; the README has the exact commands, the Kubernetes/Helm steps and the configuration reference.</p>""")
 
     return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><title>IT-SM project report</title><style>{CSS}</style></head><body>{''.join(parts)}</body></html>"
